@@ -53,6 +53,24 @@ public class RuleMatcherTests
     }
 }
 
+public class CpuHistoryTests
+{
+    [Fact]
+    public void KeepsOnlyTheWindowAndClampsValues()
+    {
+        var h = new CpuHistory(TimeSpan.FromSeconds(10));
+        var t0 = new DateTime(2026, 1, 1);
+        for (int s = 0; s <= 20; s++)
+            h.Add(t0.AddSeconds(s), s == 20 ? 150 : s);
+
+        var all = h.Since(DateTime.MinValue);
+        Assert.Equal(11, all.Count);                 // secondes 10 à 20
+        Assert.Equal(t0.AddSeconds(10), all[0].Time);
+        Assert.Equal(100, all[^1].Value);            // 150 ramené à 100
+        Assert.Equal(6, h.Since(t0.AddSeconds(15)).Count);
+    }
+}
+
 public class RuleStoreTests : IDisposable
 {
     readonly string dir = Path.Combine(Path.GetTempPath(), "CorralTests_" + Guid.NewGuid().ToString("N"));

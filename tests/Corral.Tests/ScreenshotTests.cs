@@ -26,11 +26,32 @@ public class ScreenshotTests
                 settings.ProBalance.Enabled = false;
                 settings.Rules.Add(new Rule { Pattern = "chrome*", Priority = System.Diagnostics.ProcessPriorityClass.BelowNormal, AffinityMask = 0xFF });
                 using var engine = new Engine(RuleStore.Clone(settings), new NoPower(), foregroundPid: () => -1);
+                settings.ProBalance.Enabled = true; // seulement côté interface : affiche le seuil sans que le moteur agisse
                 using var form = new MainForm(engine, new RuleStore(Path.Combine(configDir, "config.json")), settings) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(40, 40) };
                 form.Show();
                 engine.Start();
                 Pump(2500);
                 Capture(form, Path.Combine(outDir, $"shot-{mode}.png"));
+
+                // Onglet Graphique avec 5 min de données de démonstration (dont un pic au-dessus du seuil)
+                var start = DateTime.UtcNow.AddMinutes(-5);
+                var rnd = new Random(42);
+                for (int s = 0; s < 297; s++)
+                {
+                    double v = 18 + 8 * Math.Sin(s / 20.0) + rnd.NextDouble() * 6;
+                    if (s is > 150 and < 190) v = 80 + rnd.NextDouble() * 15;
+                    form.History.Add(start.AddSeconds(s), v);
+                }
+                form.ShowPage("Graphique");
+                Pump(1200);
+                Capture(form, Path.Combine(outDir, $"shot-{mode}-chart.png"));
+
+                // Survol simulé au milieu du pic
+                var chart = Find<CpuChart>(form)!;
+                typeof(Control).GetMethod("OnMouseMove", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                    .Invoke(chart, new object[] { new MouseEventArgs(MouseButtons.None, 0, chart.Width * 6 / 10, chart.Height / 2, 0) });
+                Pump(300);
+                Capture(form, Path.Combine(outDir, $"shot-{mode}-chart-hover.png"));
 
                 using var dlg = new RuleDialog(settings.Rules[0], PowerCfg.List(), isNew: false) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(1040, 40) };
                 dlg.Show();
@@ -45,6 +66,9 @@ public class ScreenshotTests
         thread.Start();
         thread.Join();
     }
+
+    static T? Find<T>(Control root) where T : Control =>
+        root is T match ? match : root.Controls.Cast<Control>().Select(Find<T>).FirstOrDefault(c => c != null);
 
     static void Pump(int ms)
     {

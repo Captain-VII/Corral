@@ -1,0 +1,182 @@
+using System.Drawing.Drawing2D;
+using Corral.Core;
+
+namespace Corral.UI;
+
+/// <summary>
+/// Courbe du CPU système sur une fenêtre glissante, dessinée en GDI+ aux couleurs du thème.
+/// Une seule série (le titre la nomme, pas de légende), axe 0-100 %, seuil ProBalance en pointillés,
+/// info-bulle au survol.
+/// </summary>
+public sealed class CpuChart : Control
+{
+    const int PadLeft = 46, PadRight = 16, PadTop = 64, PadBottom = 28;
+    static readonly TimeSpan MaxGap = TimeSpan.FromSeconds(5); // au-delà, la courbe est coupée
+
+    readonly CpuHistory history;
+    Point? mouse;
+
+    public CpuChart(CpuHistory history)
+    {
+        this.history = history;
+        DoubleBuffered = true;
+        ResizeRedraw = true;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+    }
+
+    public TimeSpan Range { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>Seuil ProBalance affiché (null = ProBalance désactivé).</summary>
+    public double? Threshold { get; set; }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        mouse = e.Location;
+        Invalidate();
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        mouse = null;
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var p = Theme.Current;
+        var g = e.Graphics;
+        g.Clear(p.Surface);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        var now = DateTime.UtcNow;
+        var from = now - Range;
+        var data = history.Since(from);
+        var plot = new Rectangle(PadLeft, PadTop, Math.Max(10, Width - PadLeft - PadRight), Math.Max(10, Height - PadTop - PadBottom));
+
+        float X(DateTime t) => plot.Left + (float)((t - from).TotalMilliseconds / Range.TotalMilliseconds) * plot.Width;
+        float Y(double v) => plot.Bottom - (float)(v / 100.0) * plot.Height;
+
+        // En-tête : titre + valeur actuelle (le chiffre clé)
+        using var titleFont = new Font(Font.FontFamily, Font.Size + 1, FontStyle.Regular);
+        using var heroFont = new Font(Font.FontFamily, Font.Size + 10, FontStyle.Bold);
+        TextRenderer.DrawText(g, "CPU système", titleFont, new Point(PadLeft - 4, 8), p.Muted);
+        var current = data.Count > 0 ? $"{data[^1].Value:0} %" : "—";
+        TextRenderer.DrawText(g, current, heroFont, new Point(PadLeft - 6, 26), p.Fore);
+
+        // Grille horizontale discrète et graduations
+        using var gridPen = new Pen(Color.FromArgb(IsDarkSurface(p) ? 45 : 60, p.Muted));
+        foreach (var v in new[] { 0, 25, 50, 75, 100 })
+        {
+            float y = Y(v);
+            g.DrawLine(gridPen, plot.Left, y, plot.Right, y);
+            TextRenderer.DrawText(g, $"{v} %", Font, new Rectangle(0, (int)y - 8, PadLeft - 8, 16), p.Muted,
+                TextFormatFlags.Right | TextFormatFlags.VerticalCenter);
+        }
+
+        // Graduations de temps relatives (« -4 min », « -30 s »…)
+        for (int i = 0; i <= 5; i++)
+        {
+            var offset = TimeSpan.FromTicks(Range.Ticks * (5 - i) / 5);
+            float x = plot.Left + plot.Width * i / 5f;
+            var label = i == 5 ? "maintenant" : Format(offset);
+            var flags = TextFormatFlags.Top | (i == 0 ? TextFormatFlags.Left : i == 5 ? TextFormatFlags.Right : TextFormatFlags.HorizontalCenter);
+            var box = i == 0 ? new Rectangle((int)x, plot.Bottom + 6, 100, 16)
+                    : i == 5 ? new Rectangle((int)x - 100, plot.Bottom + 6, 100, 16)
+                    : new Rectangle((int)x - 50, plot.Bottom + 6, 100, 16);
+            TextRenderer.DrawText(g, label, Font, box, p.Muted, flags);
+        }
+
+        // Seuil ProBalance
+        if (Threshold is { } th)
+        {
+            float y = Y(th);
+            using var dash = new Pen(p.Muted, 1) { DashStyle = DashStyle.Dash };
+            g.DrawLine(dash, plot.Left, y, plot.Right, y);
+            TextRenderer.DrawText(g, $"Seuil ProBalance {th:0} %", Font, new Rectangle(plot.Left, (int)y - 18, plot.Width - 4, 16), p.Muted,
+                TextFormatFlags.Right | TextFormatFlags.Bottom);
+        }
+
+        // Courbe : segments continus (coupés s'il manque des mesures), aire légère dessous
+        g.SetClip(plot);
+        foreach (var segment in Segments(data))
+        {
+            if (segment.Count < 2)
+                continue;
+            var pts = segment.Select(d => new PointF(X(d.Time), Y(d.Value))).ToArray();
+            using (var area = new GraphicsPath())
+            {
+                area.AddLine(pts[0].X, plot.Bottom, pts[0].X, pts[0].Y);
+                area.AddLines(pts);
+                area.AddLine(pts[^1].X, pts[^1].Y, pts[^1].X, plot.Bottom);
+                area.CloseFigure();
+                using var fill = new SolidBrush(Color.FromArgb(IsDarkSurface(p) ? 55 : 40, p.Accent));
+                g.FillPath(fill, area);
+            }
+            using var line = new Pen(p.Accent, 2) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round };
+            g.DrawLines(line, pts);
+        }
+        g.ResetClip();
+
+        if (data.Count == 0)
+            TextRenderer.DrawText(g, "Collecte des mesures…", Font, plot, p.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+
+        DrawHover(g, p, data, plot, X, Y, now);
+    }
+
+    void DrawHover(Graphics g, Palette p, List<(DateTime Time, double Value)> data, Rectangle plot,
+        Func<DateTime, float> X, Func<double, float> Y, DateTime now)
+    {
+        if (mouse is not { } m || data.Count == 0 || m.X < plot.Left || m.X > plot.Right || m.Y < plot.Top - 20 || m.Y > plot.Bottom + 20)
+            return;
+
+        var nearest = data.MinBy(d => Math.Abs(X(d.Time) - m.X));
+        float x = X(nearest.Time), y = Y(nearest.Value);
+
+        using (var cross = new Pen(Color.FromArgb(140, p.Muted)))
+            g.DrawLine(cross, x, plot.Top, x, plot.Bottom);
+        // Point de 8 px avec anneau de la couleur du fond
+        using (var ring = new SolidBrush(p.Surface))
+            g.FillEllipse(ring, x - 6, y - 6, 12, 12);
+        using (var dot = new SolidBrush(p.Accent))
+            g.FillEllipse(dot, x - 4, y - 4, 8, 8);
+
+        var ago = now - nearest.Time;
+        var text = $"{nearest.Value:0.0} %   ·   {(ago.TotalSeconds < 1.5 ? "maintenant" : "il y a " + Format(ago, precise: true))}";
+        var size = TextRenderer.MeasureText(g, text, Font);
+        var box = new Rectangle((int)x + 12, (int)y - size.Height - 16, size.Width + 16, size.Height + 10);
+        if (box.Right > Width - 4) box.X = (int)x - box.Width - 12;
+        if (box.Top < 4) box.Y = (int)y + 12;
+        using (var back = new SolidBrush(p.Surface2))
+            g.FillRectangle(back, box);
+        using (var border = new Pen(p.Border))
+            g.DrawRectangle(border, box);
+        TextRenderer.DrawText(g, text, Font, box, p.Fore, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+    }
+
+    static IEnumerable<List<(DateTime Time, double Value)>> Segments(List<(DateTime Time, double Value)> data)
+    {
+        var current = new List<(DateTime Time, double Value)>();
+        foreach (var d in data)
+        {
+            if (current.Count > 0 && d.Time - current[^1].Time > MaxGap)
+            {
+                yield return current;
+                current = new();
+            }
+            current.Add(d);
+        }
+        if (current.Count > 0)
+            yield return current;
+    }
+
+    static string Format(TimeSpan t, bool precise = false)
+    {
+        if (t.TotalSeconds < 60)
+            return $"{t.TotalSeconds:0} s";
+        if (precise && t.Seconds != 0)
+            return $"{(int)t.TotalMinutes} min {t.Seconds} s";
+        return $"{t.TotalMinutes:0} min";
+    }
+
+    static bool IsDarkSurface(Palette p) => p.Surface.GetBrightness() < 0.5f;
+}

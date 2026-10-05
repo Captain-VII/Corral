@@ -21,6 +21,9 @@ public sealed class MainForm : Form
     readonly Panel pageHost = new() { Dock = DockStyle.Fill, Padding = new Padding(6) };
     readonly List<(ToolStripButton Button, Control Page)> pages = new();
     readonly Panel logPage = new();
+    readonly CpuHistory cpuHistory = new(TimeSpan.FromMinutes(15));
+    readonly CpuChart chart;
+    int snapshotCount;
     readonly ComboBox themeChoice = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
     readonly TextBox logBox = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false, Font = new Font("Consolas", 9f) };
 
@@ -53,7 +56,9 @@ public sealed class MainForm : Form
         MinimumSize = new Size(700, 450);
         StartPosition = FormStartPosition.CenterScreen;
 
+        chart = new CpuChart(cpuHistory);
         AddPage("Processus", BuildProcessTab());
+        AddPage("Graphique", BuildChartTab());
         AddPage("Règles", BuildRulesTab());
         AddPage("ProBalance", BuildProBalanceTab());
         AddPage("Options", BuildOptionsTab());
@@ -73,6 +78,11 @@ public sealed class MainForm : Form
         LoadProBalance();
         Theme.Apply(this);
     }
+
+    /// <summary>Historique CPU affiché par l'onglet Graphique (exposé pour les captures de test).</summary>
+    public CpuHistory History => cpuHistory;
+
+    public void ShowPage(string title) => SelectPage(pages.FindIndex(x => x.Button.Text == title));
 
     void AddPage(string title, Control page)
     {
@@ -95,6 +105,8 @@ public sealed class MainForm : Form
         }
         if (pages[index].Page == logPage)
             RefreshLog();
+        if (pages[index].Page.Contains(chart))
+            chart.Invalidate();
     }
 
     void OnThemeChanged()
@@ -185,6 +197,9 @@ public sealed class MainForm : Form
 
     void OnSnapshot(EngineSnapshot snapshot)
     {
+        // Historique alimenté même fenêtre cachée ; la toute première mesure (sans référence, donc 0) est ignorée.
+        if (Interlocked.Increment(ref snapshotCount) > 1)
+            cpuHistory.Add(DateTime.UtcNow, snapshot.SystemCpu);
         if (!shown)
             return;
         try { BeginInvoke(() => ApplySnapshot(snapshot)); }
@@ -195,6 +210,8 @@ public sealed class MainForm : Form
     {
         if (IsDisposed)
             return;
+        if (chart.Visible)
+            chart.Invalidate();
         statusLabel.Text = $"CPU système : {snap.SystemCpu:0} %   ·   {snap.Rows.Count} processus" + (snap.Paused ? "   ·   EN PAUSE" : "");
 
         procList.BeginUpdate();
@@ -231,6 +248,32 @@ public sealed class MainForm : Form
     {
         if (item.SubItems[index].Text != text)
             item.SubItems[index].Text = text;
+    }
+
+    // ---------- Onglet Graphique ----------
+
+    Control BuildChartTab()
+    {
+        var page = new Panel();
+        // Période : même barre que la navigation (soulignée sur le choix actif)
+        var ranges = new ToolStrip { Dock = DockStyle.Top, GripStyle = ToolStripGripStyle.Hidden, CanOverflow = false, Padding = new Padding(4, 2, 4, 2) };
+        ranges.Items.Add(new ToolStripLabel("Période :"));
+        foreach (var minutes in new[] { 1, 5, 15 })
+        {
+            var b = new ToolStripButton($"{minutes} min") { Checked = minutes == 5, Padding = new Padding(6, 3, 6, 5) };
+            b.Click += (_, _) =>
+            {
+                foreach (var other in ranges.Items.OfType<ToolStripButton>())
+                    other.Checked = other == b;
+                chart.Range = TimeSpan.FromMinutes(minutes);
+                chart.Invalidate();
+            };
+            ranges.Items.Add(b);
+        }
+        chart.Dock = DockStyle.Fill;
+        page.Controls.Add(chart);
+        page.Controls.Add(ranges);
+        return page;
     }
 
     // ---------- Onglet Règles ----------
@@ -308,7 +351,7 @@ public sealed class MainForm : Form
             return;
         settings.Rules.Add(dlg.Result);
         SaveAndApply(settings.Rules.Count - 1);
-        SelectPage(1);
+        ShowPage("Règles");
     }
 
     void EditRule()
@@ -403,6 +446,8 @@ public sealed class MainForm : Form
     {
         var pb = settings.ProBalance;
         pbEnabled.Checked = pb.Enabled;
+        chart.Threshold = pb.Enabled ? pb.SystemThreshold : null;
+        chart.Invalidate();
         SetNum(pbSystem, pb.SystemThreshold);
         SetNum(pbProcess, pb.ProcessThreshold);
         SetNum(pbRestore, pb.RestoreThreshold);
