@@ -51,6 +51,14 @@ public sealed class RuleDialog : Form
     readonly Label efficiencyHelp = Help();
     readonly Label ioHelp = Help();
     readonly Label memoryHelp = Help();
+    readonly ToggleSwitch keepAwake = new();
+    readonly ComboBox block = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+    readonly NumericUpDown alertCpu = new() { Minimum = 0, Maximum = 100, Width = 80, TextAlign = HorizontalAlignment.Right };
+    readonly NumericUpDown alertMemory = new() { Minimum = 0, Maximum = 1_048_576, Increment = 512, Width = 100, TextAlign = HorizontalAlignment.Right };
+    readonly NumericUpDown alertMinutes = new() { Minimum = 1, Maximum = 120, Value = 2, Width = 80, TextAlign = HorizontalAlignment.Right };
+    readonly ComboBox alertAction = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+    readonly Label blockHelp = Help();
+    readonly Label alertHelp = Help();
     readonly ToolTip tips = Theme.CreateToolTip();
     readonly IReadOnlyList<string> running;
     readonly int cpuCount = Math.Min(Environment.ProcessorCount, 64);
@@ -200,6 +208,24 @@ public sealed class RuleDialog : Form
         AddRow(right, "Priorité mémoire", memoryPriority);
         AddRow(right, "", memoryHelp);
 
+        block.Items.AddRange(new object[] { "Non", "Toujours (fermé dès son lancement)", "Une seule instance" });
+        alertAction.Items.AddRange(new object[] { "Me prévenir", "Baisser sa priorité au minimum", "Le fermer" });
+        block.SelectedIndexChanged += (_, _) => UpdateHelp();
+        foreach (var n in new[] { alertCpu, alertMemory, alertMinutes })
+            n.ValueChanged += (_, _) => UpdateHelp();
+        alertAction.SelectedIndexChanged += (_, _) => UpdateHelp();
+        tips.SetToolTip(keepAwake, "Le PC ne se met pas en veille tant que ce programme tourne (l'écran peut s'éteindre).");
+
+        AddSection(right, "Automatisations");
+        AddRow(right, "Empêcher la mise en veille", keepAwake);
+        AddRow(right, "Bloquer le programme", block);
+        AddRow(right, "", blockHelp);
+        AddRow(right, "Surveiller : CPU au-delà de", WithHint(alertCpu, "% (0 = non)"));
+        AddRow(right, "ou mémoire au-delà de", WithHint(alertMemory, "Mo (0 = non)"));
+        AddRow(right, "pendant", WithHint(alertMinutes, "minutes"));
+        AddRow(right, "alors", alertAction);
+        AddRow(right, "", alertHelp);
+
         var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 0, 0) };
         buttons.Controls.Add(ok);
         buttons.Controls.Add(cancel);
@@ -263,6 +289,23 @@ public sealed class RuleDialog : Form
         memLimit.Value = 0;
         isGame.Checked = false;
         efficiency.SelectedIndex = ioPriority.SelectedIndex = memoryPriority.SelectedIndex = 0;
+        keepAwake.Checked = false;
+        block.SelectedIndex = 0;
+        alertCpu.Value = alertMemory.Value = 0;
+    }
+
+    /// <summary>Sur un petit écran, la fenêtre défile au lieu de dépasser.</summary>
+    protected override void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+        var area = Screen.FromControl(this).WorkingArea;
+        if (Height > area.Height)
+        {
+            AutoSize = false;
+            AutoScroll = true;
+            Size = new Size(Width + SystemInformation.VerticalScrollBarWidth, area.Height);
+            Location = new Point(Location.X, area.Top);
+        }
     }
 
     void UpdatePreview()
@@ -313,6 +356,19 @@ public sealed class RuleDialog : Form
             3 => "Accès au disque normal.",
             _ => "L'accès au disque n'est pas modifié.",
         };
+        blockHelp.Text = block.SelectedIndex switch
+        {
+            1 => "Le programme est fermé dans la seconde qui suit son lancement, à chaque fois. Les processus déjà lancés sont fermés en enregistrant.",
+            2 => "Si le programme est lancé une deuxième fois, la nouvelle copie est fermée. Ne convient pas aux navigateurs, qui lancent plusieurs processus.",
+            _ => "Le programme peut se lancer normalement.",
+        };
+        bool watching = alertCpu.Value > 0 || alertMemory.Value > 0;
+        alertHelp.Text = !watching
+            ? "Pas de surveillance. Utile pour repérer un programme bloqué (CPU) ou une fuite de mémoire."
+            : $"Si le seuil est dépassé sans interruption pendant {alertMinutes.Value} min, Corral " +
+              (alertAction.SelectedIndex switch { 1 => "baisse sa priorité au minimum", 2 => "le ferme", _ => "vous prévient" }) +
+              ", une seule fois jusqu'à ce qu'il repasse sous le seuil.";
+
         memoryHelp.Text = memoryPriority.SelectedIndex switch
         {
             1 or 2 or 3 or 4 => "Quand la mémoire manque, ses données quittent la RAM avant celles des autres programmes.",
@@ -393,6 +449,12 @@ public sealed class RuleDialog : Form
         efficiency.SelectedIndex = Math.Max(0, Array.FindIndex(EfficiencyChoices, c => c.Value == rule.EfficiencyMode));
         ioPriority.SelectedIndex = Math.Max(0, Array.FindIndex(IoChoices, c => c.Value == rule.IoPriority));
         memoryPriority.SelectedIndex = Math.Max(0, Array.FindIndex(MemoryChoices, c => c.Value == rule.MemoryPriority));
+        keepAwake.Checked = rule.KeepAwake;
+        block.SelectedIndex = (int)rule.Block;
+        alertCpu.Value = Math.Clamp(rule.AlertCpuPercent ?? 0, 0, 100);
+        alertMemory.Value = Math.Clamp(rule.AlertMemoryMB ?? 0, 0, 1_048_576);
+        alertMinutes.Value = Math.Clamp(rule.AlertMinutes, 1, 120);
+        alertAction.SelectedIndex = (int)rule.AlertAction;
     }
 
     void OnOk()
@@ -431,7 +493,33 @@ public sealed class RuleDialog : Form
             EfficiencyMode = EfficiencyChoices[Math.Max(0, efficiency.SelectedIndex)].Value,
             IoPriority = IoChoices[Math.Max(0, ioPriority.SelectedIndex)].Value,
             MemoryPriority = MemoryChoices[Math.Max(0, memoryPriority.SelectedIndex)].Value,
+            KeepAwake = keepAwake.Checked,
+            Block = (BlockMode)Math.Max(0, block.SelectedIndex),
+            AlertCpuPercent = alertCpu.Value > 0 ? (int)alertCpu.Value : null,
+            AlertMemoryMB = alertMemory.Value > 0 ? (int)alertMemory.Value : null,
+            AlertMinutes = (int)alertMinutes.Value,
+            AlertAction = (AlertAction)Math.Max(0, alertAction.SelectedIndex),
         };
+
+        // Garde-fous du blocage : jamais sur un motif qui viserait tout, confirmation si des programmes tournent
+        if (Result.Block != BlockMode.None && Result.Enabled)
+        {
+            if (Engine.IsCatchAll(name))
+            {
+                MessageBox.Show(this, "Ce motif viserait tous les programmes : le blocage est refusé.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            var running = RuleMatcher.Preview(name, this.running).Where(n => !Exclusions.IsProtected(n, int.MaxValue, 0)).ToList();
+            if (Result.Block == BlockMode.Always && running.Count > 0 &&
+                MessageBox.Show(this, $"{running.Count} processus en cours ({string.Join(", ", running.Distinct().Take(3))}) seront fermés dès l'enregistrement.\nContinuer ?",
+                    Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                return;
+        }
+        if (Result.AlertAction == AlertAction.Close && Result.HasAlert && Result.Enabled && Engine.IsCatchAll(name))
+        {
+            MessageBox.Show(this, "Fermer automatiquement tous les programmes : refusé. Choisissez un motif plus précis.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         DialogResult = DialogResult.OK;
     }
 }

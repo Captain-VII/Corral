@@ -63,6 +63,14 @@ public class ScreenshotTests
                     form.ShowPage(page);
                     Pump(400);
                     Capture(form, Path.Combine(outDir, $"shot-{mode}-{page}.png"));
+                    if (page == "Options")
+                    {
+                        // Bas de la page (raccourcis globaux)
+                        foreach (var stack in FindAll<CardStack>(form).Where(s => s.Visible))
+                            stack.AutoScrollPosition = new Point(0, 10_000);
+                        Pump(300);
+                        Capture(form, Path.Combine(outDir, $"shot-{mode}-{page}-bas.png"));
+                    }
                 }
 
                 using var dlg = new RuleDialog(settings.Rules[0], PowerCfg.List(), isNew: false, new[] { "chrome", "chrome", "chrome", "code", "System" }) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(1200, 40) };
@@ -81,6 +89,9 @@ public class ScreenshotTests
 
     static T? Find<T>(Control root) where T : Control =>
         root is T match ? match : root.Controls.Cast<Control>().Select(Find<T>).FirstOrDefault(c => c != null);
+
+    static IEnumerable<T> FindAll<T>(Control root) where T : Control =>
+        (root is T match ? new[] { match } : Enumerable.Empty<T>()).Concat(root.Controls.Cast<Control>().SelectMany(FindAll<T>));
 
     static void Pump(int ms)
     {

@@ -32,6 +32,8 @@ public sealed class Engine : IDisposable
         public IoPriorityLevel? OrigIo;
         public MemoryPriorityLevel? OrigMemory;
         public bool EfficiencySet;
+        public DateTime? AlertSince;
+        public bool AlertFired;
     }
 
     /// <summary>Clé fictive pour la demande de plan d'alimentation du Mode Jeu.</summary>
@@ -46,6 +48,9 @@ public sealed class Engine : IDisposable
     readonly Dictionary<ProcKey, Tracked> tracked = new();
     readonly HashSet<ProcKey> jobLimited = new();
     readonly List<string> pendingActed = new();
+    readonly List<(string Title, string Message)> pendingNotifications = new();
+    readonly KeepAwake keepAwake = new();
+    readonly Func<DateTime> now;
     readonly Stopwatch clock = new();
     readonly int ownPid = Environment.ProcessId;
     readonly int cores = Environment.ProcessorCount;
@@ -60,12 +65,20 @@ public sealed class Engine : IDisposable
     (bool Active, string? Trigger)? pendingGameEvent;
     System.Threading.Timer? timer;
 
-    public Engine(Settings settings, IPowerPlanApi powerApi, string? powerStateFile = null, Func<int>? foregroundPid = null)
+    /// <param name="clock">Horloge (les tests de surveillance l'avancent à la main).</param>
+    public Engine(Settings settings, IPowerPlanApi powerApi, string? powerStateFile = null, Func<int>? foregroundPid = null, Func<DateTime>? clock = null)
     {
         this.settings = settings;
         power = new PowerPlanManager(powerApi, powerStateFile);
         this.foregroundPid = foregroundPid ?? Native.GetForegroundPid;
+        now = clock ?? (() => DateTime.UtcNow);
     }
+
+    /// <summary>Message à afficher à l'utilisateur (programme bloqué, alerte de surveillance). Levé hors verrou.</summary>
+    public event Action<string, string>? Notification;
+
+    /// <summary>Raison de la demande « empêcher la veille » en cours, ou null.</summary>
+    public string? KeepAwakeReason { get; private set; }
 
     /// <summary>Levé sur le thread du moteur après chaque passage.</summary>
     public event Action<EngineSnapshot>? SnapshotReady;
@@ -134,6 +147,8 @@ public sealed class Engine : IDisposable
             stopped = true;
             timer?.Dispose();
             timer = null;
+            keepAwake.Dispose();
+            KeepAwakeReason = null;
             try { RestoreAll(); }
             catch (Exception ex) { Log.Error("Restauration à l'arrêt", ex); }
             Log.Info("Moteur arrêté");
@@ -154,6 +169,7 @@ public sealed class Engine : IDisposable
         EngineSnapshot? snapshot = null;
         List<string>? acted = null;
         (bool Active, string? Trigger)? game;
+        List<(string Title, string Message)> notifications;
         lock (sync)
         {
             if (stopped)
@@ -168,6 +184,8 @@ public sealed class Engine : IDisposable
             }
             game = pendingGameEvent;
             pendingGameEvent = null;
+            notifications = pendingNotifications.ToList();
+            pendingNotifications.Clear();
         }
         // Événements levés hors verrou : un abonné lent ne bloque pas le moteur.
         try
@@ -178,6 +196,8 @@ public sealed class Engine : IDisposable
                 ProBalanceActed?.Invoke(acted, snapshot.SystemCpu);
             if (game is { } g)
                 GameModeChanged?.Invoke(g.Active, g.Trigger);
+            foreach (var (title, message) in notifications)
+                Notification?.Invoke(title, message);
         }
         catch (Exception ex) { Log.Error("Affichage", ex); }
     }
@@ -256,6 +276,10 @@ public sealed class Engine : IDisposable
         if (r.IoPriority is { } io) parts.Add("disque " + IoLabel(io).ToLowerInvariant());
         if (r.MemoryPriority is { } mp) parts.Add("mémoire " + MemoryLabel(mp).ToLowerInvariant());
         if (r.IsGame) parts.Add("jeu (Mode Jeu)");
+        if (r.KeepAwake) parts.Add("empêche la veille");
+        if (r.Block == BlockMode.Always) parts.Add("bloqué");
+        if (r.Block == BlockMode.SingleInstance) parts.Add("une seule instance");
+        if (r.HasAlert) parts.Add("surveillé");
         return parts.Count == 0 ? "aucun effet" : string.Join(" · ", parts);
     }
 
@@ -281,6 +305,7 @@ public sealed class Engine : IDisposable
         var live = new Dictionary<ProcKey, Process>(procs.Length);
         var rows = new List<ProcessRow>(procs.Length);
         var samples = new List<ProBalanceLogic.Sample>();
+        var cpuByKey = new Dictionary<ProcKey, double>();
         try
         {
             foreach (var p in procs)
@@ -300,6 +325,8 @@ public sealed class Engine : IDisposable
                 }
 
                 double cpu = SampleCpu(p, t, elapsedMs);
+                if (t.Rule?.HasAlert == true)
+                    cpuByKey[key] = cpu;
                 if (pbActive)
                 {
                     bool eligible = !Exclusions.IsProtected(key.Name, key.Pid, ownPid)
@@ -335,6 +362,12 @@ public sealed class Engine : IDisposable
                 proBalance.Reset();
 
             UpdateGameMode(s);
+            if (!paused)
+            {
+                EnforceSingleInstance(live);
+                RunAlerts(live, cpuByKey);
+            }
+            UpdateKeepAwake();
         }
         finally
         {
@@ -383,6 +416,115 @@ public sealed class Engine : IDisposable
         }
     }
 
+    /// <summary>« Une seule instance » : on garde la plus ancienne de chaque exécutable, les autres sont fermées.</summary>
+    void EnforceSingleInstance(Dictionary<ProcKey, Process> live)
+    {
+        var groups = tracked
+            .Where(kv => kv.Value.Rule?.Block == BlockMode.SingleInstance && live.ContainsKey(kv.Key))
+            .GroupBy(kv => (kv.Value.Rule, Name: kv.Key.Name.ToLowerInvariant()))
+            .Where(g => g.Count() > 1);
+        foreach (var group in groups)
+        {
+            foreach (var (key, _) in group.OrderBy(kv => kv.Key.StartTicks).Skip(1))
+            {
+                if (TryDo(key, "fermeture (une seule instance)", () => live[key].Kill()))
+                {
+                    Log.Info($"{key.Name} ({key.Pid}) fermé : une seule instance autorisée", LogCategory.Rule);
+                    pendingNotifications.Add(("Programme bloqué", $"Une seule instance de « {key.Name} » est autorisée : la nouvelle a été fermée."));
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Surveillance : si un programme dépasse son seuil CPU ou mémoire pendant la durée prévue,
+    /// on prévient, on abaisse sa priorité ou on le ferme — une fois, jusqu'à ce qu'il repasse sous le seuil.
+    /// </summary>
+    void RunAlerts(Dictionary<ProcKey, Process> live, Dictionary<ProcKey, double> cpuByKey)
+    {
+        var t0 = now();
+        foreach (var (key, cpu) in cpuByKey)
+        {
+            if (!tracked.TryGetValue(key, out var t) || t.Rule is not { HasAlert: true } rule || !live.TryGetValue(key, out var p))
+                continue;
+            long privateBytes = 0;
+            try { privateBytes = p.PrivateMemorySize64; } catch { }
+            string? reason = null;
+            if (rule.AlertCpuPercent is > 0 and var c && cpu >= c)
+                reason = $"{cpu:0} % du processeur";
+            else if (rule.AlertMemoryMB is > 0 and var m && privateBytes >= (long)m * 1024 * 1024)
+                reason = $"{privateBytes / (1024 * 1024):N0} Mo de mémoire";
+
+            if (reason == null)
+            {
+                t.AlertSince = null;
+                t.AlertFired = false;
+                continue;
+            }
+            t.AlertSince ??= t0;
+            if (t.AlertFired || t0 - t.AlertSince.Value < TimeSpan.FromMinutes(rule.AlertMinutes))
+                continue;
+            t.AlertFired = true;
+
+            var duration = $"depuis {rule.AlertMinutes} min";
+            switch (rule.AlertAction)
+            {
+                case AlertAction.Lower:
+                    if (TryDo(key, "surveillance : abaissement", () =>
+                        {
+                            var current = p.PriorityClass;
+                            p.PriorityClass = ProcessPriorityClass.Idle;
+                            t.OrigPriority ??= current;
+                        }))
+                        Notify(key, $"« {key.Name} » utilise {reason} {duration} : sa priorité a été baissée.");
+                    break;
+                case AlertAction.Close:
+                    if (TryDo(key, "surveillance : fermeture", () => p.Kill()))
+                        Notify(key, $"« {key.Name} » utilisait {reason} {duration} : il a été fermé.");
+                    break;
+                default:
+                    Notify(key, $"« {key.Name} » utilise {reason} {duration}.");
+                    break;
+            }
+        }
+
+        void Notify(ProcKey key, string message)
+        {
+            Log.Warn($"Surveillance : {message} (PID {key.Pid})", LogCategory.Rule);
+            pendingNotifications.Add(("Surveillance", message));
+        }
+    }
+
+    /// <summary>Demande « pas de mise en veille » tant qu'un programme dont la règle l'exige tourne.</summary>
+    void UpdateKeepAwake()
+    {
+        string? reason = null;
+        if (!paused)
+        {
+            var names = tracked.Values.Where(t => t.Rule?.KeepAwake == true).Select(t => t.Name)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (names.Count > 0)
+                reason = $"Corral : {string.Join(", ", names.Take(3))} en cours";
+        }
+        if (reason == KeepAwakeReason)
+            return;
+        try
+        {
+            keepAwake.Set(reason);
+            if ((reason == null) != (KeepAwakeReason == null))
+                Log.Info(reason == null ? "Mise en veille de nouveau autorisée" : $"Mise en veille empêchée ({reason})", LogCategory.Power);
+            KeepAwakeReason = reason;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Empêcher la mise en veille", ex);
+        }
+    }
+
+    /// <summary>Motif qui viserait tous les programmes : jamais de blocage avec (sécurité).</summary>
+    public static bool IsCatchAll(string pattern) =>
+        RuleMatcher.Normalize(pattern).Trim('*', '?').Length == 0;
+
     static bool IsBackgroundApp(Settings s, string name) =>
         s.GameMode.BackgroundApps.Any(x => RuleMatcher.Matches(x, name));
 
@@ -397,6 +539,16 @@ public sealed class Engine : IDisposable
         t.Rule = rule;
         if (rule == null)
             return;
+
+        if (rule.Block == BlockMode.Always && !IsCatchAll(rule.Pattern))
+        {
+            if (TryDo(key, "blocage", () => p.Kill()))
+            {
+                Log.Info($"{key.Name} ({key.Pid}) bloqué par la règle « {rule.Pattern} »", LogCategory.Rule);
+                pendingNotifications.Add(("Programme bloqué", $"« {key.Name} » a été fermé : la règle « {rule.Pattern} » l'interdit."));
+            }
+            return;
+        }
 
         var done = new List<string>();
         if (rule.Priority is { } priority)

@@ -19,6 +19,7 @@ public sealed class TrayContext : ApplicationContext
     readonly ToolStripMenuItem updateItem = new() { Visible = false };
     readonly System.Windows.Forms.Timer updateTimer = new();
     readonly ToolStripMenuItem proBalanceItem = new("ProBalance");
+    readonly GlobalHotkeys hotkeys = new();
     readonly SynchronizationContext ui;
     // Bulles ProBalance : au plus une toutes les 30 s, les suivantes sont regroupées
     static readonly TimeSpan NotifyCooldown = TimeSpan.FromSeconds(30);
@@ -93,7 +94,8 @@ public sealed class TrayContext : ApplicationContext
         {
             if (exiting)
                 return;
-            var text = $"Corral — CPU {snap.SystemCpu:0} %" + (snap.Paused ? " (en pause)" : "");
+            var text = $"Corral — CPU {snap.SystemCpu:0} %" + (snap.Paused ? " (en pause)" : "")
+                       + (snap.GameMode ? " · Mode Jeu" : "") + (engine.KeepAwakeReason != null ? " · veille bloquée" : "");
             if (tray.Text != text)
                 tray.Text = text;
         }, null);
@@ -115,6 +117,11 @@ public sealed class TrayContext : ApplicationContext
             notifyTimer.Stop();
             FlushNotify();
         };
+        // Programme bloqué, alerte de surveillance : toujours signalés
+        engine.Notification += (title, message) => ui.Post(_ => Balloon(title, message), null);
+
+        form.HotkeysChanged += () => form.SetHotkeyStatus(RegisterHotkeys());
+        form.SetHotkeyStatus(RegisterHotkeys());
 
         engine.Start();
         if (!startHidden)
@@ -135,6 +142,43 @@ public sealed class TrayContext : ApplicationContext
             };
             updateTimer.Start();
         }
+    }
+
+    void Balloon(string title, string message)
+    {
+        if (exiting)
+            return;
+        lastBalloonIsUpdate = false;
+        tray.ShowBalloonTip(6000, title, message, ToolTipIcon.Info);
+    }
+
+    /// <summary>(Ré)enregistre les raccourcis globaux ; renvoie ceux qu'une autre application utilise déjà.</summary>
+    List<string> RegisterHotkeys()
+    {
+        hotkeys.UnregisterAll();
+        var failed = new List<string>();
+        void Add(int? keys, string name, Action action)
+        {
+            if (keys is { } k && !hotkeys.Register((Keys)k, action))
+            {
+                failed.Add($"{name} ({GlobalHotkeys.Format((Keys)k)})");
+                Log.Warn($"Raccourci {GlobalHotkeys.Format((Keys)k)} ({name}) déjà utilisé par une autre application");
+            }
+        }
+        Add(settings.Hotkeys.GameMode, "Mode Jeu", () =>
+        {
+            var message = form.ToggleGameMode(quiet: true);
+            // Les changements d'état ont leur propre bulle ; on n'explique que le cas « actif automatiquement »
+            if (message != null && message.Contains("automatiquement"))
+                Balloon("Mode Jeu", message);
+        });
+        Add(settings.Hotkeys.Pause, "Pause", () =>
+        {
+            pauseItem.Checked = !pauseItem.Checked;
+            Balloon("Corral", pauseItem.Checked ? "En pause : règles et ProBalance suspendus." : "Reprise : règles et ProBalance de nouveau actifs.");
+        });
+        Add(settings.Hotkeys.ShowWindow, "Afficher Corral", ShowForm);
+        return failed;
     }
 
     void NotifyProBalance(IReadOnlyList<string> names)
@@ -267,6 +311,7 @@ public sealed class TrayContext : ApplicationContext
         exiting = true;
         updateTimer.Stop();
         notifyTimer.Stop();
+        hotkeys.Dispose();
         engine.Stop();
         tray.Visible = false;
         tray.Dispose();

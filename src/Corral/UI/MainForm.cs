@@ -27,7 +27,8 @@ public sealed class MainForm : Form
     readonly Dictionary<string, Image> iconCache = new(StringComparer.OrdinalIgnoreCase);
     readonly Image genericIcon = ScaleIcon(SystemIcons.Application);
     Panel? welcome;
-    EngineSnapshot? lastSnapshot;
+    EngineSnapshot? lastSnapshot;        // dernier affiché (thread de l'interface)
+    volatile EngineSnapshot? latestSnapshot; // dernier reçu, même fenêtre cachée
 
     // Graphique
     readonly CpuHistory cpuHistory = new(TimeSpan.FromMinutes(15));
@@ -83,6 +84,20 @@ public sealed class MainForm : Form
     /// <summary>Bouton Pause de la barre latérale ; l'icône de notification garde l'état de référence.</summary>
     public event Action<bool>? PauseRequested;
 
+    /// <summary>Les raccourcis globaux ont changé : l'icône de notification les réenregistre.</summary>
+    public event Action? HotkeysChanged;
+
+    readonly Label hotkeyStatus = new() { AutoSize = true, Tag = Theme.HintTag, MaximumSize = new Size(640, 0), Margin = new Padding(0, 6, 0, 0) };
+
+    /// <summary>Affiche les raccourcis qui n'ont pas pu être enregistrés (déjà pris par une autre application).</summary>
+    public void SetHotkeyStatus(IReadOnlyList<string> failed)
+    {
+        hotkeyStatus.Text = failed.Count == 0
+            ? "Actifs partout, même quand Corral est caché ou qu'un jeu est au premier plan."
+            : $"Déjà utilisé par une autre application : {string.Join(", ", failed)}. Choisissez une autre combinaison.";
+        hotkeyStatus.ForeColor = failed.Count == 0 ? Theme.Current.Muted : Theme.Current.Warning;
+    }
+
     public MainForm(Engine engine, RuleStore store, Settings settings)
     {
         this.engine = engine;
@@ -108,7 +123,7 @@ public sealed class MainForm : Form
         AddPage("", "Journal", BuildLogPage());
         nav.SelectedChanged += SelectPage;
         nav.PauseRequested += paused => PauseRequested?.Invoke(paused);
-        nav.GameRequested += ToggleGameMode;
+        nav.GameRequested += OnGameButton;
         tips.SetToolTip(nav.GameButton, "Plan Performances, ProBalance réactif et programmes de fond calmés le temps de jouer");
 
         Controls.Add(pageHost);
@@ -588,6 +603,7 @@ public sealed class MainForm : Form
         // Historique alimenté même fenêtre cachée ; la toute première mesure (sans référence, donc 0) est ignorée.
         if (Interlocked.Increment(ref snapshotCount) > 1)
             cpuHistory.Add(DateTime.UtcNow, snapshot.SystemCpu);
+        latestSnapshot = snapshot; // à jour même fenêtre cachée (raccourcis, icône de notification)
         if (!shown)
             return;
         try { BeginInvoke(() => ApplySnapshot(snapshot)); }
@@ -663,7 +679,7 @@ public sealed class MainForm : Form
             item.SubItems[index].Text = text;
     }
 
-    List<string> RunningNames() => lastSnapshot?.Rows.Select(r => r.Name).ToList() ?? new();
+    List<string> RunningNames() => latestSnapshot?.Rows.Select(r => r.Name).ToList() ?? new();
 
     // ---------- Graphique ----------
 
@@ -1124,7 +1140,7 @@ public sealed class MainForm : Form
 
     Control BuildGamePage()
     {
-        gameToggle.Click += (_, _) => ToggleGameMode();
+        gameToggle.Click += (_, _) => OnGameButton();
         var addGame = new ModernButton("Ajouter un jeu…");
         addGame.Click += (_, _) => AddRule(new Rule { IsGame = true, Priority = System.Diagnostics.ProcessPriorityClass.High });
         tips.SetToolTip(addGame, "Crée une règle marquée « C'est un jeu » : le Mode Jeu s'activera quand ce programme tourne.");
@@ -1211,19 +1227,25 @@ public sealed class MainForm : Form
     }
 
     /// <summary>Bouton Mode Jeu (barre latérale, page, icône de notification).</summary>
-    public void ToggleGameMode()
+    /// <param name="quiet">Depuis un raccourci clavier (peut-être en plein jeu) : pas de boîte de dialogue,
+    /// le message est renvoyé pour être affiché en bulle.</param>
+    public string? ToggleGameMode(bool quiet = false)
     {
-        bool active = lastSnapshot?.GameMode == true;
-        if (active && !engine.GameModeManual)
+        var snap = latestSnapshot;
+        if (snap?.GameMode == true && !engine.GameModeManual)
         {
-            MessageBox.Show(this,
-                $"Le Mode Jeu est actif automatiquement parce que « {lastSnapshot?.GameTrigger} » tourne.\nIl se désactivera tout seul à sa fermeture.\n\n" +
-                "Pour ne plus le déclencher automatiquement, désactivez l'option dans la page Mode Jeu.",
-                Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
+            var message = $"Le Mode Jeu est actif automatiquement parce que « {snap.GameTrigger} » tourne. Il se désactivera tout seul à sa fermeture.";
+            if (!quiet)
+                MessageBox.Show(this, message + "\n\nPour ne plus le déclencher automatiquement, désactivez l'option dans la page Mode Jeu.",
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return message;
         }
-        engine.SetGameMode(!engine.GameModeManual);
+        bool enable = !engine.GameModeManual;
+        engine.SetGameMode(enable);
+        return enable ? "Mode Jeu activé." : "Mode Jeu désactivé.";
     }
+
+    void OnGameButton() => ToggleGameMode(quiet: false);
 
     void UpdateGameStatus(EngineSnapshot snap)
     {
@@ -1308,6 +1330,12 @@ public sealed class MainForm : Form
             SettingRow("Message d'accueil", "Les trois choses à savoir pour bien démarrer.", showWelcome),
             shortcuts), "Aide"));
         stack.Controls.Add(new Card(Rows(
+            SettingRow("Mode Jeu", "Activer ou désactiver le Mode Jeu.", HotkeyField(h => h.GameMode, (h, v) => h.GameMode = v)),
+            SettingRow("Pause", "Suspendre ou reprendre toutes les règles et ProBalance.", HotkeyField(h => h.Pause, (h, v) => h.Pause = v)),
+            SettingRow("Afficher Corral", "Ouvrir la fenêtre de Corral.", HotkeyField(h => h.ShowWindow, (h, v) => h.ShowWindow = v)),
+            hotkeyStatus), "Raccourcis clavier globaux"));
+        SetHotkeyStatus(Array.Empty<string>()); // corrigé par l'icône de notification après l'enregistrement réel
+        stack.Controls.Add(new Card(Rows(
             SettingRow("Configuration et journal", store.ConfigDirectory, openFolder),
             new Label
             {
@@ -1319,6 +1347,19 @@ public sealed class MainForm : Form
                        "restaure les priorités, affinités et le plan d'alimentation d'origine.",
             }), "Données"));
         return MakePage("Options", "Apparence, démarrage, mises à jour et aide.", stack);
+    }
+
+    HotkeyBox HotkeyField(Func<HotkeySettings, int?> get, Action<HotkeySettings, int?> set)
+    {
+        var box = new HotkeyBox { Value = get(settings.Hotkeys) is { } k ? (Keys)k : null };
+        tips.SetToolTip(box, "Cliquez puis appuyez sur la combinaison (Ctrl ou Alt + une touche). Retour arrière pour aucun.");
+        box.ValueChanged += (_, _) =>
+        {
+            set(settings.Hotkeys, box.Value is { } v ? (int)v : null);
+            SaveSettings();
+            HotkeysChanged?.Invoke();
+        };
+        return box;
     }
 
     void ToggleAutoStart()

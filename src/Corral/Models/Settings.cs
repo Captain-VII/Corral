@@ -19,6 +19,35 @@ public sealed class Rule
     public Corral.Core.MemoryPriorityLevel? MemoryPriority { get; set; }
     /// <summary>Ce programme est un jeu : le Mode Jeu s'active tant qu'il tourne (si l'option est activée).</summary>
     public bool IsGame { get; set; }
+
+    /// <summary>Le PC ne se met pas en veille tant que ce programme tourne.</summary>
+    public bool KeepAwake { get; set; }
+    public BlockMode Block { get; set; }
+
+    /// <summary>Surveillance : seuil CPU (% du total) ; null = pas de surveillance CPU.</summary>
+    public int? AlertCpuPercent { get; set; }
+    /// <summary>Surveillance : seuil de mémoire privée en Mo ; null = pas de surveillance mémoire.</summary>
+    public int? AlertMemoryMB { get; set; }
+    /// <summary>Durée pendant laquelle le seuil doit être dépassé avant d'agir.</summary>
+    public int AlertMinutes { get; set; } = 2;
+    public AlertAction AlertAction { get; set; }
+
+    public bool HasAlert => AlertCpuPercent is > 0 || AlertMemoryMB is > 0;
+}
+
+public enum BlockMode { None, Always, SingleInstance }
+
+public enum AlertAction { Notify, Lower, Close }
+
+/// <summary>
+/// Raccourcis clavier globaux, stockés comme valeur entière de System.Windows.Forms.Keys
+/// (touche + modificateurs) ; null = aucun.
+/// </summary>
+public sealed class HotkeySettings
+{
+    public int? GameMode { get; set; } = (int)(System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.Alt | System.Windows.Forms.Keys.G);
+    public int? Pause { get; set; } = (int)(System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.Alt | System.Windows.Forms.Keys.P);
+    public int? ShowWindow { get; set; }
 }
 
 /// <summary>
@@ -103,6 +132,7 @@ public sealed class Settings
     public bool StartMenuShortcut { get; set; } = true;
     public WindowSettings Window { get; set; } = new();
     public GameModeSettings GameMode { get; set; } = new();
+    public HotkeySettings Hotkeys { get; set; } = new();
 
     /// <summary>Corrige les valeurs nulles ou hors bornes après une lecture JSON.</summary>
     public void Normalize()
@@ -122,6 +152,9 @@ public sealed class Settings
         ProBalance.RestoreSeconds = Math.Clamp(ProBalance.RestoreSeconds, 1, 60);
         Window ??= new();
         GameMode ??= new();
+        Hotkeys ??= new();
+        foreach (var r in Rules)
+            r.AlertMinutes = Math.Clamp(r.AlertMinutes, 1, 120);
         GameMode.BackgroundApps ??= new();
         GameMode.BackgroundApps.RemoveAll(string.IsNullOrWhiteSpace);
         if (Window.Width < 0 || Window.Height < 0 || Window.Width > 20_000 || Window.Height > 20_000)
