@@ -164,27 +164,22 @@ public class EngineQolTests
     [Fact]
     public void PathAndPriorityOnce()
     {
-        using var ping = Process.Start(new ProcessStartInfo("ping.exe", "-n 60 127.0.0.1") { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true })!;
-        try
-        {
-            var settings = new Settings();
-            settings.ProBalance.Enabled = false;
-            var engine = new Engine(settings, new NoPower(), foregroundPid: () => -1);
-            var snap = engine.TickOnce();
-            var row = Assert.Single(snap.Rows, r => r.Pid == ping.Id);
-            Assert.EndsWith("ping.exe", row.Path, StringComparison.OrdinalIgnoreCase);
+        using var procs = new TestProcesses();
+        var name = procs.Name("qol");
+        var ping = procs.Ping(name);
+        var settings = new Settings();
+        settings.ProBalance.Enabled = false;
+        var engine = new Engine(settings, new NoPower(), foregroundPid: () => -1);
+        var snap = engine.TickOnce();
+        var row = Assert.Single(snap.Rows, r => r.Pid == ping.Id);
+        Assert.EndsWith(name + ".exe", row.Path, StringComparison.OrdinalIgnoreCase);
 
-            Assert.Null(engine.SetPriorityOnce(ping.Id, row.Name, ProcessPriorityClass.BelowNormal));
-            ping.Refresh();
-            Assert.Equal(ProcessPriorityClass.BelowNormal, ping.PriorityClass);
+        Assert.Null(engine.SetPriorityOnce(ping.Id, row.Name, ProcessPriorityClass.BelowNormal));
+        ping.Refresh();
+        Assert.Equal(ProcessPriorityClass.BelowNormal, ping.PriorityClass);
 
-            Assert.NotNull(engine.SetPriorityOnce(ping.Id, "autre-nom", ProcessPriorityClass.High)); // mauvais processus : refusé
-            Assert.NotNull(engine.SetPriorityOnce(4, "System", ProcessPriorityClass.High));          // processus système : refusé
-            engine.Stop();
-        }
-        finally
-        {
-            ping.Kill();
-        }
+        Assert.NotNull(engine.SetPriorityOnce(ping.Id, "autre-nom", ProcessPriorityClass.High)); // mauvais processus : refusé
+        Assert.NotNull(engine.SetPriorityOnce(4, "System", ProcessPriorityClass.High));          // processus système : refusé
+        engine.Stop();
     }
 }

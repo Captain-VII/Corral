@@ -78,12 +78,9 @@ public class AutomationTests : IDisposable
     [Fact]
     public void MemoryAlertWaitsForTheDurationThenClosesOnce()
     {
-        // Copie de cmd.exe (≈ 7 Mo de mémoire privée, au-dessus du seuil de 1 Mo)
-        Directory.CreateDirectory(dir);
-        var exe = Path.Combine(dir, "corral_alert_test.exe");
-        File.Copy(Path.Combine(Environment.SystemDirectory, "cmd.exe"), exe);
-        var p = Process.Start(new ProcessStartInfo(exe, "/c ping -n 60 127.0.0.1 >nul") { CreateNoWindow = true, UseShellExecute = false })!;
-        started.Add(p);
+        // Copie de cmd.exe en attente (≈ 7 Mo de mémoire privée, au-dessus du seuil de 1 Mo), sans processus enfant
+        using var procs = new TestProcesses();
+        var p = procs.Cmd("corral_alert_test");
         Thread.Sleep(300);
 
         var engine = NewEngine(new Rule { Pattern = "corral_alert_test", AlertMemoryMB = 1, AlertMinutes = 2, AlertAction = AlertAction.Close });
