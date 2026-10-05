@@ -255,8 +255,8 @@ public sealed class NavBar : Control
 {
     const int ItemHeight = 38, ItemTop = 76, Side = 10;
     readonly List<(string Glyph, string Text)> items = new();
-    readonly ModernButton pause = new("Mettre en pause");
-    readonly ModernButton game = new("Mode Jeu");
+    readonly ModernButton pause = new(Tr("Mettre en pause", "Pause"));
+    readonly ModernButton game = new(Tr("Mode Jeu", "Game Mode"));
     int hover = -1;
     int selected;
     string cpuText = "—", processText = "";
@@ -306,20 +306,20 @@ public sealed class NavBar : Control
     public void SetStatus(double cpu, int processes, bool isPaused, bool gameActive = false, string? gameTrigger = null)
     {
         cpuText = $"{cpu:0} %";
-        processText = $"{processes} processus";
+        processText = Tr($"{processes} processus", $"{processes} processes");
         if (paused != isPaused)
         {
             paused = isPaused;
-            pause.Text = paused ? "Reprendre" : "Mettre en pause";
+            pause.Text = paused ? Tr("Reprendre", "Resume") : Tr("Mettre en pause", "Pause");
             pause.Primary = paused;
         }
         if (gameOn != gameActive)
         {
             gameOn = gameActive;
             game.Primary = gameActive;
-            game.Text = gameActive ? "Mode Jeu actif" : "Mode Jeu";
+            game.Text = gameActive ? Tr("Mode Jeu actif", "Game Mode on") : Tr("Mode Jeu", "Game Mode");
         }
-        gameText = gameActive ? (gameTrigger != null ? $"Mode Jeu : {gameTrigger}" : "Mode Jeu activé") : null;
+        gameText = gameActive ? (gameTrigger != null ? Tr($"Mode Jeu : {gameTrigger}", $"Game Mode: {gameTrigger}") : Tr("Mode Jeu activé", "Game Mode on")) : null;
         Invalidate(new Rectangle(0, Height - 200, Width, 110));
         pause.Invalidate();
         game.Invalidate();
@@ -405,9 +405,9 @@ public sealed class NavBar : Control
         int y = Height - 178;
         using (var sep = new Pen(p.Border))
             g.DrawLine(sep, Side + 6, y, Width - Side - 6, y);
-        TextRenderer.DrawText(g, "Processeur", Ui.Base, new Point(Side + 6, y + 12), p.Muted);
+        TextRenderer.DrawText(g, Tr("Processeur", "CPU"), Ui.Base, new Point(Side + 6, y + 12), p.Muted);
         TextRenderer.DrawText(g, cpuText, Ui.Big, new Point(Side + 4, y + 30), p.Fore);
-        TextRenderer.DrawText(g, paused ? "En pause · règles suspendues" : gameText ?? processText, Ui.Base, new Point(Side + 6, y + 62),
+        TextRenderer.DrawText(g, paused ? Tr("En pause · règles suspendues", "Paused · rules suspended") : gameText ?? processText, Ui.Base, new Point(Side + 6, y + 62),
             paused ? p.Warning : gameText != null ? p.Accent : p.Muted);
     }
 }
@@ -416,7 +416,7 @@ public sealed class NavBar : Control
 public sealed class UndoBanner : Panel
 {
     readonly Label text = new() { AutoSize = true, Margin = new Padding(0, 8, 12, 0) };
-    readonly ModernButton undo = new("Annuler") { Height = 30 };
+    readonly ModernButton undo = new(Tr("Annuler", "Undo")) { Height = 30 };
     readonly System.Windows.Forms.Timer timer = new() { Interval = 8000 };
     Action? onUndo;
 
@@ -481,7 +481,7 @@ public sealed class TopList : Control
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
     }
 
-    public string EmptyText { get; set; } = "Collecte des mesures…";
+    public string EmptyText { get; set; } = Tr("Collecte des mesures…", "Collecting data…");
 
     public void SetItems(IReadOnlyList<(string Name, double Value, string Text)> list)
     {
@@ -519,4 +519,40 @@ public sealed class TopList : Control
     }
 
     public override Size GetPreferredSize(Size proposed) => new(proposed.Width, Math.Max(RowHeight, items.Count * RowHeight));
+}
+
+/// <summary>Petite fenêtre de saisie d'un texte (nom de profil…).</summary>
+public static class InputBox
+{
+    /// <summary>Renvoie le texte saisi, ou null si l'utilisateur annule.</summary>
+    public static string? Ask(IWin32Window owner, string title, string prompt, string initial)
+    {
+        using var form = new Form
+        {
+            Text = title,
+            Font = Ui.Base,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.CenterParent,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        };
+        var box = new TextBox { Text = initial, Width = 340, Margin = new Padding(0, 6, 0, 0) };
+        var ok = new ModernButton("OK", primary: true) { DialogResult = DialogResult.OK };
+        var cancel = new ModernButton(Tr("Annuler", "Cancel")) { DialogResult = DialogResult.Cancel };
+        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 16, 0, 0) };
+        buttons.Controls.AddRange(new Control[] { ok, cancel });
+        var grid = new TableLayoutPanel { ColumnCount = 1, AutoSize = true, Padding = new Padding(20, 16, 20, 14) };
+        grid.Controls.Add(new Label { Text = prompt, AutoSize = true, MaximumSize = new Size(340, 0) });
+        grid.Controls.Add(box);
+        grid.Controls.Add(buttons);
+        form.Controls.Add(grid);
+        form.AcceptButton = ok;
+        form.CancelButton = cancel;
+        form.HandleCreated += (_, _) => Theme.ApplyTitleBar(form);
+        Theme.Apply(form);
+        return form.ShowDialog(owner) == DialogResult.OK ? box.Text : null;
+    }
 }

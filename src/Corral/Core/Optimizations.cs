@@ -78,7 +78,7 @@ public static class MemoryCleaner
                 throw new Win32Exception();
             var tp = new TOKEN_PRIVILEGES { Count = 1, Luid = luid, Attributes = SE_PRIVILEGE_ENABLED };
             if (!AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero) || Marshal.GetLastWin32Error() != 0)
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "Privilège indisponible (Corral doit tourner en administrateur)");
+                throw new Win32Exception(Marshal.GetLastWin32Error(), Tr("Privilège indisponible (Corral doit tourner en administrateur)", "Privilege unavailable (Corral must run as administrator)"));
         }
         finally
         {
@@ -145,9 +145,9 @@ public sealed class GpuPreferences
 
     public static string Label(GpuPreference p) => p switch
     {
-        GpuPreference.HighPerformance => "Haute performance",
-        GpuPreference.PowerSaving => "Économie d'énergie",
-        _ => "Laisser Windows décider",
+        GpuPreference.HighPerformance => Tr("Haute performance", "High performance"),
+        GpuPreference.PowerSaving => Tr("Économie d'énergie", "Power saving"),
+        _ => Tr("Laisser Windows décider", "Let Windows decide"),
     };
 
     public GpuPreference? Get(string exePath)

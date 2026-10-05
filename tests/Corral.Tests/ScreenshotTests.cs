@@ -17,6 +17,7 @@ public class ScreenshotTests
             return;
         var outDir = Environment.GetEnvironmentVariable("CORRAL_SCREENSHOTS_DIR") ?? Path.GetTempPath();
         var configDir = Path.Combine(Path.GetTempPath(), "CorralShots_" + Guid.NewGuid().ToString("N"));
+        Lang.Set(Environment.GetEnvironmentVariable("CORRAL_SCREENSHOTS_LANG") ?? "fr");
         var thread = new Thread(() =>
         {
             foreach (var mode in new[] { ThemeMode.Dark, ThemeMode.Light })
@@ -34,6 +35,15 @@ public class ScreenshotTests
                 engine.Start();
                 Pump(2500);
                 Capture(form, Path.Combine(outDir, $"shot-{mode}.png"));
+
+                using (var overlay = new OverlayWindow(new OverlaySettings { X = 1200, Y = 40 }))
+                {
+                    overlay.Show();
+                    overlay.SetSnapshot(new EngineSnapshot(67, false, Array.Empty<ProcessRow>(), GameMode: true, MemoryUsed: 11L << 30, MemoryTotal: 32L << 30));
+                    Pump(300);
+                    Capture(overlay, Path.Combine(outDir, $"shot-{mode}-overlay.png"));
+                    overlay.Close();
+                }
 
                 // Onglet Graphique avec 5 min de données de démonstration (dont un pic au-dessus du seuil)
                 var start = DateTime.UtcNow.AddMinutes(-5);

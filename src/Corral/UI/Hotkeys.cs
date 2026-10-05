@@ -49,16 +49,16 @@ public sealed class GlobalHotkeys : NativeWindow, IDisposable
     public static string Format(Keys? keys)
     {
         if (keys is not { } k || (k & Keys.KeyCode) == Keys.None)
-            return "Aucun";
+            return Tr("Aucun", "None");
         var parts = new List<string>();
         if (k.HasFlag(Keys.Control)) parts.Add("Ctrl");
         if (k.HasFlag(Keys.Alt)) parts.Add("Alt");
-        if (k.HasFlag(Keys.Shift)) parts.Add("Maj");
+        if (k.HasFlag(Keys.Shift)) parts.Add(Tr("Maj", "Shift"));
         var code = k & Keys.KeyCode;
         parts.Add(code switch
         {
             >= Keys.D0 and <= Keys.D9 => ((char)('0' + (code - Keys.D0))).ToString(),
-            >= Keys.NumPad0 and <= Keys.NumPad9 => "Pavé " + (code - Keys.NumPad0),
+            >= Keys.NumPad0 and <= Keys.NumPad9 => Tr("Pavé ", "Num ") + (code - Keys.NumPad0),
             _ => code.ToString(),
         });
         return string.Join(" + ", parts);
@@ -117,14 +117,14 @@ public sealed class HotkeyBox : TextBox
             var mods = new List<string>();
             if (e.Control) mods.Add("Ctrl");
             if (e.Alt) mods.Add("Alt");
-            if (e.Shift) mods.Add("Maj");
+            if (e.Shift) mods.Add(Tr("Maj", "Shift"));
             mods.Add("…");
             Text = string.Join(" + ", mods);
             return;
         }
         if (!e.Control && !e.Alt)
         {
-            Text = "Ctrl ou Alt + une touche";
+            Text = Tr("Ctrl ou Alt + une touche", "Ctrl or Alt + a key");
             return;
         }
         Value = e.KeyData;

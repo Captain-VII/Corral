@@ -71,10 +71,10 @@ public sealed class RuleStore
         }
         catch (JsonException ex)
         {
-            throw new InvalidDataException("Ce fichier n'est pas un export de règles Corral.", ex);
+            throw new InvalidDataException(Tr("Ce fichier n'est pas un export de règles Corral.", "This file is not a Corral rules export."), ex);
         }
         if (file?.Rules == null)
-            throw new InvalidDataException("Ce fichier ne contient aucune règle.");
+            throw new InvalidDataException(Tr("Ce fichier ne contient aucune règle.", "This file contains no rules."));
         var rules = file.Rules.Where(r => r != null && !string.IsNullOrWhiteSpace(r.Pattern)).ToList();
         foreach (var r in rules)
         {

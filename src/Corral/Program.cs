@@ -9,9 +9,11 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        Lang.Set(null); // langue de Windows, en attendant la configuration
         bool justUpdated = args.Contains("--updated");
+        bool restarted = args.Contains("--restart"); // changement de langue
         using var mutex = new Mutex(true, @"Global\Corral_SingleInstance", out bool firstInstance);
-        if (!firstInstance && justUpdated)
+        if (!firstInstance && (justUpdated || restarted))
         {
             // Après une mise à jour, l'ancienne version est en train de se fermer : on attend qu'elle libère la place.
             try { firstInstance = mutex.WaitOne(TimeSpan.FromSeconds(30)); }
@@ -19,7 +21,7 @@ static class Program
         }
         if (!firstInstance)
         {
-            MessageBox.Show("Corral est déjà lancé (icône dans la zone de notification).", "Corral",
+            MessageBox.Show(Tr("Corral est déjà lancé (icône dans la zone de notification).", "Corral is already running (icon in the notification area)."), "Corral",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -29,7 +31,7 @@ static class Program
         Application.ThreadException += (_, e) =>
         {
             Log.Error("Erreur interface", e.Exception);
-            MessageBox.Show(e.Exception.Message, "Corral - erreur", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(e.Exception.Message, Tr("Corral - erreur", "Corral - error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
         };
         AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Error("Erreur fatale", e.ExceptionObject as Exception);
 
@@ -43,6 +45,8 @@ static class Program
 
         var store = new RuleStore(Path.Combine(dir, "config.json"));
         var settings = store.Load();
+        Lang.Set(settings.Language);
+        Profiles.Ensure(settings, Tr("Principal", "Main"));
         UI.Theme.Set(settings.Theme);
 
         if (settings.GameMode.PowerPlan == null)
@@ -76,6 +80,6 @@ static class Program
         SystemEvents.SessionEnding += (_, _) => engine.Stop();
         Application.ApplicationExit += (_, _) => engine.Stop();
 
-        Application.Run(new TrayContext(engine, store, settings, startHidden: args.Contains("--minimized") || justUpdated, justUpdated));
+        Application.Run(new TrayContext(engine, store, settings, startHidden: (args.Contains("--minimized") || justUpdated) && !restarted, justUpdated));
     }
 }

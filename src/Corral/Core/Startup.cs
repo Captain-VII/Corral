@@ -11,11 +11,11 @@ public sealed record StartupItem(string Name, string Entry, string Command, Star
 {
     public string SourceLabel => Source switch
     {
-        StartupSource.UserRun => "Registre (utilisateur)",
-        StartupSource.MachineRun => "Registre (tous)",
-        StartupSource.MachineRun32 => "Registre (tous, 32 bits)",
-        StartupSource.UserFolder => "Dossier Démarrage",
-        _ => "Dossier Démarrage (tous)",
+        StartupSource.UserRun => Tr("Registre (utilisateur)", "Registry (this user)"),
+        StartupSource.MachineRun => Tr("Registre (tous)", "Registry (all users)"),
+        StartupSource.MachineRun32 => Tr("Registre (tous, 32 bits)", "Registry (all, 32-bit)"),
+        StartupSource.UserFolder => Tr("Dossier Démarrage", "Startup folder"),
+        _ => Tr("Dossier Démarrage (tous)", "Startup folder (all)"),
     };
 }
 
@@ -73,7 +73,7 @@ public sealed class StartupManager
         if (!enabled)
             BitConverter.GetBytes(DateTime.UtcNow.ToFileTimeUtc()).CopyTo(data, 4); // date de désactivation, comme Windows
         key.SetValue(item.Entry, data, RegistryValueKind.Binary);
-        Log.Info($"Démarrage : « {item.Name} » {(enabled ? "activé" : "désactivé")}");
+        Log.Info(Tr($"Démarrage : « {item.Name} » {(enabled ? "activé" : "désactivé")}", $"Startup: “{item.Name}” {(enabled ? "enabled" : "disabled")}"));
     }
 
     (Hive Hive, string Sub) Approved(StartupSource source) => source switch

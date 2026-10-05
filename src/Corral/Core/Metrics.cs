@@ -90,7 +90,7 @@ public sealed class GpuSampler : IDisposable
                 if (PdhOpenQuery(null, IntPtr.Zero, out query) != 0
                     || PdhAddEnglishCounter(query, @"\GPU Engine(*)\Utilization Percentage", IntPtr.Zero, out counter) != 0)
                 {
-                    Fail("compteurs GPU indisponibles");
+                    Fail(Tr("compteurs GPU indisponibles", "GPU counters unavailable"));
                     return Empty;
                 }
             }
@@ -131,7 +131,7 @@ public sealed class GpuSampler : IDisposable
     void Fail(string reason)
     {
         failed = true;
-        Log.Warn("Usage GPU par processus désactivé : " + reason);
+        Log.Warn(Tr("Usage GPU par processus désactivé : ", "Per-process GPU usage disabled: ") + reason);
     }
 
     /// <summary>Regroupe les instances « pid_1234_luid_…_eng_0_engtype_3D » par processus.</summary>

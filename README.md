@@ -9,7 +9,8 @@ Gestionnaire de processus pour Windows 10/11, dans l'esprit de Process Lasso.
 - **Restauration** : priorités, affinités et plan d'alimentation d'origine sont rétablis à la fermeture ou en pause, et aussi après un plantage (pour le plan d'alimentation).
 - **Surveillance** : CPU, mémoire, disque (E/S) et GPU par processus, avec l'historique des 5 dernières minutes dans la fiche de chaque processus.
 - **Démarrage** : liste des programmes lancés avec Windows, à activer ou désactiver comme dans le Gestionnaire des tâches.
-- **Interface** : icône dans la zone de notification, thème clair ou sombre, démarrage à l'ouverture de session.
+- **Profils** : plusieurs jeux de règles (Travail, Jeu, Silencieux…) à activer en un clic, depuis la page Règles ou l'icône de notification.
+- **Interface** : en français ou en anglais (selon Windows), thème clair ou sombre, icône de notification avec la charge du processeur, mini-fenêtre toujours visible, démarrage à l'ouverture de session.
 - **Mises à jour automatiques** via les releases GitHub, avec vérification SHA-256.
 
 ## Installation

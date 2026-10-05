@@ -112,9 +112,9 @@ public sealed class ProBalanceSettings
 
     public static readonly Preset[] Presets =
     {
-        new("Doux", 85, 10, 4, 5, 8),
-        new("Équilibré", 75, 5, 2, 3, 5),
-        new("Réactif", 60, 3, 1, 2, 5),
+        new(Tr("Doux", "Gentle"), 85, 10, 4, 5, 8),
+        new(Tr("Équilibré", "Balanced"), 75, 5, 2, 3, 5),
+        new(Tr("Réactif", "Responsive"), 60, 3, 1, 2, 5),
     };
 
     public static Preset Default => Presets[1];
@@ -141,6 +141,21 @@ public sealed class WindowSettings
     public bool HasBounds => Width > 0 && Height > 0;
 }
 
+/// <summary>Jeu de règles nommé (voir Core.Profiles).</summary>
+public sealed class Profile
+{
+    public string Name { get; set; } = "";
+    public List<Rule> Rules { get; set; } = new();
+}
+
+/// <summary>Mini-fenêtre toujours visible (CPU et mémoire).</summary>
+public sealed class OverlaySettings
+{
+    public bool Enabled { get; set; }
+    public int? X { get; set; }
+    public int? Y { get; set; }
+}
+
 public enum ThemeMode { System, Light, Dark }
 
 public sealed class Settings
@@ -163,6 +178,14 @@ public sealed class Settings
     public ForegroundBoostSettings ForegroundBoost { get; set; } = new();
     public IdleSaverSettings IdleSaver { get; set; } = new();
     public MemoryCleanupSettings MemoryCleanup { get; set; } = new();
+    /// <summary>Langue de l'interface : « auto » (celle de Windows), « fr » ou « en ».</summary>
+    public string Language { get; set; } = "auto";
+    /// <summary>L'icône de notification affiche la charge du processeur au lieu du logo.</summary>
+    public bool TrayCpuIcon { get; set; }
+    public OverlaySettings Overlay { get; set; } = new();
+    /// <summary>Nom du profil dont les règles sont dans <see cref="Rules"/>.</summary>
+    public string ActiveProfile { get; set; } = "";
+    public List<Profile> Profiles { get; set; } = new();
 
     /// <summary>Corrige les valeurs nulles ou hors bornes après une lecture JSON.</summary>
     public void Normalize()
@@ -192,6 +215,21 @@ public sealed class Settings
             r.AlertMinutes = Math.Clamp(r.AlertMinutes, 1, 120);
         GameMode.BackgroundApps ??= new();
         GameMode.BackgroundApps.RemoveAll(string.IsNullOrWhiteSpace);
+        if (Language is not ("fr" or "en"))
+            Language = "auto";
+        Overlay ??= new();
+        ActiveProfile ??= "";
+        Profiles ??= new();
+        Profiles.RemoveAll(p => p is null || string.IsNullOrWhiteSpace(p.Name));
+        Profiles = Profiles.GroupBy(p => p.Name.Trim(), StringComparer.CurrentCultureIgnoreCase).Select(g => g.First()).ToList();
+        foreach (var p in Profiles)
+        {
+            p.Name = p.Name.Trim();
+            p.Rules ??= new();
+            p.Rules.RemoveAll(r => r is null);
+            foreach (var r in p.Rules)
+                r.Pattern ??= "";
+        }
         if (Window.Width < 0 || Window.Height < 0 || Window.Width > 20_000 || Window.Height > 20_000)
             Window = new() { LastPage = Window.LastPage };
     }

@@ -76,7 +76,7 @@ public static class AutoStart
             File.WriteAllText(tmp, xml, Encoding.Unicode);
             if (Run($"/create /tn {TaskName} /xml \"{tmp}\" /f", out var output) != 0)
                 throw new InvalidOperationException(output.Trim());
-            Log.Info("Démarrage automatique activé");
+            Log.Info(Tr("Démarrage automatique activé", "Start at sign-in enabled"));
         }
         finally
         {
@@ -88,7 +88,7 @@ public static class AutoStart
     {
         if (Run($"/delete /tn {TaskName} /f", out var output) != 0)
             throw new InvalidOperationException(output.Trim());
-        Log.Info("Démarrage automatique désactivé");
+        Log.Info(Tr("Démarrage automatique désactivé", "Start at sign-in disabled"));
     }
 
     static int Run(string args, out string output)

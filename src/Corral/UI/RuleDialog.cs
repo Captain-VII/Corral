@@ -13,21 +13,21 @@ public sealed class RuleDialog : Form
 
     public static readonly (string Label, ProcessPriorityClass? Value)[] Priorities =
     {
-        ("(inchangée)", null),
-        ("Inactive", ProcessPriorityClass.Idle),
-        ("Inférieure à la normale", ProcessPriorityClass.BelowNormal),
-        ("Normale", ProcessPriorityClass.Normal),
-        ("Supérieure à la normale", ProcessPriorityClass.AboveNormal),
-        ("Haute", ProcessPriorityClass.High),
+        (Tr("(inchangée)", "(unchanged)"), null),
+        (Tr("Inactive", "Idle"), ProcessPriorityClass.Idle),
+        (Tr("Inférieure à la normale", "Below normal"), ProcessPriorityClass.BelowNormal),
+        (Tr("Normale", "Normal"), ProcessPriorityClass.Normal),
+        (Tr("Supérieure à la normale", "Above normal"), ProcessPriorityClass.AboveNormal),
+        (Tr("Haute", "High"), ProcessPriorityClass.High),
     };
 
     static readonly Dictionary<ProcessPriorityClass, string> PriorityHelp = new()
     {
-        [ProcessPriorityClass.Idle] = "Le programme n'utilise le processeur que quand rien d'autre n'en a besoin. Pour ce qui peut attendre.",
-        [ProcessPriorityClass.BelowNormal] = "Laisse passer les autres programmes. Idéal pour les tâches de fond : sauvegarde, compression, téléchargements.",
-        [ProcessPriorityClass.Normal] = "La priorité par défaut de Windows.",
-        [ProcessPriorityClass.AboveNormal] = "Passe un peu avant les autres. Bien pour le streaming, l'enregistrement ou la musique.",
-        [ProcessPriorityClass.High] = "Passe avant presque tout. Idéal pour un jeu ; à éviter pour un programme qui tourne en permanence.",
+        [ProcessPriorityClass.Idle] = Tr("Le programme n'utilise le processeur que quand rien d'autre n'en a besoin. Pour ce qui peut attendre.", "The program only uses the CPU when nothing else needs it. For things that can wait."),
+        [ProcessPriorityClass.BelowNormal] = Tr("Laisse passer les autres programmes. Idéal pour les tâches de fond : sauvegarde, compression, téléchargements.", "Lets other programs go first. Ideal for background tasks: backup, compression, downloads."),
+        [ProcessPriorityClass.Normal] = Tr("La priorité par défaut de Windows.", "Windows' default priority."),
+        [ProcessPriorityClass.AboveNormal] = Tr("Passe un peu avant les autres. Bien pour le streaming, l'enregistrement ou la musique.", "Goes a little ahead of others. Good for streaming, recording or music."),
+        [ProcessPriorityClass.High] = Tr("Passe avant presque tout. Idéal pour un jeu ; à éviter pour un programme qui tourne en permanence.", "Goes ahead of almost everything. Ideal for a game; avoid for a program that runs all the time."),
     };
 
 
@@ -69,7 +69,7 @@ public sealed class RuleDialog : Form
     public RuleDialog(Rule? rule, IReadOnlyList<PowerPlanInfo> plans, bool isNew, IReadOnlyList<string>? runningNames = null)
     {
         running = runningNames ?? Array.Empty<string>();
-        Text = isNew ? "Nouvelle règle" : "Modifier la règle";
+        Text = isNew ? Tr("Nouvelle règle", "New rule") : Tr("Modifier la règle", "Edit rule");
         Font = Ui.Base;
         Icon = AppIcon.Load(new Size(32, 32));
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -83,7 +83,7 @@ public sealed class RuleDialog : Form
             priority.Items.Add(new Choice<ProcessPriorityClass?>(label, value));
         for (int i = 0; i < cpuCount; i++)
             cpus.Items.Add($"CPU {i}");
-        plan.Items.Add(new Choice<Guid?>("(inchangé)", null));
+        plan.Items.Add(new Choice<Guid?>(Tr("(inchangé)", "(unchanged)"), null));
         foreach (var p in plans)
             plan.Items.Add(new Choice<Guid?>(p.Name, p.Id));
 
@@ -92,8 +92,8 @@ public sealed class RuleDialog : Form
         pattern.AutoCompleteSource = AutoCompleteSource.CustomSource;
         pattern.AutoCompleteCustomSource.AddRange(running.Distinct(StringComparer.OrdinalIgnoreCase).Select(n => n + ".exe").ToArray());
 
-        var all = new ModernButton("Tous") { Height = 28, Enabled = false };
-        var none = new ModernButton("Aucun") { Height = 28, Enabled = false };
+        var all = new ModernButton(Tr("Tous", "All")) { Height = 28, Enabled = false };
+        var none = new ModernButton(Tr("Aucun", "None")) { Height = 28, Enabled = false };
         all.Click += (_, _) => SetAllCpus(true);
         none.Click += (_, _) => SetAllCpus(false);
         affinityOn.CheckedChanged += (_, _) =>
@@ -111,20 +111,20 @@ public sealed class RuleDialog : Form
         priority.SelectedIndexChanged += (_, _) => UpdateHelp();
         plan.SelectedIndexChanged += (_, _) => UpdateHelp();
 
-        var ok = new ModernButton("Enregistrer", primary: true);
-        var cancel = new ModernButton("Annuler") { DialogResult = DialogResult.Cancel };
+        var ok = new ModernButton(Tr("Enregistrer", "Save"), primary: true);
+        var cancel = new ModernButton(Tr("Annuler", "Cancel")) { DialogResult = DialogResult.Cancel };
         ok.Click += (_, _) => OnOk();
         AcceptButton = ok;
         CancelButton = cancel;
 
         // Choix de cœurs adaptés à ce processeur (cœurs P, V-Cache, sans SMT…)
         var topology = CpuTopology.Current?.Presets() ?? Array.Empty<AffinityPreset>();
-        var gamePreset = topology.FirstOrDefault(p => p.Name is "CCD avec V-Cache" or "Cœurs performants");
+        var gamePreset = topology.FirstOrDefault(p => p.Name == CpuTopology.VCacheName || p.Name == CpuTopology.PerformanceCoresName);
 
         var templates = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(310, 0), Margin = new Padding(0) };
-        AddTemplate(templates, "Jeu",
-            "Priorité haute, marqué comme jeu (active le Mode Jeu), plan Performances élevées s'il existe" +
-            (gamePreset != null ? $" et « {gamePreset.Name} »." : "."), () =>
+        AddTemplate(templates, Tr("Jeu", "Game"),
+            Tr("Priorité haute, marqué comme jeu (active le Mode Jeu), plan Performances élevées s'il existe", "High priority, marked as a game (turns on Game Mode), High performance plan if it exists") +
+            (gamePreset != null ? Tr($" et « {gamePreset.Name} ».", $" and “{gamePreset.Name}”.") : "."), () =>
         {
             Reset(ProcessPriorityClass.High);
             isGame.Checked = true;
@@ -134,18 +134,18 @@ public sealed class RuleDialog : Form
             if (gamePreset != null)
                 SetMask(gamePreset.Mask);
         });
-        AddTemplate(templates, "Streaming", "Priorité supérieure à la normale, jamais en mode efficacité : l'encodage reste fluide.", () =>
+        AddTemplate(templates, "Streaming", Tr("Priorité supérieure à la normale, jamais en mode efficacité : l'encodage reste fluide.", "Above normal priority, never in efficiency mode: encoding stays smooth."), () =>
         {
             Reset(ProcessPriorityClass.AboveNormal);
             efficiency.SelectedIndex = 2;
         });
-        AddTemplate(templates, "Tâche de fond", "Priorité basse, mode efficacité et disque en priorité basse : passe après tout le reste.", () =>
+        AddTemplate(templates, Tr("Tâche de fond", "Background task"), Tr("Priorité basse, mode efficacité et disque en priorité basse : passe après tout le reste.", "Low priority, efficiency mode and low disk priority: goes after everything else."), () =>
         {
             Reset(ProcessPriorityClass.BelowNormal);
             efficiency.SelectedIndex = 1;
             ioPriority.SelectedIndex = 2;
         });
-        AddTemplate(templates, "Brider", "Priorité basse, mode efficacité et 25 % du processeur au maximum, pour un programme trop gourmand.", () =>
+        AddTemplate(templates, Tr("Brider", "Throttle"), Tr("Priorité basse, mode efficacité et 25 % du processeur au maximum, pour un programme trop gourmand.", "Low priority, efficiency mode and at most 25 % of the CPU, for a program that is too greedy."), () =>
         {
             Reset(ProcessPriorityClass.BelowNormal);
             efficiency.SelectedIndex = 1;
@@ -158,27 +158,27 @@ public sealed class RuleDialog : Form
         efficiency.SelectedIndexChanged += (_, _) => UpdateHelp();
         ioPriority.SelectedIndexChanged += (_, _) => UpdateHelp();
         memoryPriority.SelectedIndexChanged += (_, _) => UpdateHelp();
-        gpu.Items.AddRange(new object[] { "(inchangée)", "Haute performance", "Économie d'énergie", "Laisser Windows décider" });
+        gpu.Items.AddRange(new object[] { Tr("(inchangée)", "(unchanged)"), Tr("Haute performance", "High performance"), Tr("Économie d'énergie", "Power saving"), Tr("Laisser Windows décider", "Let Windows decide") });
         gpu.SelectedIndexChanged += (_, _) => UpdateHelp();
 
-        tips.SetToolTip(enabled, "Une règle inactive est conservée mais n'est plus appliquée.");
-        tips.SetToolTip(isGame, "Tant que ce programme tourne, le Mode Jeu s'active (s'il est en automatique).");
-        tips.SetToolTip(affinityOn, "Réserver certains cœurs du processeur à ce programme.");
-        tips.SetToolTip(cpuLimit, "Plafond strict d'usage du processeur, en % du total.");
-        tips.SetToolTip(memLimit, "Mémoire maximale que le programme peut réserver.");
+        tips.SetToolTip(enabled, Tr("Une règle inactive est conservée mais n'est plus appliquée.", "A disabled rule is kept but no longer applied."));
+        tips.SetToolTip(isGame, Tr("Tant que ce programme tourne, le Mode Jeu s'active (s'il est en automatique).", "While this program runs, Game Mode turns on (if set to automatic)."));
+        tips.SetToolTip(affinityOn, Tr("Réserver certains cœurs du processeur à ce programme.", "Reserve some CPU cores for this program."));
+        tips.SetToolTip(cpuLimit, Tr("Plafond strict d'usage du processeur, en % du total.", "Hard cap on CPU usage, in % of the total."));
+        tips.SetToolTip(memLimit, Tr("Mémoire maximale que le programme peut réserver.", "Maximum memory the program can commit."));
 
         var left = Grid();
-        AddSection(left, "Processus");
-        AddRow(left, "Nom de l'exécutable", pattern);
+        AddSection(left, Tr("Processus", "Process"));
+        AddRow(left, Tr("Nom de l'exécutable", "Executable name"), pattern);
         AddRow(left, "", preview);
-        AddRow(left, "Règle active", enabled);
-        AddRow(left, "C'est un jeu", isGame);
-        AddRow(left, "Partir d'un modèle", templates);
+        AddRow(left, Tr("Règle active", "Rule enabled"), enabled);
+        AddRow(left, Tr("C'est un jeu", "This is a game"), isGame);
+        AddRow(left, Tr("Partir d'un modèle", "Start from a template"), templates);
 
         AddSection(left, "Performance");
-        AddRow(left, "Priorité", priority);
+        AddRow(left, Tr("Priorité", "Priority"), priority);
         AddRow(left, "", priorityHelp);
-        AddRow(left, "Limiter à certains cœurs", affinityOn);
+        AddRow(left, Tr("Limiter à certains cœurs", "Limit to some cores"), affinityOn);
         AddRow(left, "", affinityHelp);
         AddRow(left, "", cpus);
         var quick = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(310, 0), Margin = new Padding(0, 4, 0, 0) };
@@ -195,42 +195,44 @@ public sealed class RuleDialog : Form
         AddRow(left, "", quick);
 
         var right = Grid();
-        AddSection(right, "Alimentation et limites");
-        AddRow(right, "Plan d'alimentation", plan);
+        AddSection(right, Tr("Alimentation et limites", "Power and limits"));
+        AddRow(right, Tr("Plan d'alimentation", "Power plan"), plan);
         AddRow(right, "", planHelp);
-        AddRow(right, "CPU max (% du total)", WithHint(cpuLimit, "0 = aucune limite"));
-        AddRow(right, "RAM max (Mo)", WithHint(memLimit, "0 = aucune limite"));
+        AddRow(right, Tr("CPU max (% du total)", "Max CPU (% of total)"), WithHint(cpuLimit, Tr("0 = aucune limite", "0 = no limit")));
+        AddRow(right, Tr("RAM max (Mo)", "Max RAM (MB)"), WithHint(memLimit, Tr("0 = aucune limite", "0 = no limit")));
         var limitsHelp = Help();
-        limitsHelp.Text = "Ces limites s'appliquent au lancement du processus ; pour les assouplir, relancez-le. " +
-                          "Un processus qui dépasse la limite de RAM peut planter.";
+        limitsHelp.Text = Tr("Ces limites s'appliquent au lancement du processus ; pour les assouplir, relancez-le. " +
+                             "Un processus qui dépasse la limite de RAM peut planter.",
+            "These limits apply when the process starts; to loosen them, restart it. " +
+            "A process that exceeds the RAM limit may crash.");
         AddRow(right, "", limitsHelp);
 
-        AddSection(right, "Avancé");
-        AddRow(right, "Mode efficacité", efficiency);
+        AddSection(right, Tr("Avancé", "Advanced"));
+        AddRow(right, Tr("Mode efficacité", "Efficiency mode"), efficiency);
         AddRow(right, "", efficiencyHelp);
-        AddRow(right, "Priorité disque", ioPriority);
+        AddRow(right, Tr("Priorité disque", "Disk priority"), ioPriority);
         AddRow(right, "", ioHelp);
-        AddRow(right, "Priorité mémoire", memoryPriority);
+        AddRow(right, Tr("Priorité mémoire", "Memory priority"), memoryPriority);
         AddRow(right, "", memoryHelp);
-        AddRow(right, "Carte graphique", gpu);
+        AddRow(right, Tr("Carte graphique", "Graphics card"), gpu);
         AddRow(right, "", gpuHelp);
 
-        block.Items.AddRange(new object[] { "Non", "Toujours (fermé dès son lancement)", "Une seule instance" });
-        alertAction.Items.AddRange(new object[] { "Me prévenir", "Baisser sa priorité au minimum", "Le fermer" });
+        block.Items.AddRange(new object[] { Tr("Non", "No"), Tr("Toujours (fermé dès son lancement)", "Always (closed as soon as it starts)"), Tr("Une seule instance", "Single instance") });
+        alertAction.Items.AddRange(new object[] { Tr("Me prévenir", "Notify me"), Tr("Baisser sa priorité au minimum", "Lower its priority to the minimum"), Tr("Le fermer", "Close it") });
         block.SelectedIndexChanged += (_, _) => UpdateHelp();
         foreach (var n in new[] { alertCpu, alertMemory, alertMinutes })
             n.ValueChanged += (_, _) => UpdateHelp();
         alertAction.SelectedIndexChanged += (_, _) => UpdateHelp();
-        tips.SetToolTip(keepAwake, "Le PC ne se met pas en veille tant que ce programme tourne (l'écran peut s'éteindre).");
+        tips.SetToolTip(keepAwake, Tr("Le PC ne se met pas en veille tant que ce programme tourne (l'écran peut s'éteindre).", "The PC does not go to sleep while this program runs (the screen may turn off)."));
 
-        AddSection(right, "Automatisations");
-        AddRow(right, "Empêcher la mise en veille", keepAwake);
-        AddRow(right, "Bloquer le programme", block);
+        AddSection(right, Tr("Automatisations", "Automations"));
+        AddRow(right, Tr("Empêcher la mise en veille", "Prevent sleep"), keepAwake);
+        AddRow(right, Tr("Bloquer le programme", "Block the program"), block);
         AddRow(right, "", blockHelp);
-        AddRow(right, "Surveiller : CPU au-delà de", WithHint(alertCpu, "% (0 = non)"));
-        AddRow(right, "ou mémoire au-delà de", WithHint(alertMemory, "Mo (0 = non)"));
-        AddRow(right, "pendant", WithHint(alertMinutes, "minutes"));
-        AddRow(right, "alors", alertAction);
+        AddRow(right, Tr("Surveiller : CPU au-delà de", "Watch: CPU above"), WithHint(alertCpu, Tr("% (0 = non)", "% (0 = off)")));
+        AddRow(right, Tr("ou mémoire au-delà de", "or memory above"), WithHint(alertMemory, Tr("Mo (0 = non)", "MB (0 = off)")));
+        AddRow(right, Tr("pendant", "for"), WithHint(alertMinutes, "minutes"));
+        AddRow(right, Tr("alors", "then"), alertAction);
         AddRow(right, "", alertHelp);
 
         var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 0, 0) };
@@ -259,15 +261,15 @@ public sealed class RuleDialog : Form
     };
 
     static readonly (string Label, bool? Value)[] EfficiencyChoices =
-        { ("(inchangé)", null), ("Activé", true), ("Jamais", false) };
+        { (Tr("(inchangé)", "(unchanged)"), null), (Tr("Activé", "On"), true), (Tr("Jamais", "Never"), false) };
 
     static readonly (string Label, IoPriorityLevel? Value)[] IoChoices =
-        { ("(inchangée)", null), ("Très basse", IoPriorityLevel.VeryLow), ("Basse", IoPriorityLevel.Low), ("Normale", IoPriorityLevel.Normal) };
+        { (Tr("(inchangée)", "(unchanged)"), null), (Tr("Très basse", "Very low"), IoPriorityLevel.VeryLow), (Tr("Basse", "Low"), IoPriorityLevel.Low), (Tr("Normale", "Normal"), IoPriorityLevel.Normal) };
 
     static readonly (string Label, MemoryPriorityLevel? Value)[] MemoryChoices =
     {
-        ("(inchangée)", null), ("Très basse", MemoryPriorityLevel.VeryLow), ("Basse", MemoryPriorityLevel.Low),
-        ("Moyenne", MemoryPriorityLevel.Medium), ("Inférieure à la normale", MemoryPriorityLevel.BelowNormal), ("Normale", MemoryPriorityLevel.Normal),
+        (Tr("(inchangée)", "(unchanged)"), null), (Tr("Très basse", "Very low"), MemoryPriorityLevel.VeryLow), (Tr("Basse", "Low"), MemoryPriorityLevel.Low),
+        (Tr("Moyenne", "Medium"), MemoryPriorityLevel.Medium), (Tr("Inférieure à la normale", "Below normal"), MemoryPriorityLevel.BelowNormal), (Tr("Normale", "Normal"), MemoryPriorityLevel.Normal),
     };
 
     void SetMask(long mask)
@@ -320,7 +322,7 @@ public sealed class RuleDialog : Form
         var text = pattern.Text.Trim();
         if (text.Length == 0)
         {
-            preview.Text = "Exemples : jeu.exe, chrome* (tout ce qui commence par chrome), jeu?.exe";
+            preview.Text = Tr("Exemples : jeu.exe, chrome* (tout ce qui commence par chrome), jeu?.exe", "Examples: game.exe, chrome* (anything starting with chrome), game?.exe");
             return;
         }
         var matches = RuleMatcher.Preview(text, running);
@@ -330,64 +332,69 @@ public sealed class RuleDialog : Form
             .Select(g => g.Count() > 1 ? $"{g.Key} (×{g.Count()})" : g.Key)
             .ToList();
         preview.Text = usable.Count == 0 && system == 0
-            ? "Aucun processus en cours ne correspond : la règle s'appliquera à leur lancement."
-            : $"S'applique à {matches.Count - system} processus en cours" +
-              (usable.Count > 0 ? " : " + string.Join(", ", usable.Take(4)) + (usable.Count > 4 ? "…" : "") : "") +
-              (system > 0 ? $". {system} processus système ignoré(s)." : ".");
+            ? Tr("Aucun processus en cours ne correspond : la règle s'appliquera à leur lancement.", "No running process matches: the rule will apply when they start.")
+            : Tr($"S'applique à {matches.Count - system} processus en cours", $"Applies to {matches.Count - system} running process(es)") +
+              (usable.Count > 0 ? Tr(" : ", ": ") + string.Join(", ", usable.Take(4)) + (usable.Count > 4 ? "…" : "") : "") +
+              (system > 0 ? Tr($". {system} processus système ignoré(s).", $". {system} system process(es) ignored.") : ".");
     }
 
     void UpdateHelp()
     {
         var p = ((Choice<ProcessPriorityClass?>?)priority.SelectedItem)?.Value;
-        priorityHelp.Text = p is { } v && PriorityHelp.TryGetValue(v, out var help) ? help : "La priorité du programme n'est pas modifiée.";
+        priorityHelp.Text = p is { } v && PriorityHelp.TryGetValue(v, out var help) ? help : Tr("La priorité du programme n'est pas modifiée.", "The program's priority is not changed.");
 
         int checkedCount = cpus.CheckedIndices.Count;
         affinityHelp.Text = !affinityOn.Checked
-            ? $"Le programme peut utiliser les {cpuCount} cœurs."
-            : $"Limité à {checkedCount} cœur(s) sur {cpuCount}. Utile pour un vieux jeu ou pour garder des cœurs libres.";
+            ? Tr($"Le programme peut utiliser les {cpuCount} cœurs.", $"The program can use all {cpuCount} cores.")
+            : Tr($"Limité à {checkedCount} cœur(s) sur {cpuCount}. Utile pour un vieux jeu ou pour garder des cœurs libres.", $"Limited to {checkedCount} core(s) out of {cpuCount}. Useful for an old game or to keep cores free.");
 
         var chosen = (Choice<Guid?>?)plan.SelectedItem;
         planHelp.Text = chosen?.Value == null
-            ? "Le plan d'alimentation n'est pas changé."
-            : $"« {chosen.Label} » est activé tant que ce programme tourne, puis le plan d'origine revient.";
+            ? Tr("Le plan d'alimentation n'est pas changé.", "The power plan is not changed.")
+            : Tr($"« {chosen.Label} » est activé tant que ce programme tourne, puis le plan d'origine revient.", $"“{chosen.Label}” is active while this program runs, then the original plan comes back.");
 
         efficiencyHelp.Text = efficiency.SelectedIndex switch
         {
-            1 => "Windows ralentit ce programme pour économiser l'énergie (comme le Mode efficacité du Gestionnaire des tâches). Idéal pour ce qui tourne en arrière-plan.",
-            2 => "Windows ne le mettra jamais en mode efficacité, même réduit ou en arrière-plan.",
-            _ => "Windows décide seul (Windows 11 uniquement).",
+            1 => Tr("Windows ralentit ce programme pour économiser l'énergie (comme le Mode efficacité du Gestionnaire des tâches). Idéal pour ce qui tourne en arrière-plan.", "Windows slows this program down to save power (like Task Manager's Efficiency mode). Ideal for what runs in the background."),
+            2 => Tr("Windows ne le mettra jamais en mode efficacité, même réduit ou en arrière-plan.", "Windows will never put it in efficiency mode, even minimized or in the background."),
+            _ => Tr("Windows décide seul (Windows 11 uniquement).", "Windows decides on its own (Windows 11 only)."),
         };
         ioHelp.Text = ioPriority.SelectedIndex switch
         {
-            1 or 2 => "Ses lectures et écritures passent après celles des autres programmes : une sauvegarde ne ralentit plus un jeu.",
-            3 => "Accès au disque normal.",
-            _ => "L'accès au disque n'est pas modifié.",
+            1 or 2 => Tr("Ses lectures et écritures passent après celles des autres programmes : une sauvegarde ne ralentit plus un jeu.", "Its reads and writes go after those of other programs: a backup no longer slows down a game."),
+            3 => Tr("Accès au disque normal.", "Normal disk access."),
+            _ => Tr("L'accès au disque n'est pas modifié.", "Disk access is not changed."),
         };
         blockHelp.Text = block.SelectedIndex switch
         {
-            1 => "Le programme est fermé dans la seconde qui suit son lancement, à chaque fois. Les processus déjà lancés sont fermés en enregistrant.",
-            2 => "Si le programme est lancé une deuxième fois, la nouvelle copie est fermée. Ne convient pas aux navigateurs, qui lancent plusieurs processus.",
-            _ => "Le programme peut se lancer normalement.",
+            1 => Tr("Le programme est fermé dans la seconde qui suit son lancement, à chaque fois. Les processus déjà lancés sont fermés en enregistrant.", "The program is closed within a second of starting, every time. Processes already running are closed when you save."),
+            2 => Tr("Si le programme est lancé une deuxième fois, la nouvelle copie est fermée. Ne convient pas aux navigateurs, qui lancent plusieurs processus.", "If the program is started a second time, the new copy is closed. Not suitable for browsers, which start several processes."),
+            _ => Tr("Le programme peut se lancer normalement.", "The program can start normally."),
         };
         bool watching = alertCpu.Value > 0 || alertMemory.Value > 0;
         alertHelp.Text = !watching
-            ? "Pas de surveillance. Utile pour repérer un programme bloqué (CPU) ou une fuite de mémoire."
-            : $"Si le seuil est dépassé sans interruption pendant {alertMinutes.Value} min, Corral " +
-              (alertAction.SelectedIndex switch { 1 => "baisse sa priorité au minimum", 2 => "le ferme", _ => "vous prévient" }) +
-              ", une seule fois jusqu'à ce qu'il repasse sous le seuil.";
+            ? Tr("Pas de surveillance. Utile pour repérer un programme bloqué (CPU) ou une fuite de mémoire.", "No monitoring. Useful to spot a stuck program (CPU) or a memory leak.")
+            : Tr($"Si le seuil est dépassé sans interruption pendant {alertMinutes.Value} min, Corral ", $"If the threshold is exceeded continuously for {alertMinutes.Value} min, Corral ") +
+              (alertAction.SelectedIndex switch
+              {
+                  1 => Tr("baisse sa priorité au minimum", "lowers its priority to the minimum"),
+                  2 => Tr("le ferme", "closes it"),
+                  _ => Tr("vous prévient", "notifies you"),
+              }) +
+              Tr(", une seule fois jusqu'à ce qu'il repasse sous le seuil.", ", only once until it drops back below the threshold.");
 
         gpuHelp.Text = gpu.SelectedIndex switch
         {
-            1 => "Utilise la carte graphique la plus puissante (PC portable ou PC avec deux cartes). Prend effet au prochain lancement du programme.",
-            2 => "Utilise la carte graphique économique, souvent intégrée au processeur. Prend effet au prochain lancement.",
-            3 => "Retire tout choix : Windows décide. Prend effet au prochain lancement.",
-            _ => "Le choix de carte graphique n'est pas modifié.",
+            1 => Tr("Utilise la carte graphique la plus puissante (PC portable ou PC avec deux cartes). Prend effet au prochain lancement du programme.", "Uses the most powerful graphics card (laptop or PC with two cards). Takes effect the next time the program starts."),
+            2 => Tr("Utilise la carte graphique économique, souvent intégrée au processeur. Prend effet au prochain lancement.", "Uses the power-saving graphics card, often built into the processor. Takes effect at next start."),
+            3 => Tr("Retire tout choix : Windows décide. Prend effet au prochain lancement.", "Removes any choice: Windows decides. Takes effect at next start."),
+            _ => Tr("Le choix de carte graphique n'est pas modifié.", "The graphics card choice is not changed."),
         };
         memoryHelp.Text = memoryPriority.SelectedIndex switch
         {
-            1 or 2 or 3 or 4 => "Quand la mémoire manque, ses données quittent la RAM avant celles des autres programmes.",
-            5 => "Priorité mémoire normale.",
-            _ => "La priorité mémoire n'est pas modifiée.",
+            1 or 2 or 3 or 4 => Tr("Quand la mémoire manque, ses données quittent la RAM avant celles des autres programmes.", "When memory runs low, its data leaves RAM before that of other programs."),
+            5 => Tr("Priorité mémoire normale.", "Normal memory priority."),
+            _ => Tr("La priorité mémoire n'est pas modifiée.", "Memory priority is not changed."),
         };
     }
 
@@ -453,7 +460,7 @@ public sealed class RuleDialog : Form
         {
             int idx = plan.Items.Cast<Choice<Guid?>>().ToList().FindIndex(c => c.Value == id);
             if (idx < 0)
-                idx = plan.Items.Add(new Choice<Guid?>($"(introuvable) {id}", id));
+                idx = plan.Items.Add(new Choice<Guid?>(Tr($"(introuvable) {id}", $"(not found) {id}"), id));
             plan.SelectedIndex = idx;
         }
 
@@ -477,7 +484,7 @@ public sealed class RuleDialog : Form
         var name = pattern.Text.Trim();
         if (name.Length == 0)
         {
-            MessageBox.Show(this, "Indiquez un nom de processus.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, Tr("Indiquez un nom de processus.", "Enter a process name."), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -489,7 +496,7 @@ public sealed class RuleDialog : Form
                 m |= 1L << i;
             if (m == 0)
             {
-                MessageBox.Show(this, "Cochez au moins un CPU.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, Tr("Cochez au moins un CPU.", "Check at least one CPU."), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             mask = m;
@@ -522,18 +529,19 @@ public sealed class RuleDialog : Form
         {
             if (Engine.IsCatchAll(name))
             {
-                MessageBox.Show(this, "Ce motif viserait tous les programmes : le blocage est refusé.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, Tr("Ce motif viserait tous les programmes : le blocage est refusé.", "This pattern would target every program: blocking is refused."), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             var running = RuleMatcher.Preview(name, this.running).Where(n => !Exclusions.IsProtected(n, int.MaxValue, 0)).ToList();
             if (Result.Block == BlockMode.Always && running.Count > 0 &&
-                MessageBox.Show(this, $"{running.Count} processus en cours ({string.Join(", ", running.Distinct().Take(3))}) seront fermés dès l'enregistrement.\nContinuer ?",
+                MessageBox.Show(this, Tr($"{running.Count} processus en cours ({string.Join(", ", running.Distinct().Take(3))}) seront fermés dès l'enregistrement.\nContinuer ?",
+                        $"{running.Count} running process(es) ({string.Join(", ", running.Distinct().Take(3))}) will be closed when you save.\nContinue?"),
                     Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
                 return;
         }
         if (Result.AlertAction == AlertAction.Close && Result.HasAlert && Result.Enabled && Engine.IsCatchAll(name))
         {
-            MessageBox.Show(this, "Fermer automatiquement tous les programmes : refusé. Choisissez un motif plus précis.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, Tr("Fermer automatiquement tous les programmes : refusé. Choisissez un motif plus précis.", "Automatically closing every program: refused. Choose a more specific pattern."), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
         DialogResult = DialogResult.OK;

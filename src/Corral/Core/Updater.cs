@@ -51,8 +51,8 @@ public static class Updater
     public static bool IsSupported =>Repository != null && IsSingleFile && Environment.ProcessPath != null;
 
     public static string? UnsupportedReason =>
-        Repository == null ? "dépôt GitHub non configuré (version compilée localement)"
-        : !IsSingleFile ? "version de développement"
+        Repository == null ? Tr("dépôt GitHub non configuré (version compilée localement)", "GitHub repository not configured (locally built version)")
+        : !IsSingleFile ? Tr("version de développement", "development version")
         : null;
 
     public static async Task<UpdateInfo?> CheckAsync(CancellationToken ct = default)
@@ -114,7 +114,7 @@ public static class Updater
     public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<int>? progress, CancellationToken ct = default)
     {
         var expected = ParseSha(await http.GetStringAsync(info.ShaUrl, ct))
-                       ?? throw new InvalidDataException("Fichier de somme de contrôle illisible");
+                       ?? throw new InvalidDataException(Tr("Fichier de somme de contrôle illisible", "Unreadable checksum file"));
 
         var target = Environment.ProcessPath! + ".download";
         using (var response = await http.GetAsync(info.ExeUrl, HttpCompletionOption.ResponseHeadersRead, ct))
@@ -160,11 +160,11 @@ public static class Updater
         {
             Span<byte> header = stackalloc byte[2];
             if (stream.Read(header) != 2 || header[0] != 'M' || header[1] != 'Z')
-                throw new InvalidDataException("Le fichier téléchargé n'est pas un exécutable");
+                throw new InvalidDataException(Tr("Le fichier téléchargé n'est pas un exécutable", "The downloaded file is not an executable"));
             stream.Position = 0;
             var actual = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
             if (actual != expectedSha.ToLowerInvariant())
-                throw new InvalidDataException("Somme de contrôle incorrecte : téléchargement corrompu");
+                throw new InvalidDataException(Tr("Somme de contrôle incorrecte : téléchargement corrompu", "Wrong checksum: corrupted download"));
         }
     }
 
@@ -182,7 +182,7 @@ public static class Updater
             Rollback(exe);
             throw;
         }
-        Log.Info("Mise à jour installée, redémarrage", LogCategory.Update);
+        Log.Info(Tr("Mise à jour installée, redémarrage", "Update installed, restarting"), LogCategory.Update);
     }
 
     /// <summary>exe → exe.old, téléchargé → exe. Annule si la seconde étape échoue.</summary>

@@ -9,9 +9,9 @@ public enum UpdateChoice { Later, Skip, Installed }
 public sealed class UpdateDialog : Form
 {
     readonly UpdateInfo info;
-    readonly ModernButton install = new("Installer et redémarrer", primary: true);
-    readonly ModernButton later = new("Plus tard");
-    readonly ModernButton skip = new("Ignorer cette version");
+    readonly ModernButton install = new(Tr("Installer et redémarrer", "Install and restart"), primary: true);
+    readonly ModernButton later = new(Tr("Plus tard", "Later"));
+    readonly ModernButton skip = new(Tr("Ignorer cette version", "Skip this version"));
     readonly ProgressBar progress = new() { Dock = DockStyle.Fill, Visible = false, Height = 16 };
     readonly Label status = new() { AutoSize = true, Tag = Theme.HintTag };
     CancellationTokenSource? cts;
@@ -19,7 +19,7 @@ public sealed class UpdateDialog : Form
     public UpdateDialog(UpdateInfo info)
     {
         this.info = info;
-        Text = "Mise à jour de Corral";
+        Text = Tr("Mise à jour de Corral", "Corral update");
         Font = Ui.Base;
         Icon = AppIcon.Load(new Size(32, 32));
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -30,7 +30,7 @@ public sealed class UpdateDialog : Form
 
         var title = new Label
         {
-            Text = $"La version {info.Version.ToString(3)} est disponible (installée : {Updater.CurrentVersion.ToString(3)}).",
+            Text = Tr($"La version {info.Version.ToString(3)} est disponible (installée : {Updater.CurrentVersion.ToString(3)}).", $"Version {info.Version.ToString(3)} is available (installed: {Updater.CurrentVersion.ToString(3)})."),
             AutoSize = true,
             Font = Ui.Section,
             Margin = new Padding(3, 3, 3, 8),
@@ -42,9 +42,9 @@ public sealed class UpdateDialog : Form
             ScrollBars = ScrollBars.Vertical,
             Dock = DockStyle.Fill,
             Tag = Theme.FlatTag,
-            Text = string.IsNullOrWhiteSpace(info.Notes) ? "(pas de notes de version)" : info.Notes.Replace("\r\n", "\n").Replace("\n", Environment.NewLine),
+            Text = string.IsNullOrWhiteSpace(info.Notes) ? Tr("(pas de notes de version)", "(no release notes)") : info.Notes.Replace("\r\n", "\n").Replace("\n", Environment.NewLine),
         };
-        var link = new LinkLabel { Text = "Voir la page de la version", AutoSize = true, Visible = info.PageUrl.Length > 0 };
+        var link = new LinkLabel { Text = Tr("Voir la page de la version", "View the release page"), AutoSize = true, Visible = info.PageUrl.Length > 0 };
         link.LinkClicked += (_, _) =>
         {
             try { Process.Start(new ProcessStartInfo(info.PageUrl) { UseShellExecute = true }); }
@@ -96,12 +96,12 @@ public sealed class UpdateDialog : Form
     {
         install.Enabled = later.Enabled = skip.Enabled = false;
         progress.Visible = true;
-        status.Text = "Téléchargement…";
+        status.Text = Tr("Téléchargement…", "Downloading…");
         cts = new CancellationTokenSource();
         try
         {
             var file = await Updater.DownloadAsync(info, new Progress<int>(p => progress.Value = Math.Clamp(p, 0, 100)), cts.Token);
-            status.Text = "Installation…";
+            status.Text = Tr("Installation…", "Installing…");
             Updater.InstallAndRestart(file);
             Choice = UpdateChoice.Installed;
             Close();
@@ -115,7 +115,7 @@ public sealed class UpdateDialog : Form
             Log.Error("Mise à jour", ex);
             if (IsDisposed)
                 return;
-            status.Text = "Échec : " + ex.Message;
+            status.Text = Tr("Échec : ", "Failed: ") + ex.Message;
             progress.Visible = false;
             install.Enabled = later.Enabled = skip.Enabled = true;
         }

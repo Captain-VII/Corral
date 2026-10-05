@@ -1,4 +1,5 @@
-﻿using Microsoft.Win32;
+using System.Diagnostics;
+using Microsoft.Win32;
 using Corral.Core;
 using Corral.Models;
 
@@ -14,11 +15,17 @@ public sealed class TrayContext : ApplicationContext
     readonly RuleStore store;
     readonly Settings settings;
     readonly NotifyIcon tray;
+    readonly Icon logo = AppIcon.Load(SystemInformation.SmallIconSize);
+    Icon? cpuIcon;    // icône dessinée avec la charge du processeur (à libérer)
+    int cpuIconValue = -1;
+    OverlayWindow? overlay;
     readonly MainForm form;
     readonly ToolStripMenuItem pauseItem;
     readonly ToolStripMenuItem updateItem = new() { Visible = false };
     readonly System.Windows.Forms.Timer updateTimer = new();
     readonly ToolStripMenuItem proBalanceItem = new("ProBalance");
+    readonly ToolStripMenuItem profileItem = new(Tr("Profil", "Profile"));
+    readonly ToolStripMenuItem overlayItem = new(Tr("Mini-fenêtre", "Mini window"));
     readonly GlobalHotkeys hotkeys = new();
     readonly SynchronizationContext ui;
     // Bulles ProBalance : au plus une toutes les 30 s, les suivantes sont regroupées
@@ -41,29 +48,38 @@ public sealed class TrayContext : ApplicationContext
         form = new MainForm(engine, store, settings);
         form.CheckUpdatesRequested += (_, _) => CheckForUpdates(manual: true);
         form.PauseRequested += paused => pauseItem!.Checked = paused; // l'élément de menu applique la pause au moteur
+        form.DisplayChanged += ApplyDisplay;
+        form.RestartRequested += Restart;
         // La fenêtre (créée ci-dessus) a installé le contexte de synchronisation de l'interface.
         ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Ouvrir", null, (_, _) => ShowForm());
+        menu.Items.Add(Tr("Ouvrir", "Open"), null, (_, _) => ShowForm());
         updateItem.Click += (_, _) => OfferUpdate();
         menu.Items.Add(updateItem);
-        pauseItem = new ToolStripMenuItem("Pause") { CheckOnClick = true, ToolTipText = "Suspend toutes les règles et ProBalance" };
+        pauseItem = new ToolStripMenuItem("Pause") { CheckOnClick = true, ToolTipText = Tr("Suspend toutes les règles et ProBalance", "Suspends all rules and ProBalance") };
         pauseItem.CheckedChanged += (_, _) => engine.SetPaused(pauseItem.Checked);
         menu.Items.Add(pauseItem);
-        proBalanceItem.ToolTipText = "Activer ou désactiver ProBalance";
+        proBalanceItem.ToolTipText = Tr("Activer ou désactiver ProBalance", "Turn ProBalance on or off");
         proBalanceItem.Click += (_, _) => form.SetProBalanceEnabled(!settings.ProBalance.Enabled);
         menu.Items.Add(proBalanceItem);
-        var gameItem = new ToolStripMenuItem("Mode Jeu") { ToolTipText = "Plan Performances, ProBalance réactif, programmes de fond calmés" };
+        var gameItem = new ToolStripMenuItem(Tr("Mode Jeu", "Game Mode")) { ToolTipText = Tr("Plan Performances, ProBalance réactif, programmes de fond calmés", "Performance plan, responsive ProBalance, calmed background programs") };
         gameItem.Click += (_, _) => form.ToggleGameMode();
         menu.Items.Add(gameItem);
+        profileItem.DropDownItems.Add("-"); // rempli à l'ouverture ; un élément pour afficher la flèche
+        menu.Items.Add(profileItem);
+        overlayItem.ToolTipText = Tr("Petite fenêtre toujours visible avec le processeur et la mémoire", "Small always-visible window with CPU and memory");
+        overlayItem.Click += (_, _) => form.SetOverlayEnabled(!settings.Overlay.Enabled);
+        menu.Items.Add(overlayItem);
         menu.Opening += (_, _) =>
         {
             proBalanceItem.Checked = settings.ProBalance.Enabled;
             gameItem.Checked = gameActive;
+            overlayItem.Checked = settings.Overlay.Enabled;
+            FillProfiles();
         };
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Quitter", null, (_, _) => Exit());
+        menu.Items.Add(Tr("Quitter", "Exit"), null, (_, _) => Exit());
         Theme.ApplyTo(menu);
         Theme.Changed += () => Theme.ApplyTo(menu);
         // Suit le thème de Windows quand « Système » est choisi.
@@ -75,7 +91,7 @@ public sealed class TrayContext : ApplicationContext
 
         tray = new NotifyIcon
         {
-            Icon = AppIcon.Load(SystemInformation.SmallIconSize),
+            Icon = logo,
             Text = "Corral",
             ContextMenuStrip = menu,
             Visible = true,
@@ -89,15 +105,20 @@ public sealed class TrayContext : ApplicationContext
                 ShowForm();
         };
 
-        // Infobulle de l'icône : charge du processeur (mise à jour sur le thread de l'interface)
+        // Infobulle, icône CPU et mini-fenêtre (mises à jour sur le thread de l'interface)
         engine.SnapshotReady += snap => ui.Post(_ =>
         {
             if (exiting)
                 return;
-            var text = $"Corral — CPU {snap.SystemCpu:0} %" + (snap.Paused ? " (en pause)" : "")
-                       + (snap.GameMode ? " · Mode Jeu" : "") + (engine.KeepAwakeReason != null ? " · veille bloquée" : "");
+            var text = $"Corral — CPU {snap.SystemCpu:0} %" + (snap.Paused ? Tr(" (en pause)", " (paused)") : "")
+                       + (snap.GameMode ? Tr(" · Mode Jeu", " · Game Mode") : "") + (engine.KeepAwakeReason != null ? Tr(" · veille bloquée", " · sleep blocked") : "");
+            if (text.Length > 63)
+                text = text[..63]; // limite de Windows
             if (tray.Text != text)
                 tray.Text = text;
+            if (settings.TrayCpuIcon)
+                UpdateCpuIcon(snap.SystemCpu);
+            overlay?.SetSnapshot(snap);
         }, null);
         engine.ProBalanceActed += (names, cpu) => ui.Post(_ => NotifyProBalance(names), null);
         engine.GameModeChanged += (active, trigger) => ui.Post(_ =>
@@ -106,10 +127,12 @@ public sealed class TrayContext : ApplicationContext
             if (exiting || !settings.GameMode.Notify)
                 return;
             lastBalloonIsUpdate = false;
-            tray.ShowBalloonTip(4000, "Mode Jeu",
+            tray.ShowBalloonTip(4000, Tr("Mode Jeu", "Game Mode"),
                 active
-                    ? (trigger != null ? $"Activé pour « {trigger} » : plan Performances et programmes de fond calmés." : "Activé : plan Performances et programmes de fond calmés.")
-                    : "Désactivé : tout est revenu à la normale.",
+                    ? (trigger != null
+                        ? Tr($"Activé pour « {trigger} » : plan Performances et programmes de fond calmés.", $"On for “{trigger}”: Performance plan and calmed background programs.")
+                        : Tr("Activé : plan Performances et programmes de fond calmés.", "On: Performance plan and calmed background programs."))
+                    : Tr("Désactivé : tout est revenu à la normale.", "Off: everything is back to normal."),
                 ToolTipIcon.Info);
         }, null);
         notifyTimer.Tick += (_, _) =>
@@ -124,11 +147,12 @@ public sealed class TrayContext : ApplicationContext
         form.SetHotkeyStatus(RegisterHotkeys());
 
         engine.Start();
+        ApplyDisplay();
         if (!startHidden)
             ShowForm();
 
         if (justUpdated)
-            tray.ShowBalloonTip(5000, "Corral", $"Corral a été mis à jour en version {Updater.CurrentVersion.ToString(3)}.", ToolTipIcon.Info);
+            tray.ShowBalloonTip(5000, "Corral", Tr($"Corral a été mis à jour en version {Updater.CurrentVersion.ToString(3)}.", $"Corral was updated to version {Updater.CurrentVersion.ToString(3)}."), ToolTipIcon.Info);
 
         if (Updater.IsSupported)
         {
@@ -142,6 +166,66 @@ public sealed class TrayContext : ApplicationContext
             };
             updateTimer.Start();
         }
+    }
+
+    void FillProfiles()
+    {
+        profileItem.DropDownItems.Clear();
+        foreach (var p in settings.Profiles)
+        {
+            var name = p.Name;
+            var item = new ToolStripMenuItem(name) { Checked = name == settings.ActiveProfile };
+            item.Click += (_, _) => form.SwitchProfile(name);
+            profileItem.DropDownItems.Add(item);
+        }
+        profileItem.DropDownItems.Add(new ToolStripSeparator());
+        profileItem.DropDownItems.Add(Tr("Gérer les profils…", "Manage profiles…"), null, (_, _) =>
+        {
+            ShowForm();
+            form.ShowPage("Règles");
+        });
+        Theme.ApplyTo(profileItem.DropDown);
+    }
+
+    /// <summary>Applique les options d'affichage : icône CPU ou logo, mini-fenêtre.</summary>
+    void ApplyDisplay()
+    {
+        if (exiting)
+            return;
+        if (!settings.TrayCpuIcon && cpuIcon != null)
+        {
+            tray.Icon = logo;
+            AppIcon.Free(cpuIcon);
+            cpuIcon = null;
+            cpuIconValue = -1;
+        }
+        if (settings.Overlay.Enabled && overlay == null)
+        {
+            overlay = new OverlayWindow(settings.Overlay);
+            overlay.OpenRequested += ShowForm;
+            overlay.HideRequested += () => form.SetOverlayEnabled(false);
+            overlay.Moved += form.SaveOverlayPosition;
+            overlay.Show();
+        }
+        else if (!settings.Overlay.Enabled && overlay != null)
+        {
+            overlay.Close();
+            overlay.Dispose();
+            overlay = null;
+        }
+    }
+
+    void UpdateCpuIcon(double cpu)
+    {
+        int value = (int)Math.Round(cpu);
+        if (value == cpuIconValue)
+            return;
+        cpuIconValue = value;
+        var old = cpuIcon;
+        cpuIcon = AppIcon.CpuIcon(cpu, SystemInformation.SmallIconSize);
+        tray.Icon = cpuIcon;
+        if (old != null)
+            AppIcon.Free(old);
     }
 
     void Balloon(string title, string message)
@@ -162,24 +246,30 @@ public sealed class TrayContext : ApplicationContext
             if (keys is { } k && !hotkeys.Register((Keys)k, action))
             {
                 failed.Add($"{name} ({GlobalHotkeys.Format((Keys)k)})");
-                Log.Warn($"Raccourci {GlobalHotkeys.Format((Keys)k)} ({name}) déjà utilisé par une autre application");
+                Log.Warn(Tr($"Raccourci {GlobalHotkeys.Format((Keys)k)} ({name}) déjà utilisé par une autre application", $"Shortcut {GlobalHotkeys.Format((Keys)k)} ({name}) already used by another application"));
             }
         }
-        Add(settings.Hotkeys.GameMode, "Mode Jeu", () =>
+        Add(settings.Hotkeys.GameMode, Tr("Mode Jeu", "Game Mode"), () =>
         {
+            var wasAuto = latestGameAuto();
             var message = form.ToggleGameMode(quiet: true);
             // Les changements d'état ont leur propre bulle ; on n'explique que le cas « actif automatiquement »
-            if (message != null && message.Contains("automatiquement"))
-                Balloon("Mode Jeu", message);
+            if (message != null && wasAuto)
+                Balloon(Tr("Mode Jeu", "Game Mode"), message);
         });
         Add(settings.Hotkeys.Pause, "Pause", () =>
         {
             pauseItem.Checked = !pauseItem.Checked;
-            Balloon("Corral", pauseItem.Checked ? "En pause : règles et ProBalance suspendus." : "Reprise : règles et ProBalance de nouveau actifs.");
+            Balloon("Corral", pauseItem.Checked
+                ? Tr("En pause : règles et ProBalance suspendus.", "Paused: rules and ProBalance suspended.")
+                : Tr("Reprise : règles et ProBalance de nouveau actifs.", "Resumed: rules and ProBalance active again."));
         });
-        Add(settings.Hotkeys.ShowWindow, "Afficher Corral", ShowForm);
+        Add(settings.Hotkeys.ShowWindow, Tr("Afficher Corral", "Show Corral"), ShowForm);
         return failed;
     }
+
+    /// <summary>Mode Jeu actif sans demande manuelle (déclenché par un jeu).</summary>
+    bool latestGameAuto() => gameActive && !engine.GameModeManual;
 
     void NotifyProBalance(IReadOnlyList<string> names)
     {
@@ -205,9 +295,10 @@ public sealed class TrayContext : ApplicationContext
         }
         var names = pendingNotify.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         pendingNotify.Clear();
+        var list = string.Join(", ", names.Take(3)) + (names.Count > 3 ? "…" : "");
         var text = names.Count == 1
-            ? $"« {names[0]} » saturait le processeur : sa priorité a été baissée un moment pour garder le PC réactif."
-            : $"{names.Count} programmes abaissés pour garder le PC réactif : {string.Join(", ", names.Take(3))}{(names.Count > 3 ? "…" : "")}.";
+            ? Tr($"« {names[0]} » saturait le processeur : sa priorité a été baissée un moment pour garder le PC réactif.", $"“{names[0]}” was saturating the CPU: its priority was lowered for a moment to keep the PC responsive.")
+            : Tr($"{names.Count} programmes abaissés pour garder le PC réactif : {list}.", $"{names.Count} programs lowered to keep the PC responsive: {list}.");
         lastBalloonIsUpdate = false;
         tray.ShowBalloonTip(6000, "ProBalance", text, ToolTipIcon.Info);
         lastNotify = DateTime.UtcNow;
@@ -218,7 +309,7 @@ public sealed class TrayContext : ApplicationContext
         if (!Updater.IsSupported)
         {
             if (manual)
-                Message($"Mise à jour automatique indisponible : {Updater.UnsupportedReason}.", MessageBoxIcon.Information);
+                Message(Tr($"Mise à jour automatique indisponible : {Updater.UnsupportedReason}.", $"Automatic update unavailable: {Updater.UnsupportedReason}."), MessageBoxIcon.Information);
             return;
         }
         if (checking || exiting)
@@ -232,30 +323,30 @@ public sealed class TrayContext : ApplicationContext
             if (info == null)
             {
                 if (manual)
-                    Message($"Corral est à jour (version {Updater.CurrentVersion.ToString(3)}).", MessageBoxIcon.Information);
+                    Message(Tr($"Corral est à jour (version {Updater.CurrentVersion.ToString(3)}).", $"Corral is up to date (version {Updater.CurrentVersion.ToString(3)})."), MessageBoxIcon.Information);
                 return;
             }
 
             pendingUpdate = info;
-            updateItem.Text = $"Installer la mise à jour {info.Version.ToString(3)}…";
+            updateItem.Text = Tr($"Installer la mise à jour {info.Version.ToString(3)}…", $"Install update {info.Version.ToString(3)}…");
             updateItem.Visible = true;
-            Log.Info($"Mise à jour disponible : {info.Version.ToString(3)}", LogCategory.Update);
+            Log.Info(Tr($"Mise à jour disponible : {info.Version.ToString(3)}", $"Update available: {info.Version.ToString(3)}"), LogCategory.Update);
 
             if (manual)
                 OfferUpdate();
             else if (settings.SkippedVersion != info.Version.ToString(3))
             {
                 lastBalloonIsUpdate = true;
-                tray.ShowBalloonTip(10_000, "Mise à jour de Corral",
-                    $"La version {info.Version.ToString(3)} est disponible. Cliquez ici pour l'installer.", ToolTipIcon.Info);
+                tray.ShowBalloonTip(10_000, Tr("Mise à jour de Corral", "Corral update"),
+                    Tr($"La version {info.Version.ToString(3)} est disponible. Cliquez ici pour l'installer.", $"Version {info.Version.ToString(3)} is available. Click here to install it."), ToolTipIcon.Info);
             }
         }
         catch (Exception ex)
         {
             // Hors ligne, GitHub indisponible, limite d'API… : on réessaiera au prochain passage.
-            Log.Warn($"Vérification des mises à jour : {ex.Message}", LogCategory.Update);
+            Log.Warn(Tr($"Vérification des mises à jour : {ex.Message}", $"Update check: {ex.Message}"), LogCategory.Update);
             if (manual)
-                Message("Impossible de vérifier les mises à jour : " + ex.Message, MessageBoxIcon.Warning);
+                Message(Tr("Impossible de vérifier les mises à jour : ", "Unable to check for updates: ") + ex.Message, MessageBoxIcon.Warning);
         }
         finally
         {
@@ -304,6 +395,22 @@ public sealed class TrayContext : ApplicationContext
         form.Activate();
     }
 
+    /// <summary>Relance Corral (changement de langue) : la nouvelle instance attend que celle-ci se ferme.</summary>
+    void Restart()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--restart") { UseShellExecute = false });
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Redémarrage", ex);
+            Message(Tr("Impossible de redémarrer Corral : ", "Unable to restart Corral: ") + ex.Message, MessageBoxIcon.Warning);
+            return;
+        }
+        Exit();
+    }
+
     void Exit()
     {
         if (exiting)
@@ -313,8 +420,12 @@ public sealed class TrayContext : ApplicationContext
         notifyTimer.Stop();
         hotkeys.Dispose();
         engine.Stop();
+        overlay?.Close();
+        overlay?.Dispose();
         tray.Visible = false;
         tray.Dispose();
+        if (cpuIcon != null)
+            AppIcon.Free(cpuIcon);
         form.CloseForReal();
         ExitThread();
     }

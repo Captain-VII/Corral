@@ -32,6 +32,10 @@ public sealed class CpuTopology
     /// <summary>Topologie de cette machine (lue une fois), ou null si l'API échoue.</summary>
     public static CpuTopology? Current => current ??= TryRead();
 
+    /// <summary>Noms des choix recommandés pour un jeu (repris par le modèle Jeu).</summary>
+    public static string PerformanceCoresName => Tr("Cœurs performants", "Performance cores");
+    public static string VCacheName => Tr("CCD avec V-Cache", "CCD with V-Cache");
+
     /// <summary>
     /// Choix proposés, uniquement ceux qui ont un sens sur ce processeur :
     /// cœurs P / cœurs E (hybride), CCD avec V-Cache / chaque CCD (plusieurs L3), sans SMT (Hyper-Threading actif).
@@ -45,8 +49,8 @@ public sealed class CpuTopology
         {
             long pMask = Cores.Where(c => c.EfficiencyClass == classes[^1]).Aggregate(0L, (m, c) => m | c.Mask);
             long eMask = Cores.Where(c => c.EfficiencyClass == classes[0]).Aggregate(0L, (m, c) => m | c.Mask);
-            list.Add(new("Cœurs performants", $"Uniquement les cœurs P ({BitOperations.PopCount((ulong)pMask)} threads). Idéal pour les jeux.", pMask));
-            list.Add(new("Cœurs efficaces", $"Uniquement les cœurs E ({BitOperations.PopCount((ulong)eMask)} threads). Pour les tâches de fond.", eMask));
+            list.Add(new(PerformanceCoresName, Tr($"Uniquement les cœurs P ({BitOperations.PopCount((ulong)pMask)} threads). Idéal pour les jeux.", $"P-cores only ({BitOperations.PopCount((ulong)pMask)} threads). Ideal for games."), pMask));
+            list.Add(new(Tr("Cœurs efficaces", "Efficient cores"), Tr($"Uniquement les cœurs E ({BitOperations.PopCount((ulong)eMask)} threads). Pour les tâches de fond.", $"E-cores only ({BitOperations.PopCount((ulong)eMask)} threads). For background tasks."), eMask));
         }
 
         if (L3Caches.Count > 1)
@@ -54,16 +58,16 @@ public sealed class CpuTopology
             var biggest = L3Caches.OrderByDescending(c => c.SizeBytes).First();
             bool vcache = L3Caches.Any(c => c.SizeBytes < biggest.SizeBytes);
             if (vcache)
-                list.Add(new("CCD avec V-Cache", $"Le bloc de cœurs avec le plus de cache ({biggest.SizeBytes / (1024 * 1024)} Mo). Idéal pour les jeux.", biggest.Mask));
+                list.Add(new(VCacheName, Tr($"Le bloc de cœurs avec le plus de cache ({biggest.SizeBytes / (1024 * 1024)} Mo). Idéal pour les jeux.", $"The core block with the most cache ({biggest.SizeBytes / (1024 * 1024)} MB). Ideal for games."), biggest.Mask));
             for (int i = 0; i < L3Caches.Count; i++)
-                list.Add(new($"CCD {i + 1}", $"Le bloc de cœurs n° {i + 1} ({BitOperations.PopCount((ulong)L3Caches[i].Mask)} threads, {L3Caches[i].SizeBytes / (1024 * 1024)} Mo de cache).", L3Caches[i].Mask));
+                list.Add(new($"CCD {i + 1}", Tr($"Le bloc de cœurs n° {i + 1} ({BitOperations.PopCount((ulong)L3Caches[i].Mask)} threads, {L3Caches[i].SizeBytes / (1024 * 1024)} Mo de cache).", $"Core block #{i + 1} ({BitOperations.PopCount((ulong)L3Caches[i].Mask)} threads, {L3Caches[i].SizeBytes / (1024 * 1024)} MB of cache)."), L3Caches[i].Mask));
         }
 
         if (Cores.Any(c => BitOperations.PopCount((ulong)c.Mask) > 1))
         {
             // Premier thread de chaque cœur physique
             long noSmt = Cores.Aggregate(0L, (m, c) => m | (c.Mask & -c.Mask));
-            list.Add(new("Sans SMT", $"Un seul thread par cœur physique ({Cores.Count} threads). Peut aider certains jeux anciens.", noSmt));
+            list.Add(new(Tr("Sans SMT", "No SMT"), Tr($"Un seul thread par cœur physique ({Cores.Count} threads). Peut aider certains jeux anciens.", $"One thread per physical core ({Cores.Count} threads). May help some older games."), noSmt));
         }
         return list;
     }

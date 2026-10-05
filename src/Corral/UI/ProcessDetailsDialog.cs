@@ -10,7 +10,7 @@ public sealed class ProcessDetailsDialog : Form
 
     public ProcessDetailsDialog(ProcessDetails d, ProcessRow? row, bool canCreateRule, ProcessHistory? history = null)
     {
-        Text = $"Détails — {d.Name}";
+        Text = Tr($"Détails — {d.Name}", $"Details — {d.Name}");
         Font = Ui.Base;
         Icon = AppIcon.Load(new Size(32, 32));
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -48,48 +48,50 @@ public sealed class ProcessDetailsDialog : Form
             grid.Controls.Add(box, 1, r);
         }
 
-        Section("Programme");
-        Row("Nom", d.Name);
+        Section(Tr("Programme", "Program"));
+        Row(Tr("Nom", "Name"), d.Name);
         Row("Description", d.Description);
-        Row("Éditeur", d.Company);
+        Row(Tr("Éditeur", "Publisher"), d.Company);
         Row("Version", d.Version);
-        Row("Emplacement", d.Path ?? "inaccessible (processus protégé)");
-        Row("Ligne de commande", d.CommandLine);
+        Row(Tr("Emplacement", "Location"), d.Path ?? Tr("inaccessible (processus protégé)", "unavailable (protected process)"));
+        Row(Tr("Ligne de commande", "Command line"), d.CommandLine);
 
-        Section("Processus");
+        Section(Tr("Processus", "Process"));
         Row("PID", d.Pid.ToString());
-        Row("Lancé par", d.ParentPid is { } pp ? (d.ParentName != null ? $"{d.ParentName} (PID {pp})" : $"PID {pp} (terminé)") : null);
-        Row("Démarré le", d.StartTime?.ToString("dddd d MMMM yyyy à HH:mm:ss"));
-        Row("Priorité", d.Priority);
-        Row("Temps processeur", d.CpuTime is { } t ? $"{(int)t.TotalHours} h {t.Minutes:00} min {t.Seconds:00} s" : null);
-        Row("Mémoire", d.WorkingSet is { } ws ? $"{ws / (1024 * 1024):N0} Mo en RAM · {(d.PrivateBytes ?? 0) / (1024 * 1024):N0} Mo privés" : null);
+        Row(Tr("Lancé par", "Started by"), d.ParentPid is { } pp ? (d.ParentName != null ? $"{d.ParentName} (PID {pp})" : Tr($"PID {pp} (terminé)", $"PID {pp} (ended)")) : null);
+        Row(Tr("Démarré le", "Started on"), English
+            ? d.StartTime?.ToString("dddd, MMMM d, yyyy 'at' HH:mm:ss", System.Globalization.CultureInfo.GetCultureInfo("en-US"))
+            : d.StartTime?.ToString("dddd d MMMM yyyy à HH:mm:ss"));
+        Row(Tr("Priorité", "Priority"), d.Priority);
+        Row(Tr("Temps processeur", "CPU time"), d.CpuTime is { } t ? $"{(int)t.TotalHours} h {t.Minutes:00} min {t.Seconds:00} s" : null);
+        Row(Tr("Mémoire", "Memory"), d.WorkingSet is { } ws ? Tr($"{ws / (1024 * 1024):N0} Mo en RAM · {(d.PrivateBytes ?? 0) / (1024 * 1024):N0} Mo privés", $"{ws / (1024 * 1024):N0} MB in RAM · {(d.PrivateBytes ?? 0) / (1024 * 1024):N0} MB private") : null);
         Row("Threads / handles", d.Threads is { } th ? $"{th} threads · {d.Handles} handles" : null);
 
         if (history != null)
             AddActivity(grid, history, d.Pid, row?.Name ?? d.Name);
 
         Section("Corral");
-        Row("Règle", row?.Rule != null ? $"« {row.Rule} » : {row.RuleSummary}" : "aucune");
-        Row("ProBalance", row?.Restrained == true ? "abaissé temporairement (il saturait le processeur)" : "pas d'intervention en cours");
+        Row(Tr("Règle", "Rule"), row?.Rule != null ? Tr($"« {row.Rule} » : {row.RuleSummary}", $"“{row.Rule}”: {row.RuleSummary}") : Tr("aucune", "none"));
+        Row("ProBalance", row?.Restrained == true ? Tr("abaissé temporairement (il saturait le processeur)", "temporarily lowered (it was saturating the CPU)") : Tr("pas d'intervention en cours", "no action in progress"));
 
-        var close = new ModernButton("Fermer", primary: true) { DialogResult = DialogResult.OK };
-        var copy = new ModernButton("Copier");
+        var close = new ModernButton(Tr("Fermer", "Close"), primary: true) { DialogResult = DialogResult.OK };
+        var copy = new ModernButton(Tr("Copier", "Copy"));
         copy.Click += (_, _) =>
         {
             Clipboard.SetText(string.Join(Environment.NewLine, new[]
             {
                 $"{d.Name} (PID {d.Pid})", d.Path, d.CommandLine, d.Description, d.Company, d.Version,
             }.Where(s => !string.IsNullOrEmpty(s))));
-            copy.Text = "Copié ✓";
+            copy.Text = Tr("Copié ✓", "Copied ✓");
         };
-        tips.SetToolTip(copy, "Copier le nom, l'emplacement et la ligne de commande");
-        var open = new ModernButton("Ouvrir l'emplacement") { Enabled = d.Path != null };
+        tips.SetToolTip(copy, Tr("Copier le nom, l'emplacement et la ligne de commande", "Copy the name, location and command line"));
+        var open = new ModernButton(Tr("Ouvrir l'emplacement", "Open location")) { Enabled = d.Path != null };
         open.Click += (_, _) =>
         {
             try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{d.Path}\"") { UseShellExecute = true }); }
             catch (Exception ex) { Log.Error("Ouverture de l'emplacement", ex); }
         };
-        var rule = new ModernButton("Créer une règle") { Enabled = canCreateRule };
+        var rule = new ModernButton(Tr("Créer une règle", "Create a rule")) { Enabled = canCreateRule };
         rule.Click += (_, _) =>
         {
             DialogResult = DialogResult.OK;
@@ -110,17 +112,17 @@ public sealed class ProcessDetailsDialog : Form
     /// <summary>Quatre courbes (processeur, GPU, mémoire, disque) rafraîchies chaque seconde tant que la fiche est ouverte.</summary>
     void AddActivity(TableLayoutPanel grid, ProcessHistory history, int pid, string name)
     {
-        var title = new Label { Text = $"Activité ({history.Keep.TotalMinutes:0} dernières minutes)", Font = Ui.Section, AutoSize = true, Margin = new Padding(0, 16, 0, 6) };
+        var title = new Label { Text = Tr($"Activité ({history.Keep.TotalMinutes:0} dernières minutes)", $"Activity (last {history.Keep.TotalMinutes:0} minutes)"), Font = Ui.Section, AutoSize = true, Margin = new Padding(0, 16, 0, 6) };
         grid.Controls.Add(title, 0, grid.RowCount);
         grid.SetColumnSpan(title, 2);
         grid.RowCount++;
 
-        var cpu = new MiniChart { Title = "Processeur", Format = v => $"{v:0.0} %" };
+        var cpu = new MiniChart { Title = Tr("Processeur", "CPU"), Format = v => $"{v:0.0} %" };
         var gpu = new MiniChart { Title = "GPU" };
-        var mem = new MiniChart { Title = "Mémoire", Max = null, Format = v => $"{v / (1 << 20):N0} Mo" };
-        var io = new MiniChart { Title = "Disque et réseau (E/S)", Max = null, Format = Units.Rate };
-        tips.SetToolTip(io, "Octets lus et écrits par le programme : fichiers, mais aussi réseau et périphériques");
-        tips.SetToolTip(gpu, "Moteur graphique le plus sollicité par ce programme (3D, vidéo, copie…), comme dans le Gestionnaire des tâches");
+        var mem = new MiniChart { Title = Tr("Mémoire", "Memory"), Max = null, Format = v => $"{v / (1 << 20):N0} {Units.MB}" };
+        var io = new MiniChart { Title = Tr("Disque et réseau (E/S)", "Disk and network (I/O)"), Max = null, Format = Units.Rate };
+        tips.SetToolTip(io, Tr("Octets lus et écrits par le programme : fichiers, mais aussi réseau et périphériques", "Bytes read and written by the program: files, but also network and devices"));
+        tips.SetToolTip(gpu, Tr("Moteur graphique le plus sollicité par ce programme (3D, vidéo, copie…), comme dans le Gestionnaire des tâches", "Busiest graphics engine for this program (3D, video, copy…), as in Task Manager"));
         var charts = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Margin = new Padding(0) };
         foreach (var (c, i) in new[] { cpu, gpu, mem, io }.Select((c, i) => (c, i)))
         {

@@ -29,9 +29,9 @@ public sealed class CpuChart : Control
 
     /// <summary>Seuil affiché en pointillés (null = aucun), avec son libellé.</summary>
     public double? Threshold { get; set; }
-    public string ThresholdLabel { get; set; } = "Seuil ProBalance";
+    public string ThresholdLabel { get; set; } = Tr("Seuil ProBalance", "ProBalance threshold");
 
-    public string Title { get; set; } = "Processeur";
+    public string Title { get; set; } = Tr("Processeur", "CPU");
 
     /// <summary>Ligne d'information sous la moyenne (ex. « 11,8 Go sur 31,9 Go »).</summary>
     public string? Caption { get; set; }
@@ -69,7 +69,7 @@ public sealed class CpuChart : Control
         var current = data.Count > 0 ? $"{data[^1].Value:0} %" : "—";
         TextRenderer.DrawText(g, current, HeroFont, new Point(hx - 2, 28), p.Fore);
         int sx = hx + TextRenderer.MeasureText(g, current, HeroFont).Width + 12;
-        var summary = data.Count > 0 ? $"Moyenne {data.Average(d => d.Value):0} %   ·   Pic {data.Max(d => d.Value):0} %" : "";
+        var summary = data.Count > 0 ? Tr($"Moyenne {data.Average(d => d.Value):0} %   ·   Pic {data.Max(d => d.Value):0} %", $"Average {data.Average(d => d.Value):0} %   ·   Peak {data.Max(d => d.Value):0} %") : "";
         TextRenderer.DrawText(g, summary, Font, new Point(sx, 32), p.Muted);
         if (Caption != null)
             TextRenderer.DrawText(g, Caption, Font, new Point(sx, 50), p.Muted);
@@ -87,14 +87,14 @@ public sealed class CpuChart : Control
         // Graduations de temps relatives (« -4 min », « -30 s »…)
         // Sur un graphique étroit, une étiquette qui chevaucherait sa voisine est omise
         // (« maintenant », à droite, est toujours affichée).
-        int nowWidth = TextRenderer.MeasureText(g, "maintenant", Font).Width;
+        int nowWidth = TextRenderer.MeasureText(g, Now, Font).Width;
         int nowLeft = plot.Right - nowWidth;
         int lastRight = int.MinValue;
         for (int i = 0; i <= 5; i++)
         {
             var offset = TimeSpan.FromTicks(Range.Ticks * (5 - i) / 5);
             int x = (int)(plot.Left + plot.Width * i / 5f);
-            var label = i == 5 ? "maintenant" : Format(offset);
+            var label = i == 5 ? Now : Format(offset);
             int w = i == 5 ? nowWidth : TextRenderer.MeasureText(g, label, Font).Width;
             int left = i == 0 ? x : i == 5 ? nowLeft : x - w / 2;
             if (i < 5 && (left < lastRight + 10 || left + w > nowLeft - 10))
@@ -135,7 +135,7 @@ public sealed class CpuChart : Control
         g.ResetClip();
 
         if (data.Count == 0)
-            TextRenderer.DrawText(g, "Collecte des mesures…", Font, plot, p.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            TextRenderer.DrawText(g, Tr("Collecte des mesures…", "Collecting data…"), Font, plot, p.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
 
         DrawHover(g, p, data, plot, X, Y, now);
     }
@@ -158,7 +158,7 @@ public sealed class CpuChart : Control
             g.FillEllipse(dot, x - 4, y - 4, 8, 8);
 
         var ago = now - nearest.Time;
-        var text = $"{nearest.Value:0.0} %   ·   {(ago.TotalSeconds < 1.5 ? "maintenant" : "il y a " + Format(ago, precise: true))}";
+        var text = $"{nearest.Value:0.0} %   ·   {(ago.TotalSeconds < 1.5 ? Now : Tr("il y a " + Format(ago, precise: true), Format(ago, precise: true) + " ago"))}";
         var size = TextRenderer.MeasureText(g, text, Font);
         var box = new Rectangle((int)x + 12, (int)y - size.Height - 16, size.Width + 16, size.Height + 10);
         if (box.Right > Width - 4) box.X = (int)x - box.Width - 12;
@@ -196,6 +196,8 @@ public sealed class CpuChart : Control
     }
 
     static bool IsDarkSurface(Palette p) => p.Surface.GetBrightness() < 0.5f;
+
+    static string Now => Tr("maintenant", "now");
 }
 
 /// <summary>Petite courbe pour la fiche d'un processus : titre, valeur actuelle, pic, échelle fixe (%) ou automatique.</summary>
@@ -238,7 +240,7 @@ public sealed class MiniChart : Control
         var plot = new Rectangle(10, 34, Width - 20, Height - 56);
         double peak = data.Count > 0 ? data.Max(d => d.Value) : 0;
         double top = Max ?? Math.Max(peak * 1.15, 1);
-        TextRenderer.DrawText(g, data.Count > 0 ? $"Pic {Format(peak)}" : "Collecte des mesures…", Font,
+        TextRenderer.DrawText(g, data.Count > 0 ? Tr($"Pic {Format(peak)}", $"Peak {Format(peak)}") : Tr("Collecte des mesures…", "Collecting data…"), Font,
             new Point(10, plot.Bottom + 4), p.Muted);
 
         var now = DateTime.UtcNow;
@@ -268,5 +270,9 @@ public static class Units
 {
     /// <summary>Débit lisible : « 0 Ko/s », « 850 Ko/s », « 12,4 Mo/s ».</summary>
     public static string Rate(double bytesPerSec) =>
-        bytesPerSec >= 1 << 20 ? $"{bytesPerSec / (1 << 20):0.0} Mo/s" : $"{bytesPerSec / 1024:0} Ko/s";
+        bytesPerSec >= 1 << 20 ? $"{bytesPerSec / (1 << 20):0.0} {MB}/s" : $"{bytesPerSec / 1024:0} {KB}/s";
+
+    public static string KB => Tr("Ko", "KB");
+    public static string MB => Tr("Mo", "MB");
+    public static string GB => Tr("Go", "GB");
 }

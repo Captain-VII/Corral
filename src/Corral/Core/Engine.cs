@@ -103,7 +103,7 @@ public sealed class Engine : IDisposable
         lock (sync)
         {
             gameManual = enabled;
-            Log.Info(enabled ? "Mode Jeu activé manuellement" : "Mode Jeu manuel désactivé", LogCategory.Rule);
+            Log.Info(enabled ? Tr("Mode Jeu activé manuellement", "Game Mode turned on manually") : Tr("Mode Jeu manuel désactivé", "Manual Game Mode turned off"), LogCategory.Rule);
         }
     }
 
@@ -119,7 +119,7 @@ public sealed class Engine : IDisposable
             if (stopped || timer != null)
                 return;
             timer = new System.Threading.Timer(_ => OnTimer(), null, 0, Timeout.Infinite);
-            Log.Info("Moteur démarré");
+            Log.Info(Tr("Moteur démarré", "Engine started"));
         }
     }
 
@@ -158,8 +158,8 @@ public sealed class Engine : IDisposable
             keepAwake.Dispose();
             KeepAwakeReason = null;
             try { RestoreAll(); }
-            catch (Exception ex) { Log.Error("Restauration à l'arrêt", ex); }
-            Log.Info("Moteur arrêté");
+            catch (Exception ex) { Log.Error(Tr("Restauration à l'arrêt", "Restore on stop"), ex); }
+            Log.Info(Tr("Moteur arrêté", "Engine stopped"));
         }
     }
 
@@ -183,7 +183,7 @@ public sealed class Engine : IDisposable
             if (stopped)
                 return;
             try { snapshot = Tick(); }
-            catch (Exception ex) { Log.Error("Erreur moteur", ex); }
+            catch (Exception ex) { Log.Error(Tr("Erreur moteur", "Engine error"), ex); }
             finally { timer?.Change(settings.PollIntervalMs, Timeout.Infinite); }
             if (pendingActed.Count > 0)
             {
@@ -219,11 +219,11 @@ public sealed class Engine : IDisposable
         lock (sync)
         {
             if (Exclusions.IsProtected(name, pid, ownPid))
-                return "Processus système : Corral n'y touche pas.";
+                return Tr("Processus système : Corral n'y touche pas.", "System process: Corral does not touch it.");
             var key = tracked.Keys.FirstOrDefault(k => k.Pid == pid && string.Equals(k.Name, name, StringComparison.OrdinalIgnoreCase));
             using var p = key.Name == null ? null : OpenSame(key);
             if (p == null)
-                return "Le processus n'existe plus.";
+                return Tr("Le processus n'existe plus.", "The process no longer exists.");
             if (priority == ProcessPriorityClass.RealTime)
                 priority = ProcessPriorityClass.High;
             try
@@ -232,40 +232,40 @@ public sealed class Engine : IDisposable
             }
             catch (Exception ex)
             {
-                return "Accès refusé : " + ex.Message;
+                return Tr("Accès refusé : ", "Access denied: ") + ex.Message;
             }
             // ProBalance ne doit pas « restaurer » par-dessus le choix de l'utilisateur.
             if (tracked.TryGetValue(key, out var t))
                 t.ProBalanceOrig = null;
-            Log.Info($"{name} ({pid}) : priorité changée en {PriorityLabel(priority)} (ponctuel)", LogCategory.Rule);
+            Log.Info(Tr($"{name} ({pid}) : priorité changée en {PriorityLabel(priority)} (ponctuel)", $"{name} ({pid}): priority changed to {PriorityLabel(priority)} (one-off)"), LogCategory.Rule);
             return null;
         }
     }
 
     public static string PriorityLabel(ProcessPriorityClass p) => p switch
     {
-        ProcessPriorityClass.Idle => "Inactive",
-        ProcessPriorityClass.BelowNormal => "Inférieure à la normale",
-        ProcessPriorityClass.Normal => "Normale",
-        ProcessPriorityClass.AboveNormal => "Supérieure à la normale",
-        ProcessPriorityClass.High => "Haute",
-        _ => "Temps réel",
+        ProcessPriorityClass.Idle => Tr("Inactive", "Idle"),
+        ProcessPriorityClass.BelowNormal => Tr("Inférieure à la normale", "Below normal"),
+        ProcessPriorityClass.Normal => Tr("Normale", "Normal"),
+        ProcessPriorityClass.AboveNormal => Tr("Supérieure à la normale", "Above normal"),
+        ProcessPriorityClass.High => Tr("Haute", "High"),
+        _ => Tr("Temps réel", "Realtime"),
     };
 
     public static string IoLabel(IoPriorityLevel l) => l switch
     {
-        IoPriorityLevel.VeryLow => "Très basse",
-        IoPriorityLevel.Low => "Basse",
-        _ => "Normale",
+        IoPriorityLevel.VeryLow => Tr("Très basse", "Very low"),
+        IoPriorityLevel.Low => Tr("Basse", "Low"),
+        _ => Tr("Normale", "Normal"),
     };
 
     public static string MemoryLabel(MemoryPriorityLevel l) => l switch
     {
-        MemoryPriorityLevel.VeryLow => "Très basse",
-        MemoryPriorityLevel.Low => "Basse",
-        MemoryPriorityLevel.Medium => "Moyenne",
-        MemoryPriorityLevel.BelowNormal => "Inférieure à la normale",
-        _ => "Normale",
+        MemoryPriorityLevel.VeryLow => Tr("Très basse", "Very low"),
+        MemoryPriorityLevel.Low => Tr("Basse", "Low"),
+        MemoryPriorityLevel.Medium => Tr("Moyenne", "Medium"),
+        MemoryPriorityLevel.BelowNormal => Tr("Inférieure à la normale", "Below normal"),
+        _ => Tr("Normale", "Normal"),
     };
 
     /// <summary>Effet d'une règle en une ligne, pour les infobulles.</summary>
@@ -274,22 +274,22 @@ public sealed class Engine : IDisposable
         if (r == null)
             return null;
         var parts = new List<string>();
-        if (r.Priority is { } p) parts.Add("priorité " + PriorityLabel(p).ToLowerInvariant());
-        if (r.AffinityMask is { } m) parts.Add($"{System.Numerics.BitOperations.PopCount((ulong)m)} cœurs");
-        if (r.PowerPlan != null) parts.Add("plan d'alimentation");
+        if (r.Priority is { } p) parts.Add(Tr("priorité ", "priority ") + PriorityLabel(p).ToLowerInvariant());
+        if (r.AffinityMask is { } m) parts.Add(Tr($"{System.Numerics.BitOperations.PopCount((ulong)m)} cœurs", $"{System.Numerics.BitOperations.PopCount((ulong)m)} cores"));
+        if (r.PowerPlan != null) parts.Add(Tr("plan d'alimentation", "power plan"));
         if (r.CpuLimitPercent is { } c) parts.Add($"CPU max {c} %");
-        if (r.MemoryLimitMB is { } mem) parts.Add($"RAM max {mem} Mo");
-        if (r.EfficiencyMode == true) parts.Add("mode efficacité");
-        if (r.EfficiencyMode == false) parts.Add("jamais en mode efficacité");
-        if (r.IoPriority is { } io) parts.Add("disque " + IoLabel(io).ToLowerInvariant());
-        if (r.MemoryPriority is { } mp) parts.Add("mémoire " + MemoryLabel(mp).ToLowerInvariant());
-        if (r.IsGame) parts.Add("jeu (Mode Jeu)");
-        if (r.GpuPreference is { } gpu) parts.Add("carte graphique " + GpuPreferences.Label(gpu).ToLowerInvariant());
-        if (r.KeepAwake) parts.Add("empêche la veille");
-        if (r.Block == BlockMode.Always) parts.Add("bloqué");
-        if (r.Block == BlockMode.SingleInstance) parts.Add("une seule instance");
-        if (r.HasAlert) parts.Add("surveillé");
-        return parts.Count == 0 ? "aucun effet" : string.Join(" · ", parts);
+        if (r.MemoryLimitMB is { } mem) parts.Add(Tr($"RAM max {mem} Mo", $"RAM max {mem} MB"));
+        if (r.EfficiencyMode == true) parts.Add(Tr("mode efficacité", "efficiency mode"));
+        if (r.EfficiencyMode == false) parts.Add(Tr("jamais en mode efficacité", "never in efficiency mode"));
+        if (r.IoPriority is { } io) parts.Add(Tr("disque ", "disk ") + IoLabel(io).ToLowerInvariant());
+        if (r.MemoryPriority is { } mp) parts.Add(Tr("mémoire ", "memory ") + MemoryLabel(mp).ToLowerInvariant());
+        if (r.IsGame) parts.Add(Tr("jeu (Mode Jeu)", "game (Game Mode)"));
+        if (r.GpuPreference is { } gpu) parts.Add(Tr("carte graphique ", "graphics card ") + GpuPreferences.Label(gpu).ToLowerInvariant());
+        if (r.KeepAwake) parts.Add(Tr("empêche la veille", "prevents sleep"));
+        if (r.Block == BlockMode.Always) parts.Add(Tr("bloqué", "blocked"));
+        if (r.Block == BlockMode.SingleInstance) parts.Add(Tr("une seule instance", "single instance"));
+        if (r.HasAlert) parts.Add(Tr("surveillé", "monitored"));
+        return parts.Count == 0 ? Tr("aucun effet", "no effect") : string.Join(" · ", parts);
     }
 
     EngineSnapshot Tick()
@@ -313,7 +313,7 @@ public sealed class Engine : IDisposable
 
         IReadOnlyDictionary<int, double> gpu = NoGpu;
         try { if (GpuUsage != null) gpu = GpuUsage(); }
-        catch (Exception ex) { GpuUsage = null; Log.Error("Usage GPU", ex); }
+        catch (Exception ex) { GpuUsage = null; Log.Error(Tr("Usage GPU", "GPU usage"), ex); }
 
         var procs = Process.GetProcesses();
         var live = new Dictionary<ProcKey, Process>(procs.Length);
@@ -428,7 +428,7 @@ public sealed class Engine : IDisposable
             gameTrigger = want ? trigger : null;
             pendingGameEvent = (want, gameTrigger);
             reapply = true;
-            Log.Info(want ? $"Mode Jeu activé{(trigger != null ? $" ({trigger})" : "")}" : "Mode Jeu désactivé", LogCategory.Rule);
+            Log.Info(want ? Tr("Mode Jeu activé", "Game Mode on") + (trigger != null ? $" ({trigger})" : "") : Tr("Mode Jeu désactivé", "Game Mode off"), LogCategory.Rule);
             return;
         }
         if (gameActive && !gamePlanApplied && s.GameMode.PowerPlan is { } plan && plan != Guid.Empty)
@@ -449,10 +449,10 @@ public sealed class Engine : IDisposable
         {
             foreach (var (key, _) in group.OrderBy(kv => kv.Key.StartTicks).Skip(1))
             {
-                if (TryDo(key, "fermeture (une seule instance)", () => live[key].Kill()))
+                if (TryDo(key, Tr("fermeture (une seule instance)", "close (single instance)"), () => live[key].Kill()))
                 {
-                    Log.Info($"{key.Name} ({key.Pid}) fermé : une seule instance autorisée", LogCategory.Rule);
-                    pendingNotifications.Add(("Programme bloqué", $"Une seule instance de « {key.Name} » est autorisée : la nouvelle a été fermée."));
+                    Log.Info(Tr($"{key.Name} ({key.Pid}) fermé : une seule instance autorisée", $"{key.Name} ({key.Pid}) closed: only one instance allowed"), LogCategory.Rule);
+                    pendingNotifications.Add((Tr("Programme bloqué", "Program blocked"), Tr($"Une seule instance de « {key.Name} » est autorisée : la nouvelle a été fermée.", $"Only one instance of “{key.Name}” is allowed: the new one was closed.")));
                 }
             }
         }
@@ -473,9 +473,9 @@ public sealed class Engine : IDisposable
             try { privateBytes = p.PrivateMemorySize64; } catch { }
             string? reason = null;
             if (rule.AlertCpuPercent is > 0 and var c && cpu >= c)
-                reason = $"{cpu:0} % du processeur";
+                reason = Tr($"{cpu:0} % du processeur", $"{cpu:0} % of the CPU");
             else if (rule.AlertMemoryMB is > 0 and var m && privateBytes >= (long)m * 1024 * 1024)
-                reason = $"{privateBytes / (1024 * 1024):N0} Mo de mémoire";
+                reason = Tr($"{privateBytes / (1024 * 1024):N0} Mo de mémoire", $"{privateBytes / (1024 * 1024):N0} MB of memory");
 
             if (reason == null)
             {
@@ -488,31 +488,31 @@ public sealed class Engine : IDisposable
                 continue;
             t.AlertFired = true;
 
-            var duration = $"depuis {rule.AlertMinutes} min";
+            var duration = Tr($"depuis {rule.AlertMinutes} min", $"for {rule.AlertMinutes} min");
             switch (rule.AlertAction)
             {
                 case AlertAction.Lower:
-                    if (TryDo(key, "surveillance : abaissement", () =>
+                    if (TryDo(key, Tr("surveillance : abaissement", "monitoring: lowering"), () =>
                         {
                             var current = p.PriorityClass;
                             p.PriorityClass = ProcessPriorityClass.Idle;
                             t.OrigPriority ??= current;
                         }))
-                        Notify(key, $"« {key.Name} » utilise {reason} {duration} : sa priorité a été baissée.");
+                        Notify(key, Tr($"« {key.Name} » utilise {reason} {duration} : sa priorité a été baissée.", $"“{key.Name}” has been using {reason} {duration}: its priority was lowered."));
                     break;
                 case AlertAction.Close:
-                    if (TryDo(key, "surveillance : fermeture", () => p.Kill()))
-                        Notify(key, $"« {key.Name} » utilisait {reason} {duration} : il a été fermé.");
+                    if (TryDo(key, Tr("surveillance : fermeture", "monitoring: close"), () => p.Kill()))
+                        Notify(key, Tr($"« {key.Name} » utilisait {reason} {duration} : il a été fermé.", $"“{key.Name}” was using {reason} {duration}: it was closed."));
                     break;
                 default:
-                    Notify(key, $"« {key.Name} » utilise {reason} {duration}.");
+                    Notify(key, Tr($"« {key.Name} » utilise {reason} {duration}.", $"“{key.Name}” has been using {reason} {duration}."));
                     break;
             }
         }
 
         void Notify(ProcKey key, string message)
         {
-            Log.Warn($"Surveillance : {message} (PID {key.Pid})", LogCategory.Rule);
+            Log.Warn(Tr($"Surveillance : {message} (PID {key.Pid})", $"Monitoring: {message} (PID {key.Pid})"), LogCategory.Rule);
             pendingNotifications.Add(("Surveillance", message));
         }
     }
@@ -562,7 +562,7 @@ public sealed class Engine : IDisposable
         if (boosted is { } b && (!enabled || b.Pid != fg || !live.ContainsKey(b)))
         {
             if (tracked.TryGetValue(b, out var bt) && bt.BoostOrig is { } orig && live.TryGetValue(b, out var bp))
-                TryDo(b, "fin du boost", () =>
+                TryDo(b, Tr("fin du boost", "end of boost"), () =>
                 {
                     if (bp.PriorityClass == ProcessPriorityClass.AboveNormal) // inchangé depuis le boost
                         bp.PriorityClass = orig;
@@ -578,7 +578,7 @@ public sealed class Engine : IDisposable
             || Exclusions.IsProtected(key.Name, key.Pid, ownPid) || t.ProBalanceOrig != null)
             return;
         var p = live[key];
-        if (TryDo(key, "boost du premier plan", () =>
+        if (TryDo(key, Tr("boost du premier plan", "foreground boost"), () =>
             {
                 if (p.PriorityClass != ProcessPriorityClass.Normal)
                     return;
@@ -605,12 +605,12 @@ public sealed class Engine : IDisposable
         if (want)
         {
             power.OnStart(IdleKey, cfg.Plan);
-            Log.Info($"Économie au repos : aucune activité depuis {cfg.Minutes} min, plan économique activé", LogCategory.Power);
+            Log.Info(Tr($"Économie au repos : aucune activité depuis {cfg.Minutes} min, plan économique activé", $"Idle saver: no activity for {cfg.Minutes} min, power-saving plan on"), LogCategory.Power);
         }
         else
         {
             power.OnExit(IdleKey);
-            Log.Info("Économie au repos : retour au plan habituel", LogCategory.Power);
+            Log.Info(Tr("Économie au repos : retour au plan habituel", "Idle saver: back to the usual plan"), LogCategory.Power);
         }
     }
 
@@ -636,11 +636,11 @@ public sealed class Engine : IDisposable
             try
             {
                 MemoryCleaner.PurgeStandbyList();
-                done.Add("cache vidé");
+                done.Add(Tr("cache vidé", "cache emptied"));
             }
             catch (Exception ex)
             {
-                Log.Warn($"Nettoyage mémoire : liste de veille non vidée ({ex.Message})", LogCategory.Power);
+                Log.Warn(Tr($"Nettoyage mémoire : liste de veille non vidée ({ex.Message})", $"Memory cleanup: standby list not emptied ({ex.Message})"), LogCategory.Power);
             }
         }
         if (cfg.TrimIdle || manual)
@@ -661,15 +661,15 @@ public sealed class Engine : IDisposable
                 }
                 catch { } // processus protégé ou terminé : ignoré
             }
-            done.Add($"{trimmed} programmes inactifs allégés");
+            done.Add(Tr($"{trimmed} programmes inactifs allégés", $"{trimmed} idle programs trimmed"));
         }
 
         var (usedAfter, _) = Native.GetMemoryUsage();
         long freed = Math.Max(0, usedBefore - usedAfter);
-        var message = $"{freed / (1024 * 1024):N0} Mo libérés ({string.Join(", ", done)}).";
-        Log.Info($"Nettoyage mémoire{(manual ? "" : " automatique")} : {message}", LogCategory.Power);
+        var message = Tr($"{freed / (1024 * 1024):N0} Mo libérés ({string.Join(", ", done)}).", $"{freed / (1024 * 1024):N0} MB freed ({string.Join(", ", done)}).");
+        Log.Info(Tr($"Nettoyage mémoire{(manual ? "" : " automatique")} : {message}", $"{(manual ? "Memory" : "Automatic memory")} cleanup: {message}"), LogCategory.Power);
         if (manual) // l'automatique reste discret : journal seulement
-            pendingNotifications.Add(("Nettoyage mémoire", message));
+            pendingNotifications.Add((Tr("Nettoyage mémoire", "Memory cleanup"), message));
     }
 
     /// <summary>Retire les préférences GPU posées par Corral pour les programmes qu'aucune règle ne vise plus.</summary>
@@ -682,11 +682,11 @@ public sealed class Engine : IDisposable
             var wanted = Gpu.Managed.Where(path => s.Rules.Any(r =>
                 r.Enabled && r.GpuPreference != null && RuleMatcher.Matches(r.Pattern, Path.GetFileNameWithoutExtension(path))));
             foreach (var removed in Gpu.RemoveExcept(wanted.ToList()))
-                Log.Info($"Préférence GPU retirée : {removed}", LogCategory.Rule);
+                Log.Info(Tr($"Préférence GPU retirée : {removed}", $"GPU preference removed: {removed}"), LogCategory.Rule);
         }
         catch (Exception ex)
         {
-            Log.Error("Nettoyage des préférences GPU", ex);
+            Log.Error(Tr("Nettoyage des préférences GPU", "GPU preference cleanup"), ex);
         }
     }
 
@@ -699,7 +699,7 @@ public sealed class Engine : IDisposable
             var names = tracked.Values.Where(t => t.Rule?.KeepAwake == true).Select(t => t.Name)
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             if (names.Count > 0)
-                reason = $"Corral : {string.Join(", ", names.Take(3))} en cours";
+                reason = Tr($"Corral : {string.Join(", ", names.Take(3))} en cours", $"Corral: {string.Join(", ", names.Take(3))} running");
         }
         if (reason == KeepAwakeReason)
             return;
@@ -707,12 +707,12 @@ public sealed class Engine : IDisposable
         {
             keepAwake.Set(reason);
             if ((reason == null) != (KeepAwakeReason == null))
-                Log.Info(reason == null ? "Mise en veille de nouveau autorisée" : $"Mise en veille empêchée ({reason})", LogCategory.Power);
+                Log.Info(reason == null ? Tr("Mise en veille de nouveau autorisée", "Sleep allowed again") : Tr($"Mise en veille empêchée ({reason})", $"Sleep prevented ({reason})"), LogCategory.Power);
             KeepAwakeReason = reason;
         }
         catch (Exception ex)
         {
-            Log.Error("Empêcher la mise en veille", ex);
+            Log.Error(Tr("Empêcher la mise en veille", "Prevent sleep"), ex);
         }
     }
 
@@ -739,8 +739,8 @@ public sealed class Engine : IDisposable
         {
             if (TryDo(key, "blocage", () => p.Kill()))
             {
-                Log.Info($"{key.Name} ({key.Pid}) bloqué par la règle « {rule.Pattern} »", LogCategory.Rule);
-                pendingNotifications.Add(("Programme bloqué", $"« {key.Name} » a été fermé : la règle « {rule.Pattern} » l'interdit."));
+                Log.Info(Tr($"{key.Name} ({key.Pid}) bloqué par la règle « {rule.Pattern} »", $"{key.Name} ({key.Pid}) blocked by rule “{rule.Pattern}”"), LogCategory.Rule);
+                pendingNotifications.Add((Tr("Programme bloqué", "Program blocked"), Tr($"« {key.Name} » a été fermé : la règle « {rule.Pattern} » l'interdit.", $"“{key.Name}” was closed: rule “{rule.Pattern}” forbids it.")));
             }
             return;
         }
@@ -750,26 +750,26 @@ public sealed class Engine : IDisposable
         {
             if (priority == ProcessPriorityClass.RealTime)
                 priority = ProcessPriorityClass.High; // temps réel peut bloquer le système
-            if (TryDo(key, "priorité", () =>
+            if (TryDo(key, Tr("priorité", "priority"), () =>
                 {
                     var current = p.PriorityClass;
                     p.PriorityClass = priority;
                     t.OrigPriority ??= current;
                 }))
-                done.Add($"priorité {priority}");
+                done.Add(Tr($"priorité {priority}", $"priority {priority}"));
         }
 
         if (rule.AffinityMask is { } mask)
         {
             if (!RuleMatcher.IsValidAffinity(mask, cores))
-                Log.Warn($"Règle « {rule.Pattern} » : masque d'affinité 0x{mask:X} invalide pour {cores} CPU", LogCategory.Rule);
-            else if (TryDo(key, "affinité", () =>
+                Log.Warn(Tr($"Règle « {rule.Pattern} » : masque d'affinité 0x{mask:X} invalide pour {cores} CPU", $"Rule “{rule.Pattern}”: affinity mask 0x{mask:X} invalid for {cores} CPUs"), LogCategory.Rule);
+            else if (TryDo(key, Tr("affinité", "affinity"), () =>
                      {
                          var current = p.ProcessorAffinity;
                          p.ProcessorAffinity = (IntPtr)mask;
                          t.OrigAffinity ??= current;
                      }))
-                done.Add($"affinité 0x{mask:X}");
+                done.Add(Tr($"affinité 0x{mask:X}", $"affinity 0x{mask:X}"));
         }
 
         if ((rule.CpuLimitPercent is > 0 || rule.MemoryLimitMB is > 0) && !jobLimited.Contains(key))
@@ -777,45 +777,45 @@ public sealed class Engine : IDisposable
             if (TryDo(key, "limites", () => JobLimiter.Apply(p, rule.CpuLimitPercent, rule.MemoryLimitMB)))
             {
                 jobLimited.Add(key);
-                done.Add($"limites CPU {rule.CpuLimitPercent?.ToString() ?? "-"}% / RAM {rule.MemoryLimitMB?.ToString() ?? "-"} Mo");
+                done.Add(Tr("limites", "limits") + $" CPU {rule.CpuLimitPercent?.ToString() ?? "-"}% / RAM {rule.MemoryLimitMB?.ToString() ?? "-"} {Tr("Mo", "MB")}");
             }
         }
 
         if (rule.GpuPreference is { } gpuPref && t.Path != null && Gpu != null
-            && TryDo(key, "préférence GPU", () => Gpu.Set(t.Path, gpuPref)))
-            done.Add($"carte graphique « {GpuPreferences.Label(gpuPref)} » (au prochain lancement)");
+            && TryDo(key, Tr("préférence GPU", "GPU preference"), () => Gpu.Set(t.Path, gpuPref)))
+            done.Add(Tr($"carte graphique « {GpuPreferences.Label(gpuPref)} » (au prochain lancement)", $"graphics card “{GpuPreferences.Label(gpuPref)}” (at next start)"));
 
         if (rule.PowerPlan is { } plan)
         {
             power.OnStart(key, plan);
-            done.Add("plan d'alimentation");
+            done.Add(Tr("plan d'alimentation", "power plan"));
         }
 
-        if (rule.EfficiencyMode is { } eco && TryDo(key, "mode efficacité", () =>
+        if (rule.EfficiencyMode is { } eco && TryDo(key, Tr("mode efficacité", "efficiency mode"), () =>
             {
                 ProcessTweaks.SetEfficiencyMode(p.Handle, eco);
                 t.EfficiencySet = true;
             }))
-            done.Add(eco ? "mode efficacité" : "mode efficacité interdit");
+            done.Add(eco ? Tr("mode efficacité", "efficiency mode") : Tr("mode efficacité interdit", "efficiency mode forbidden"));
 
-        if (rule.IoPriority is { } io && TryDo(key, "priorité disque", () =>
+        if (rule.IoPriority is { } io && TryDo(key, Tr("priorité disque", "disk priority"), () =>
             {
                 var current = ProcessTweaks.GetIoPriority(p.Handle);
                 ProcessTweaks.SetIoPriority(p.Handle, io);
                 t.OrigIo ??= current;
             }))
-            done.Add($"disque {io}");
+            done.Add(Tr($"disque {io}", $"disk {io}"));
 
-        if (rule.MemoryPriority is { } memPrio && TryDo(key, "priorité mémoire", () =>
+        if (rule.MemoryPriority is { } memPrio && TryDo(key, Tr("priorité mémoire", "memory priority"), () =>
             {
                 var current = ProcessTweaks.GetMemoryPriority(p.Handle);
                 ProcessTweaks.SetMemoryPriority(p.Handle, memPrio);
                 t.OrigMemory ??= current;
             }))
-            done.Add($"mémoire {memPrio}");
+            done.Add(Tr($"mémoire {memPrio}", $"memory {memPrio}"));
 
         if (done.Count > 0)
-            Log.Info($"{key.Name} ({key.Pid}) : règle « {rule.Pattern} » → {string.Join(", ", done)}", LogCategory.Rule);
+            Log.Info(Tr($"{key.Name} ({key.Pid}) : règle « {rule.Pattern} » → {string.Join(", ", done)}", $"{key.Name} ({key.Pid}): rule “{rule.Pattern}” → {string.Join(", ", done)}"), LogCategory.Rule);
     }
 
     void RunProBalance(double sysCpu, List<ProBalanceLogic.Sample> samples, Dictionary<ProcKey, Process> live, ProBalanceSettings cfg)
@@ -835,7 +835,7 @@ public sealed class Engine : IDisposable
                     t.ProBalanceOrig = current;
                 }))
             {
-                Log.Info($"ProBalance : {key.Name} ({key.Pid}) abaissé (CPU système {sysCpu:0}%)", LogCategory.ProBalance);
+                Log.Info(Tr($"ProBalance : {key.Name} ({key.Pid}) abaissé (CPU système {sysCpu:0}%)", $"ProBalance: {key.Name} ({key.Pid}) lowered (system CPU {sysCpu:0}%)"), LogCategory.ProBalance);
                 pendingActed.Add(key.Name);
             }
         }
@@ -845,8 +845,8 @@ public sealed class Engine : IDisposable
             if (!tracked.TryGetValue(key, out var t) || t.ProBalanceOrig is not { } orig)
                 continue;
             t.ProBalanceOrig = null;
-            if (live.TryGetValue(key, out var p) && TryDo(key, "ProBalance restauration", () => p.PriorityClass = orig))
-                Log.Info($"ProBalance : {key.Name} ({key.Pid}) restauré en {orig}", LogCategory.ProBalance);
+            if (live.TryGetValue(key, out var p) && TryDo(key, Tr("ProBalance restauration", "ProBalance restore"), () => p.PriorityClass = orig))
+                Log.Info(Tr($"ProBalance : {key.Name} ({key.Pid}) restauré en {orig}", $"ProBalance: {key.Name} ({key.Pid}) restored to {orig}"), LogCategory.ProBalance);
         }
     }
 
@@ -867,15 +867,15 @@ public sealed class Engine : IDisposable
             if (p == null)
                 continue;
             if (priority is { } pr)
-                TryDo(key, "restauration priorité", () => p.PriorityClass = pr);
+                TryDo(key, Tr("restauration priorité", "priority restore"), () => p.PriorityClass = pr);
             if (affinity is { } af)
-                TryDo(key, "restauration affinité", () => p.ProcessorAffinity = af);
+                TryDo(key, Tr("restauration affinité", "affinity restore"), () => p.ProcessorAffinity = af);
             if (io is { } i)
-                TryDo(key, "restauration priorité disque", () => ProcessTweaks.SetIoPriority(p.Handle, i));
+                TryDo(key, Tr("restauration priorité disque", "disk priority restore"), () => ProcessTweaks.SetIoPriority(p.Handle, i));
             if (memory is { } m)
-                TryDo(key, "restauration priorité mémoire", () => ProcessTweaks.SetMemoryPriority(p.Handle, m));
+                TryDo(key, Tr("restauration priorité mémoire", "memory priority restore"), () => ProcessTweaks.SetMemoryPriority(p.Handle, m));
             if (efficiency)
-                TryDo(key, "restauration mode efficacité", () => ProcessTweaks.SetEfficiencyMode(p.Handle, null));
+                TryDo(key, Tr("restauration mode efficacité", "efficiency mode restore"), () => ProcessTweaks.SetEfficiencyMode(p.Handle, null));
         }
         power.RestoreAll();
         gamePlanApplied = false;
@@ -955,7 +955,7 @@ public sealed class Engine : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warn($"{key.Name} ({key.Pid}) : échec {what} : {ex.Message}");
+            Log.Warn(Tr($"{key.Name} ({key.Pid}) : échec {what} : {ex.Message}", $"{key.Name} ({key.Pid}): {what} failed: {ex.Message}"));
             return false;
         }
     }
