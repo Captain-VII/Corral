@@ -256,10 +256,13 @@ public sealed class NavBar : Control
     const int ItemHeight = 40, ItemTop = 76, Side = 10;
     readonly List<(string Glyph, string Text)> items = new();
     readonly ModernButton pause = new("Mettre en pause");
+    readonly ModernButton game = new("Mode Jeu");
     int hover = -1;
     int selected;
     string cpuText = "—", processText = "";
     bool paused;
+    bool gameOn;
+    string? gameText;
 
     public NavBar()
     {
@@ -269,10 +272,17 @@ public sealed class NavBar : Control
         TabStop = true;
         pause.Click += (_, _) => PauseRequested?.Invoke(!paused);
         Controls.Add(pause);
+        game.Click += (_, _) => GameRequested?.Invoke();
+        Controls.Add(game);
     }
 
     public event Action<int>? SelectedChanged;
     public event Action<bool>? PauseRequested;
+
+    /// <summary>Clic sur « Mode Jeu » : la fenêtre décide quoi faire (activer, désactiver, expliquer).</summary>
+    public event Action? GameRequested;
+
+    public Control GameButton => game;
 
     public void Add(string glyph, string text)
     {
@@ -293,7 +303,7 @@ public sealed class NavBar : Control
         }
     }
 
-    public void SetStatus(double cpu, int processes, bool isPaused)
+    public void SetStatus(double cpu, int processes, bool isPaused, bool gameActive = false, string? gameTrigger = null)
     {
         cpuText = $"{cpu:0} %";
         processText = $"{processes} processus";
@@ -303,14 +313,23 @@ public sealed class NavBar : Control
             pause.Text = paused ? "Reprendre" : "Mettre en pause";
             pause.Primary = paused;
         }
-        Invalidate(new Rectangle(0, Height - 150, Width, 110));
+        if (gameOn != gameActive)
+        {
+            gameOn = gameActive;
+            game.Primary = gameActive;
+            game.Text = gameActive ? "Mode Jeu actif" : "Mode Jeu";
+        }
+        gameText = gameActive ? (gameTrigger != null ? $"Mode Jeu : {gameTrigger}" : "Mode Jeu activé") : null;
+        Invalidate(new Rectangle(0, Height - 200, Width, 110));
         pause.Invalidate();
+        game.Invalidate();
     }
 
     protected override void OnLayout(LayoutEventArgs e)
     {
         base.OnLayout(e);
         pause.Bounds = new Rectangle(Side + 6, Height - 52, Width - 2 * Side - 12, 34);
+        game.Bounds = new Rectangle(Side + 6, Height - 94, Width - 2 * Side - 12, 34);
     }
 
     Rectangle ItemBounds(int i) => new(Side, ItemTop + i * (ItemHeight + 2), Width - 2 * Side, ItemHeight);
@@ -383,13 +402,13 @@ public sealed class NavBar : Control
         }
 
         // État en bas : CPU, nombre de processus, pause
-        int y = Height - 136;
+        int y = Height - 178;
         using (var sep = new Pen(p.Border))
             g.DrawLine(sep, Side + 6, y, Width - Side - 6, y);
         TextRenderer.DrawText(g, "Processeur", Ui.Base, new Point(Side + 6, y + 12), p.Muted);
         TextRenderer.DrawText(g, cpuText, Ui.Big, new Point(Side + 4, y + 30), p.Fore);
-        TextRenderer.DrawText(g, paused ? "En pause · règles suspendues" : processText, Ui.Base, new Point(Side + 6, y + 62),
-            paused ? p.Warning : p.Muted);
+        TextRenderer.DrawText(g, paused ? "En pause · règles suspendues" : gameText ?? processText, Ui.Base, new Point(Side + 6, y + 62),
+            paused ? p.Warning : gameText != null ? p.Accent : p.Muted);
     }
 }
 

@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using Corral.Core;
@@ -103,10 +103,13 @@ public sealed class MainForm : Form
         AddPage("", "Graphique", BuildChartPage());
         AddPage("", "Règles", BuildRulesPage());
         AddPage("", "ProBalance", BuildProBalancePage());
+        AddPage("", "Mode Jeu", BuildGamePage());
         AddPage("", "Options", BuildOptionsPage());
         AddPage("", "Journal", BuildLogPage());
         nav.SelectedChanged += SelectPage;
         nav.PauseRequested += paused => PauseRequested?.Invoke(paused);
+        nav.GameRequested += ToggleGameMode;
+        tips.SetToolTip(nav.GameButton, "Plan Performances, ProBalance réactif et programmes de fond calmés le temps de jouer");
 
         Controls.Add(pageHost);
         Controls.Add(nav);
@@ -596,7 +599,8 @@ public sealed class MainForm : Form
         if (IsDisposed)
             return;
         lastSnapshot = snap;
-        nav.SetStatus(snap.SystemCpu, snap.Rows.Count, snap.Paused);
+        nav.SetStatus(snap.SystemCpu, snap.Rows.Count, snap.Paused, snap.GameMode, snap.GameTrigger);
+        UpdateGameStatus(snap);
         if (chart.Visible)
             chart.Invalidate();
         if (IsPageVisible("Journal"))
@@ -688,12 +692,10 @@ public sealed class MainForm : Form
     Control BuildRulesPage()
     {
         ruleList.Columns.Add("Processus", 170);
-        ruleList.Columns.Add("État", 80);
-        ruleList.Columns.Add("Priorité", 160);
-        ruleList.Columns.Add("Affinité", 90);
-        ruleList.Columns.Add("Plan d'alimentation", 160);
-        ruleList.Columns.Add("CPU max", 80);
-        ruleList.Columns.Add("RAM max", 90);
+        ruleList.Columns.Add("État", 90);
+        ruleList.Columns.Add("Priorité", 170);
+        ruleList.Columns.Add("Cœurs", 80);
+        ruleList.Columns.Add("Autres réglages", 330);
         Theme.StyleList(ruleList, (item, col) => col == 1
             ? new Theme.CellStyle(Text: item.SubItems[1].Text == "Inactive" ? "○ Inactive" : "● Active",
                 Fore: item.SubItems[1].Text == "Inactive" ? Theme.Current.Muted : Theme.Current.Accent)
@@ -788,10 +790,8 @@ public sealed class MainForm : Form
                 r.Pattern,
                 r.Enabled ? "Active" : "Inactive",
                 r.Priority is { } prio ? Engine.PriorityLabel(prio) : "—",
-                r.AffinityMask is { } m ? $"{System.Numerics.BitOperations.PopCount((ulong)m)} cœurs" : "—",
-                r.PowerPlan is { } g ? PlanName(g) : "—",
-                r.CpuLimitPercent is { } c ? $"{c} %" : "—",
-                r.MemoryLimitMB is { } mem ? $"{mem} Mo" : "—",
+                r.AffinityMask is { } m ? $"{System.Numerics.BitOperations.PopCount((ulong)m)}" : "Tous",
+                RuleOptions(r),
             }));
         }
         if (select >= 0 && select < ruleList.Items.Count)
@@ -805,6 +805,7 @@ public sealed class MainForm : Form
         rulesEmpty.Visible = empty;
         Theme.FitColumns(ruleList);
         UpdateRuleButtons();
+        UpdateGameList();
     }
 
     string PlanName(Guid id) =>
@@ -1092,6 +1093,153 @@ public sealed class MainForm : Form
     static void SetNum(NumericUpDown n, double value) =>
         n.Value = Math.Clamp((decimal)value, n.Minimum, n.Maximum);
 
+    string RuleOptions(Rule r)
+    {
+        var parts = new List<string>();
+        if (r.IsGame) parts.Add("Jeu");
+        if (r.PowerPlan is { } g) parts.Add("Plan " + PlanName(g));
+        if (r.CpuLimitPercent is { } c) parts.Add($"CPU max {c} %");
+        if (r.MemoryLimitMB is { } mem) parts.Add($"RAM max {mem} Mo");
+        if (r.EfficiencyMode == true) parts.Add("Efficacité");
+        if (r.EfficiencyMode == false) parts.Add("Jamais efficacité");
+        if (r.IoPriority is { } io) parts.Add("Disque " + Engine.IoLabel(io).ToLowerInvariant());
+        if (r.MemoryPriority is { } m) parts.Add("Mémoire " + Engine.MemoryLabel(m).ToLowerInvariant());
+        return parts.Count == 0 ? "—" : string.Join(" · ", parts);
+    }
+
+    // ---------- Mode Jeu ----------
+
+    readonly Label gameState = new() { AutoSize = true, Font = Ui.Section, Margin = new Padding(0, 2, 0, 0) };
+    readonly Label gameDetail = new() { AutoSize = true, Tag = Theme.HintTag, MaximumSize = new Size(620, 0), Margin = new Padding(0, 4, 0, 0) };
+    readonly Label gameList = new() { AutoSize = true, Tag = Theme.HintTag, MaximumSize = new Size(520, 0), Margin = new Padding(0, 2, 0, 0) };
+    readonly ModernButton gameToggle = new("Activer maintenant");
+    readonly ToggleSwitch gmAuto = new();
+    readonly ToggleSwitch gmReactive = new();
+    readonly ToggleSwitch gmLower = new();
+    readonly ToggleSwitch gmNotify = new();
+    readonly ComboBox gmPlan = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 240 };
+    readonly TextBox gmApps = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, Height = 110, Dock = DockStyle.Fill };
+    readonly List<Guid> gmPlanIds = new();
+    (bool, bool, string?, bool)? lastGameState;
+
+    Control BuildGamePage()
+    {
+        gameToggle.Click += (_, _) => ToggleGameMode();
+        var addGame = new ModernButton("Ajouter un jeu…");
+        addGame.Click += (_, _) => AddRule(new Rule { IsGame = true, Priority = System.Diagnostics.ProcessPriorityClass.High });
+        tips.SetToolTip(addGame, "Crée une règle marquée « C'est un jeu » : le Mode Jeu s'activera quand ce programme tourne.");
+
+        var status = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Margin = new Padding(0) };
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var texts = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Dock = DockStyle.Fill, Margin = new Padding(0) };
+        texts.Controls.Add(gameState);
+        texts.Controls.Add(gameDetail);
+        gameToggle.Anchor = AnchorStyles.Right;
+        status.Controls.Add(texts, 0, 0);
+        status.Controls.Add(gameToggle, 1, 0);
+
+        var apps = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Margin = new Padding(0) };
+        apps.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        apps.Controls.Add(SettingRow("Calmer les programmes de fond",
+            "Priorité basse et mode efficacité pour les programmes ci-dessous (navigateurs, synchronisation…), sauf s'ils ont leur propre règle.", gmLower));
+        apps.Controls.Add(gmApps);
+
+        var stack = new CardStack();
+        stack.Controls.Add(new Card(status, "État"));
+        stack.Controls.Add(new Card(Rows(
+            SettingRow("Activer automatiquement quand un jeu tourne",
+                "Un programme est un jeu si sa règle est marquée « C'est un jeu » (le modèle Jeu le fait).", gmAuto),
+            SettingRow("Jeux reconnus", null, addGame),
+            gameList), "Déclenchement"));
+        stack.Controls.Add(new Card(Rows(
+            SettingRow("Plan d'alimentation", "Activé pendant le Mode Jeu, puis le plan d'origine revient.", gmPlan),
+            SettingRow("ProBalance réactif", "Utilise le préréglage Réactif pour que le jeu garde la main.", gmReactive),
+            SettingRow("Me prévenir", "Une bulle à l'activation et à la désactivation.", gmNotify)), "Pendant le Mode Jeu"));
+        stack.Controls.Add(new Card(apps, "Programmes de fond"));
+
+        var save = new ModernButton("Enregistrer", primary: true);
+        save.Click += (_, _) => ApplyGameSettings();
+        tips.SetToolTip(gameToggle, "Activer ou désactiver le Mode Jeu manuellement (aussi depuis la barre latérale et l'icône de notification)");
+        LoadGameSettings();
+        UpdateGameStatus(new EngineSnapshot(0, false, Array.Empty<ProcessRow>()));
+        return MakePage("Mode Jeu", "Tout pour le jeu, le temps de jouer : plan Performances, ProBalance réactif et programmes de fond calmés. Tout revient à la normale ensuite.",
+            stack, save);
+    }
+
+    void LoadGameSettings()
+    {
+        var gm = settings.GameMode;
+        gmAuto.Checked = gm.Automatic;
+        gmReactive.Checked = gm.ReactiveProBalance;
+        gmLower.Checked = gm.LowerBackground;
+        gmNotify.Checked = gm.Notify;
+        gmApps.Text = string.Join(Environment.NewLine, gm.BackgroundApps);
+
+        gmPlan.Items.Clear();
+        gmPlanIds.Clear();
+        gmPlan.Items.Add("(inchangé)");
+        gmPlanIds.Add(Guid.Empty);
+        foreach (var p in plans ??= PowerCfg.List())
+        {
+            gmPlan.Items.Add(p.Name);
+            gmPlanIds.Add(p.Id);
+        }
+        gmPlan.SelectedIndex = Math.Max(0, gmPlanIds.IndexOf(gm.PowerPlan ?? Guid.Empty));
+        UpdateGameList();
+    }
+
+    void UpdateGameList()
+    {
+        var games = settings.Rules.Where(r => r.IsGame).Select(r => r.Pattern + (r.Enabled ? "" : " (règle inactive)")).ToList();
+        gameList.Text = games.Count == 0
+            ? "Aucun jeu pour l'instant. Utilisez « Ajouter un jeu… » ou le modèle Jeu d'une règle."
+            : string.Join(", ", games);
+    }
+
+    void ApplyGameSettings()
+    {
+        var gm = settings.GameMode;
+        gm.Automatic = gmAuto.Checked;
+        gm.ReactiveProBalance = gmReactive.Checked;
+        gm.LowerBackground = gmLower.Checked;
+        gm.Notify = gmNotify.Checked;
+        gm.PowerPlan = gmPlanIds[Math.Max(0, gmPlan.SelectedIndex)];
+        gm.BackgroundApps = gmApps.Lines.Select(l => l.Trim()).Where(l => l.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        SaveAndApply();
+        LoadGameSettings();
+    }
+
+    /// <summary>Bouton Mode Jeu (barre latérale, page, icône de notification).</summary>
+    public void ToggleGameMode()
+    {
+        bool active = lastSnapshot?.GameMode == true;
+        if (active && !engine.GameModeManual)
+        {
+            MessageBox.Show(this,
+                $"Le Mode Jeu est actif automatiquement parce que « {lastSnapshot?.GameTrigger} » tourne.\nIl se désactivera tout seul à sa fermeture.\n\n" +
+                "Pour ne plus le déclencher automatiquement, désactivez l'option dans la page Mode Jeu.",
+                Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        engine.SetGameMode(!engine.GameModeManual);
+    }
+
+    void UpdateGameStatus(EngineSnapshot snap)
+    {
+        var key = (snap.GameMode, engine.GameModeManual, snap.GameTrigger, settings.GameMode.Automatic);
+        if (lastGameState == key)
+            return;
+        lastGameState = key;
+        gameState.Text = snap.GameMode ? "Mode Jeu actif" : "Mode Jeu inactif";
+        gameState.ForeColor = snap.GameMode ? Theme.Current.Accent : Theme.Current.Fore;
+        gameDetail.Text = snap.GameMode
+            ? (snap.GameTrigger != null ? $"Déclenché par « {snap.GameTrigger} » : il se désactivera à sa fermeture." : "Activé manuellement.")
+            : settings.GameMode.Automatic ? "Il s'activera tout seul au lancement d'un jeu reconnu." : "Activation manuelle uniquement.";
+        gameToggle.Text = snap.GameMode && engine.GameModeManual ? "Désactiver" : "Activer maintenant";
+        gameToggle.Enabled = !(snap.GameMode && !engine.GameModeManual);
+    }
+
     // ---------- Options ----------
 
     Control BuildOptionsPage()
@@ -1142,7 +1290,7 @@ public sealed class MainForm : Form
             AutoSize = true,
             Tag = Theme.HintTag,
             MaximumSize = new Size(640, 0),
-            Text = "Ctrl+F : rechercher un processus · Ctrl+N : nouvelle règle · Ctrl+1 à 6 : changer de page · " +
+            Text = "Ctrl+F : rechercher un processus · Ctrl+N : nouvelle règle · Ctrl+1 à 8 : changer de page · " +
                    "F5 : actualiser · Suppr / Entrée / Espace : supprimer, modifier, activer la règle sélectionnée",
         };
 

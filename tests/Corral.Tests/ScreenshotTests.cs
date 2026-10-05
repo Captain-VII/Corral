@@ -25,7 +25,7 @@ public class ScreenshotTests
                 var settings = new Settings { Theme = mode };
                 settings.ProBalance.Enabled = false;
                 settings.Rules.Add(new Rule { Pattern = "chrome*", Priority = System.Diagnostics.ProcessPriorityClass.BelowNormal, AffinityMask = 0xFF });
-                settings.Rules.Add(new Rule { Pattern = "jeu.exe", Priority = System.Diagnostics.ProcessPriorityClass.High });
+                settings.Rules.Add(new Rule { Pattern = "jeu.exe", Priority = System.Diagnostics.ProcessPriorityClass.High, IsGame = true, EfficiencyMode = false });
                 settings.Rules.Add(new Rule { Pattern = "sauvegarde*", Enabled = false, Priority = System.Diagnostics.ProcessPriorityClass.Idle, CpuLimitPercent = 20, MemoryLimitMB = 2048 });
                 using var engine = new Engine(RuleStore.Clone(settings), new NoPower(), foregroundPid: () => -1);
                 settings.ProBalance.Enabled = true; // seulement côté interface : affiche le seuil sans que le moteur agisse
@@ -58,7 +58,7 @@ public class ScreenshotTests
                 Log.Info("chrome (1234) : règle « chrome* » → priorité BelowNormal", LogCategory.Rule);
                 Log.Info("ProBalance : jeu (4321) abaissé (CPU système 91%)", LogCategory.ProBalance);
                 Log.Warn("powercfg : délai dépassé", LogCategory.Power);
-                foreach (var page in new[] { "Règles", "ProBalance", "Options", "Journal" })
+                foreach (var page in new[] { "Règles", "ProBalance", "Mode Jeu", "Options", "Journal" })
                 {
                     form.ShowPage(page);
                     Pump(400);

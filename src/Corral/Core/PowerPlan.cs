@@ -23,6 +23,13 @@ public sealed class PowerCfg : IPowerPlanApi
 
     public static IReadOnlyList<PowerPlanInfo> List() => ParseList(Run("/list") ?? "");
 
+    /// <summary>Plans standard de Windows orientés performance, par ordre de préférence.</summary>
+    public static readonly Guid[] PerformancePlans =
+    {
+        Guid.Parse("e9a42b02-d5df-448d-aa00-03f14749eb61"), // Performances optimales
+        Guid.Parse("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"), // Performances élevées
+    };
+
     public Guid? GetActive()
     {
         var output = Run("/getactivescheme");

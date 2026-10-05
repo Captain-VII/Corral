@@ -13,6 +13,33 @@ public sealed class Rule
     /// <summary>Plafond en % du CPU total (1-99).</summary>
     public int? CpuLimitPercent { get; set; }
     public int? MemoryLimitMB { get; set; }
+    /// <summary>Mode efficacité Windows 11 (EcoQoS) : true l'impose, false l'interdit.</summary>
+    public bool? EfficiencyMode { get; set; }
+    public Corral.Core.IoPriorityLevel? IoPriority { get; set; }
+    public Corral.Core.MemoryPriorityLevel? MemoryPriority { get; set; }
+    /// <summary>Ce programme est un jeu : le Mode Jeu s'active tant qu'il tourne (si l'option est activée).</summary>
+    public bool IsGame { get; set; }
+}
+
+/// <summary>
+/// Mode Jeu : plan d'alimentation performant, ProBalance réactif, et programmes de fond abaissés
+/// (priorité basse + mode efficacité) le temps de jouer.
+/// </summary>
+public sealed class GameModeSettings
+{
+    /// <summary>S'active tout seul quand un programme marqué « jeu » tourne.</summary>
+    public bool Automatic { get; set; } = true;
+    /// <summary>Plan à activer ; Guid.Empty = ne pas changer ; null = pas encore choisi (Corral propose un plan performant).</summary>
+    public Guid? PowerPlan { get; set; }
+    public bool ReactiveProBalance { get; set; } = true;
+    public bool LowerBackground { get; set; } = true;
+    /// <summary>Bulle à l'activation et à la désactivation.</summary>
+    public bool Notify { get; set; } = true;
+    public List<string> BackgroundApps { get; set; } = new()
+    {
+        "chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe",
+        "OneDrive.exe", "Dropbox.exe", "steamwebhelper.exe", "EpicGamesLauncher.exe",
+    };
 }
 
 public sealed class ProBalanceSettings
@@ -75,6 +102,7 @@ public sealed class Settings
     /// <summary>Raccourci dans le menu Démarrer (pour la recherche Windows).</summary>
     public bool StartMenuShortcut { get; set; } = true;
     public WindowSettings Window { get; set; } = new();
+    public GameModeSettings GameMode { get; set; } = new();
 
     /// <summary>Corrige les valeurs nulles ou hors bornes après une lecture JSON.</summary>
     public void Normalize()
@@ -93,6 +121,9 @@ public sealed class Settings
         ProBalance.TriggerSeconds = Math.Clamp(ProBalance.TriggerSeconds, 1, 60);
         ProBalance.RestoreSeconds = Math.Clamp(ProBalance.RestoreSeconds, 1, 60);
         Window ??= new();
+        GameMode ??= new();
+        GameMode.BackgroundApps ??= new();
+        GameMode.BackgroundApps.RemoveAll(string.IsNullOrWhiteSpace);
         if (Window.Width < 0 || Window.Height < 0 || Window.Width > 20_000 || Window.Height > 20_000)
             Window = new() { LastPage = Window.LastPage };
     }

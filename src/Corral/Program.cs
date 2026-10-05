@@ -45,6 +45,14 @@ static class Program
         var settings = store.Load();
         UI.Theme.Set(settings.Theme);
 
+        if (settings.GameMode.PowerPlan == null)
+        {
+            // Premier lancement du Mode Jeu : proposer le plan Performances de Windows s'il existe
+            var perf = PowerCfg.List().FirstOrDefault(p => PowerCfg.PerformancePlans.Contains(p.Id));
+            settings.GameMode.PowerPlan = perf?.Id ?? Guid.Empty;
+            try { store.Save(settings); } catch (Exception ex) { Log.Error("Enregistrement de la configuration", ex); }
+        }
+
         if (Updater.IsPublishedBuild)
         {
             // Raccourci du menu Démarrer et tâche de démarrage pointés sur l'exe actuel (même s'il a été déplacé).

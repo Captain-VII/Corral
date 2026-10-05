@@ -26,6 +26,7 @@ public sealed class TrayContext : ApplicationContext
     readonly List<string> pendingNotify = new();
     DateTime lastNotify = DateTime.MinValue;
     bool lastBalloonIsUpdate;
+    bool gameActive;
     UpdateInfo? pendingUpdate;
     bool checking;
     bool updateDialogOpen;
@@ -52,7 +53,14 @@ public sealed class TrayContext : ApplicationContext
         proBalanceItem.ToolTipText = "Activer ou désactiver ProBalance";
         proBalanceItem.Click += (_, _) => form.SetProBalanceEnabled(!settings.ProBalance.Enabled);
         menu.Items.Add(proBalanceItem);
-        menu.Opening += (_, _) => proBalanceItem.Checked = settings.ProBalance.Enabled;
+        var gameItem = new ToolStripMenuItem("Mode Jeu") { ToolTipText = "Plan Performances, ProBalance réactif, programmes de fond calmés" };
+        gameItem.Click += (_, _) => form.ToggleGameMode();
+        menu.Items.Add(gameItem);
+        menu.Opening += (_, _) =>
+        {
+            proBalanceItem.Checked = settings.ProBalance.Enabled;
+            gameItem.Checked = gameActive;
+        };
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quitter", null, (_, _) => Exit());
         Theme.ApplyTo(menu);
@@ -90,6 +98,18 @@ public sealed class TrayContext : ApplicationContext
                 tray.Text = text;
         }, null);
         engine.ProBalanceActed += (names, cpu) => ui.Post(_ => NotifyProBalance(names), null);
+        engine.GameModeChanged += (active, trigger) => ui.Post(_ =>
+        {
+            gameActive = active;
+            if (exiting || !settings.GameMode.Notify)
+                return;
+            lastBalloonIsUpdate = false;
+            tray.ShowBalloonTip(4000, "Mode Jeu",
+                active
+                    ? (trigger != null ? $"Activé pour « {trigger} » : plan Performances et programmes de fond calmés." : "Activé : plan Performances et programmes de fond calmés.")
+                    : "Désactivé : tout est revenu à la normale.",
+                ToolTipIcon.Info);
+        }, null);
         notifyTimer.Tick += (_, _) =>
         {
             notifyTimer.Stop();

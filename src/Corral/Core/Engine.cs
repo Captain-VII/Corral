@@ -7,7 +7,8 @@ namespace Corral.Core;
 public sealed record ProcessRow(int Pid, string Name, double Cpu, long MemoryBytes, string? Rule, bool Restrained,
     string? Path = null, string? RuleSummary = null);
 
-public sealed record EngineSnapshot(double SystemCpu, bool Paused, IReadOnlyList<ProcessRow> Rows);
+public sealed record EngineSnapshot(double SystemCpu, bool Paused, IReadOnlyList<ProcessRow> Rows,
+    bool GameMode = false, string? GameTrigger = null);
 
 /// <summary>
 /// Moteur : un seul thread (timer non réentrant) sous verrou. À chaque passage il liste les processus,
@@ -28,7 +29,14 @@ public sealed class Engine : IDisposable
         public bool CpuDenied;
         public string? Path;
         public bool PathLoaded;
+        public IoPriorityLevel? OrigIo;
+        public MemoryPriorityLevel? OrigMemory;
+        public bool EfficiencySet;
     }
+
+    /// <summary>Clé fictive pour la demande de plan d'alimentation du Mode Jeu.</summary>
+    static readonly ProcKey GameKey = new(-1, "__mode_jeu", 0);
+    public const string GameModeRuleName = "Mode Jeu";
 
     readonly object sync = new();
     readonly PowerPlanManager power;
@@ -45,6 +53,11 @@ public sealed class Engine : IDisposable
     bool reapply;
     bool paused;
     bool stopped;
+    bool gameManual;
+    bool gameActive;
+    string? gameTrigger;
+    bool gamePlanApplied;
+    (bool Active, string? Trigger)? pendingGameEvent;
     System.Threading.Timer? timer;
 
     public Engine(Settings settings, IPowerPlanApi powerApi, string? powerStateFile = null, Func<int>? foregroundPid = null)
@@ -59,6 +72,24 @@ public sealed class Engine : IDisposable
 
     /// <summary>ProBalance vient d'abaisser des programmes (noms, CPU système). Levé sur le thread du moteur.</summary>
     public event Action<IReadOnlyList<string>, double>? ProBalanceActed;
+
+    /// <summary>Le Mode Jeu vient de s'activer ou de se désactiver (jeu déclencheur, ou null si manuel).</summary>
+    public event Action<bool, string?>? GameModeChanged;
+
+    /// <summary>Active ou désactive le Mode Jeu manuellement (en plus du déclenchement automatique).</summary>
+    public void SetGameMode(bool enabled)
+    {
+        lock (sync)
+        {
+            gameManual = enabled;
+            Log.Info(enabled ? "Mode Jeu activé manuellement" : "Mode Jeu manuel désactivé", LogCategory.Rule);
+        }
+    }
+
+    public bool GameModeManual
+    {
+        get { lock (sync) return gameManual; }
+    }
 
     public void Start()
     {
@@ -122,6 +153,7 @@ public sealed class Engine : IDisposable
     {
         EngineSnapshot? snapshot = null;
         List<string>? acted = null;
+        (bool Active, string? Trigger)? game;
         lock (sync)
         {
             if (stopped)
@@ -134,6 +166,8 @@ public sealed class Engine : IDisposable
                 acted = new List<string>(pendingActed);
                 pendingActed.Clear();
             }
+            game = pendingGameEvent;
+            pendingGameEvent = null;
         }
         // Événements levés hors verrou : un abonné lent ne bloque pas le moteur.
         try
@@ -142,6 +176,8 @@ public sealed class Engine : IDisposable
                 SnapshotReady?.Invoke(snapshot);
             if (acted != null && snapshot != null)
                 ProBalanceActed?.Invoke(acted, snapshot.SystemCpu);
+            if (game is { } g)
+                GameModeChanged?.Invoke(g.Active, g.Trigger);
         }
         catch (Exception ex) { Log.Error("Affichage", ex); }
     }
@@ -188,6 +224,22 @@ public sealed class Engine : IDisposable
         _ => "Temps réel",
     };
 
+    public static string IoLabel(IoPriorityLevel l) => l switch
+    {
+        IoPriorityLevel.VeryLow => "Très basse",
+        IoPriorityLevel.Low => "Basse",
+        _ => "Normale",
+    };
+
+    public static string MemoryLabel(MemoryPriorityLevel l) => l switch
+    {
+        MemoryPriorityLevel.VeryLow => "Très basse",
+        MemoryPriorityLevel.Low => "Basse",
+        MemoryPriorityLevel.Medium => "Moyenne",
+        MemoryPriorityLevel.BelowNormal => "Inférieure à la normale",
+        _ => "Normale",
+    };
+
     /// <summary>Effet d'une règle en une ligne, pour les infobulles.</summary>
     public static string? Summary(Rule? r)
     {
@@ -199,6 +251,11 @@ public sealed class Engine : IDisposable
         if (r.PowerPlan != null) parts.Add("plan d'alimentation");
         if (r.CpuLimitPercent is { } c) parts.Add($"CPU max {c} %");
         if (r.MemoryLimitMB is { } mem) parts.Add($"RAM max {mem} Mo");
+        if (r.EfficiencyMode == true) parts.Add("mode efficacité");
+        if (r.EfficiencyMode == false) parts.Add("jamais en mode efficacité");
+        if (r.IoPriority is { } io) parts.Add("disque " + IoLabel(io).ToLowerInvariant());
+        if (r.MemoryPriority is { } mp) parts.Add("mémoire " + MemoryLabel(mp).ToLowerInvariant());
+        if (r.IsGame) parts.Add("jeu (Mode Jeu)");
         return parts.Count == 0 ? "aucun effet" : string.Join(" · ", parts);
     }
 
@@ -216,8 +273,9 @@ public sealed class Engine : IDisposable
         clock.Restart();
         double sysCpu = systemCpu.Sample();
         int fg = foregroundPid();
-        bool pbActive = s.ProBalance.Enabled && !paused;
-        var userExclusions = new HashSet<string>(s.ProBalance.Exclusions.Select(RuleMatcher.Normalize), StringComparer.OrdinalIgnoreCase);
+        var pb = EffectiveProBalance(s);
+        bool pbActive = pb.Enabled && !paused;
+        var userExclusions = pb.Exclusions;
 
         var procs = Process.GetProcesses();
         var live = new Dictionary<ProcKey, Process>(procs.Length);
@@ -247,9 +305,9 @@ public sealed class Engine : IDisposable
                     bool eligible = !Exclusions.IsProtected(key.Name, key.Pid, ownPid)
                                     && key.Pid != fg
                                     && t.Rule?.Priority == null
-                                    && !userExclusions.Contains(key.Name);
+                                    && !userExclusions.Any(x => RuleMatcher.Matches(x, key.Name)); // jokers acceptés
                     // On ne lit la priorité (appel système) que pour les candidats.
-                    if (eligible && !proBalance.IsRestrained(key) && cpu >= s.ProBalance.ProcessThreshold)
+                    if (eligible && !proBalance.IsRestrained(key) && cpu >= pb.ProcessThreshold)
                         eligible = HasNormalPriority(p);
                     samples.Add(new ProBalanceLogic.Sample(key, cpu, eligible));
                 }
@@ -272,9 +330,11 @@ public sealed class Engine : IDisposable
             }
 
             if (pbActive)
-                RunProBalance(sysCpu, samples, live, s.ProBalance);
+                RunProBalance(sysCpu, samples, live, pb);
             else
                 proBalance.Reset();
+
+            UpdateGameMode(s);
         }
         finally
         {
@@ -282,14 +342,58 @@ public sealed class Engine : IDisposable
                 p.Dispose();
         }
 
-        return new EngineSnapshot(sysCpu, paused, rows);
+        return new EngineSnapshot(sysCpu, paused, rows, gameActive, gameTrigger);
     }
+
+    /// <summary>ProBalance tel qu'appliqué : les seuils « Réactif » remplacent les réglages pendant le Mode Jeu.</summary>
+    ProBalanceSettings EffectiveProBalance(Settings s)
+    {
+        if (!gameActive || !s.GameMode.ReactiveProBalance)
+            return s.ProBalance;
+        var pb = new ProBalanceSettings { Enabled = s.ProBalance.Enabled, Exclusions = s.ProBalance.Exclusions };
+        pb.ApplyPreset(ProBalanceSettings.Presets[^1]);
+        return pb;
+    }
+
+    /// <summary>
+    /// Le Mode Jeu est actif s'il est demandé manuellement, ou (option automatique) si un programme
+    /// dont la règle est marquée « jeu » tourne. Tout changement d'état déclenche une réapplication
+    /// complète au passage suivant (programmes de fond abaissés ou restaurés).
+    /// </summary>
+    void UpdateGameMode(Settings s)
+    {
+        string? trigger = null;
+        if (!paused && s.GameMode.Automatic)
+            trigger = tracked.FirstOrDefault(kv => kv.Value.Rule?.IsGame == true).Value?.Name;
+        bool want = !paused && (gameManual || trigger != null);
+
+        if (want != gameActive)
+        {
+            gameActive = want;
+            gameTrigger = want ? trigger : null;
+            pendingGameEvent = (want, gameTrigger);
+            reapply = true;
+            Log.Info(want ? $"Mode Jeu activé{(trigger != null ? $" ({trigger})" : "")}" : "Mode Jeu désactivé", LogCategory.Rule);
+            return;
+        }
+        if (gameActive && !gamePlanApplied && s.GameMode.PowerPlan is { } plan && plan != Guid.Empty)
+        {
+            power.OnStart(GameKey, plan);
+            gamePlanApplied = true;
+        }
+    }
+
+    static bool IsBackgroundApp(Settings s, string name) =>
+        s.GameMode.BackgroundApps.Any(x => RuleMatcher.Matches(x, name));
 
     void ApplyRule(Process p, ProcKey key, Tracked t, Settings s)
     {
         if (Exclusions.IsProtected(key.Name, key.Pid, ownPid))
             return;
         var rule = RuleMatcher.Find(s.Rules, key.Name);
+        // Mode Jeu : les programmes de fond sans règle propre passent en priorité basse + mode efficacité
+        if (rule == null && gameActive && s.GameMode.LowerBackground && IsBackgroundApp(s, key.Name))
+            rule = new Rule { Pattern = GameModeRuleName, Priority = ProcessPriorityClass.BelowNormal, EfficiencyMode = true };
         t.Rule = rule;
         if (rule == null)
             return;
@@ -336,6 +440,29 @@ public sealed class Engine : IDisposable
             done.Add("plan d'alimentation");
         }
 
+        if (rule.EfficiencyMode is { } eco && TryDo(key, "mode efficacité", () =>
+            {
+                ProcessTweaks.SetEfficiencyMode(p.Handle, eco);
+                t.EfficiencySet = true;
+            }))
+            done.Add(eco ? "mode efficacité" : "mode efficacité interdit");
+
+        if (rule.IoPriority is { } io && TryDo(key, "priorité disque", () =>
+            {
+                var current = ProcessTweaks.GetIoPriority(p.Handle);
+                ProcessTweaks.SetIoPriority(p.Handle, io);
+                t.OrigIo ??= current;
+            }))
+            done.Add($"disque {io}");
+
+        if (rule.MemoryPriority is { } memPrio && TryDo(key, "priorité mémoire", () =>
+            {
+                var current = ProcessTweaks.GetMemoryPriority(p.Handle);
+                ProcessTweaks.SetMemoryPriority(p.Handle, memPrio);
+                t.OrigMemory ??= current;
+            }))
+            done.Add($"mémoire {memPrio}");
+
         if (done.Count > 0)
             Log.Info($"{key.Name} ({key.Pid}) : règle « {rule.Pattern} » → {string.Join(", ", done)}", LogCategory.Rule);
     }
@@ -378,10 +505,11 @@ public sealed class Engine : IDisposable
         {
             var priority = t.OrigPriority ?? t.ProBalanceOrig;
             var affinity = t.OrigAffinity;
-            t.OrigPriority = null;
-            t.OrigAffinity = null;
-            t.ProBalanceOrig = null;
-            if (priority == null && affinity == null)
+            var io = t.OrigIo;
+            var memory = t.OrigMemory;
+            bool efficiency = t.EfficiencySet;
+            (t.OrigPriority, t.OrigAffinity, t.ProBalanceOrig, t.OrigIo, t.OrigMemory, t.EfficiencySet) = (null, null, null, null, null, false);
+            if (priority == null && affinity == null && io == null && memory == null && !efficiency)
                 continue;
             using var p = OpenSame(key);
             if (p == null)
@@ -390,8 +518,15 @@ public sealed class Engine : IDisposable
                 TryDo(key, "restauration priorité", () => p.PriorityClass = pr);
             if (affinity is { } af)
                 TryDo(key, "restauration affinité", () => p.ProcessorAffinity = af);
+            if (io is { } i)
+                TryDo(key, "restauration priorité disque", () => ProcessTweaks.SetIoPriority(p.Handle, i));
+            if (memory is { } m)
+                TryDo(key, "restauration priorité mémoire", () => ProcessTweaks.SetMemoryPriority(p.Handle, m));
+            if (efficiency)
+                TryDo(key, "restauration mode efficacité", () => ProcessTweaks.SetEfficiencyMode(p.Handle, null));
         }
         power.RestoreAll();
+        gamePlanApplied = false;
         proBalance.Reset();
     }
 

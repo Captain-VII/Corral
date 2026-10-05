@@ -30,12 +30,7 @@ public sealed class RuleDialog : Form
         [ProcessPriorityClass.High] = "Passe avant presque tout. Idéal pour un jeu ; à éviter pour un programme qui tourne en permanence.",
     };
 
-    // Plans d'alimentation standard de Windows, proposés par le modèle « Jeu »
-    static readonly Guid[] PerformancePlans =
-    {
-        Guid.Parse("e9a42b02-d5df-448d-aa00-03f14749eb61"), // Performances optimales
-        Guid.Parse("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"), // Performances élevées
-    };
+
 
     readonly TextBox pattern = new() { Width = 300 };
     readonly ToggleSwitch enabled = new() { Checked = true };
@@ -49,6 +44,13 @@ public sealed class RuleDialog : Form
     readonly Label priorityHelp = Help();
     readonly Label affinityHelp = Help();
     readonly Label planHelp = Help();
+    readonly ToggleSwitch isGame = new();
+    readonly ComboBox efficiency = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+    readonly ComboBox ioPriority = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+    readonly ComboBox memoryPriority = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+    readonly Label efficiencyHelp = Help();
+    readonly Label ioHelp = Help();
+    readonly Label memoryHelp = Help();
     readonly ToolTip tips = Theme.CreateToolTip();
     readonly IReadOnlyList<string> running;
     readonly int cpuCount = Math.Min(Environment.ProcessorCount, 64);
@@ -104,61 +106,110 @@ public sealed class RuleDialog : Form
         AcceptButton = ok;
         CancelButton = cancel;
 
+        // Choix de cœurs adaptés à ce processeur (cœurs P, V-Cache, sans SMT…)
+        var topology = CpuTopology.Current?.Presets() ?? Array.Empty<AffinityPreset>();
+        var gamePreset = topology.FirstOrDefault(p => p.Name is "CCD avec V-Cache" or "Cœurs performants");
+
         var templates = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(310, 0), Margin = new Padding(0) };
-        AddTemplate(templates, "Jeu", "Priorité haute et plan Performances élevées s'il existe.", () =>
+        AddTemplate(templates, "Jeu",
+            "Priorité haute, marqué comme jeu (active le Mode Jeu), plan Performances élevées s'il existe" +
+            (gamePreset != null ? $" et « {gamePreset.Name} »." : "."), () =>
         {
             Reset(ProcessPriorityClass.High);
-            var perf = plan.Items.Cast<Choice<Guid?>>().ToList().FindIndex(c => c.Value is { } id && PerformancePlans.Contains(id));
+            isGame.Checked = true;
+            var perf = plan.Items.Cast<Choice<Guid?>>().ToList().FindIndex(c => c.Value is { } id && PowerCfg.PerformancePlans.Contains(id));
             if (perf >= 0)
                 plan.SelectedIndex = perf;
+            if (gamePreset != null)
+                SetMask(gamePreset.Mask);
         });
-        AddTemplate(templates, "Streaming", "Priorité supérieure à la normale : fluide sans gêner le reste.", () => Reset(ProcessPriorityClass.AboveNormal));
-        AddTemplate(templates, "Tâche de fond", "Priorité inférieure à la normale : passe après vos programmes.", () => Reset(ProcessPriorityClass.BelowNormal));
-        AddTemplate(templates, "Brider", "Priorité basse et 25 % du processeur au maximum, pour un programme trop gourmand.", () =>
+        AddTemplate(templates, "Streaming", "Priorité supérieure à la normale, jamais en mode efficacité : l'encodage reste fluide.", () =>
+        {
+            Reset(ProcessPriorityClass.AboveNormal);
+            efficiency.SelectedIndex = 2;
+        });
+        AddTemplate(templates, "Tâche de fond", "Priorité basse, mode efficacité et disque en priorité basse : passe après tout le reste.", () =>
         {
             Reset(ProcessPriorityClass.BelowNormal);
+            efficiency.SelectedIndex = 1;
+            ioPriority.SelectedIndex = 2;
+        });
+        AddTemplate(templates, "Brider", "Priorité basse, mode efficacité et 25 % du processeur au maximum, pour un programme trop gourmand.", () =>
+        {
+            Reset(ProcessPriorityClass.BelowNormal);
+            efficiency.SelectedIndex = 1;
             cpuLimit.Value = 25;
         });
 
+        foreach (var (label, _) in EfficiencyChoices) efficiency.Items.Add(label);
+        foreach (var (label, _) in IoChoices) ioPriority.Items.Add(label);
+        foreach (var (label, _) in MemoryChoices) memoryPriority.Items.Add(label);
+        efficiency.SelectedIndexChanged += (_, _) => UpdateHelp();
+        ioPriority.SelectedIndexChanged += (_, _) => UpdateHelp();
+        memoryPriority.SelectedIndexChanged += (_, _) => UpdateHelp();
+
         tips.SetToolTip(enabled, "Une règle inactive est conservée mais n'est plus appliquée.");
+        tips.SetToolTip(isGame, "Tant que ce programme tourne, le Mode Jeu s'active (s'il est en automatique).");
         tips.SetToolTip(affinityOn, "Réserver certains cœurs du processeur à ce programme.");
         tips.SetToolTip(cpuLimit, "Plafond strict d'usage du processeur, en % du total.");
         tips.SetToolTip(memLimit, "Mémoire maximale que le programme peut réserver.");
 
-        var grid = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(20, 12, 20, 16) };
-        AddSection(grid, "Processus");
-        AddRow(grid, "Nom de l'exécutable", pattern);
-        AddRow(grid, "", preview);
-        AddRow(grid, "Règle active", enabled);
-        AddRow(grid, "Partir d'un modèle", templates);
+        var left = Grid();
+        AddSection(left, "Processus");
+        AddRow(left, "Nom de l'exécutable", pattern);
+        AddRow(left, "", preview);
+        AddRow(left, "Règle active", enabled);
+        AddRow(left, "C'est un jeu", isGame);
+        AddRow(left, "Partir d'un modèle", templates);
 
-        AddSection(grid, "Performance");
-        AddRow(grid, "Priorité", priority);
-        AddRow(grid, "", priorityHelp);
-        AddRow(grid, "Limiter à certains cœurs", affinityOn);
-        AddRow(grid, "", affinityHelp);
-        AddRow(grid, "", cpus);
-        var quick = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 4, 0, 0) };
+        AddSection(left, "Performance");
+        AddRow(left, "Priorité", priority);
+        AddRow(left, "", priorityHelp);
+        AddRow(left, "Limiter à certains cœurs", affinityOn);
+        AddRow(left, "", affinityHelp);
+        AddRow(left, "", cpus);
+        var quick = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(310, 0), Margin = new Padding(0, 4, 0, 0) };
         quick.Controls.Add(all);
         quick.Controls.Add(none);
-        AddRow(grid, "", quick);
+        foreach (var preset in topology)
+        {
+            var b = new ModernButton(preset.Name) { Height = 28, Enabled = false, Margin = new Padding(0, 0, 6, 6) };
+            b.Click += (_, _) => SetMask(preset.Mask);
+            tips.SetToolTip(b, preset.Description);
+            affinityOn.CheckedChanged += (_, _) => b.Enabled = affinityOn.Checked;
+            quick.Controls.Add(b);
+        }
+        AddRow(left, "", quick);
 
-        AddSection(grid, "Alimentation et limites");
-        AddRow(grid, "Plan d'alimentation", plan);
-        AddRow(grid, "", planHelp);
-        AddRow(grid, "CPU max (% du total)", WithHint(cpuLimit, "0 = aucune limite"));
-        AddRow(grid, "RAM max (Mo)", WithHint(memLimit, "0 = aucune limite"));
+        var right = Grid();
+        AddSection(right, "Alimentation et limites");
+        AddRow(right, "Plan d'alimentation", plan);
+        AddRow(right, "", planHelp);
+        AddRow(right, "CPU max (% du total)", WithHint(cpuLimit, "0 = aucune limite"));
+        AddRow(right, "RAM max (Mo)", WithHint(memLimit, "0 = aucune limite"));
         var limitsHelp = Help();
         limitsHelp.Text = "Ces limites s'appliquent au lancement du processus ; pour les assouplir, relancez-le. " +
                           "Un processus qui dépasse la limite de RAM peut planter.";
-        AddRow(grid, "", limitsHelp);
+        AddRow(right, "", limitsHelp);
 
-        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 18, 0, 0) };
+        AddSection(right, "Avancé");
+        AddRow(right, "Mode efficacité", efficiency);
+        AddRow(right, "", efficiencyHelp);
+        AddRow(right, "Priorité disque", ioPriority);
+        AddRow(right, "", ioHelp);
+        AddRow(right, "Priorité mémoire", memoryPriority);
+        AddRow(right, "", memoryHelp);
+
+        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 0, 0) };
         buttons.Controls.Add(ok);
         buttons.Controls.Add(cancel);
-        grid.Controls.Add(buttons, 0, grid.RowCount);
-        grid.SetColumnSpan(buttons, 2);
-        Controls.Add(grid);
+
+        var outer = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8, 4, 8, 16) };
+        outer.Controls.Add(left, 0, 0);
+        outer.Controls.Add(right, 1, 0);
+        outer.Controls.Add(buttons, 0, 1);
+        outer.SetColumnSpan(buttons, 2);
+        Controls.Add(outer);
 
         LoadRule(rule);
         UpdatePreview();
@@ -167,6 +218,32 @@ public sealed class RuleDialog : Form
     }
 
     static Label Help() => new() { AutoSize = true, MaximumSize = new Size(300, 0), Tag = Theme.HintTag, Margin = new Padding(3, 0, 3, 8) };
+
+    static TableLayoutPanel Grid() => new()
+    {
+        ColumnCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        Padding = new Padding(12, 8, 12, 0), Anchor = AnchorStyles.Top | AnchorStyles.Left,
+    };
+
+    static readonly (string Label, bool? Value)[] EfficiencyChoices =
+        { ("(inchangé)", null), ("Activé", true), ("Jamais", false) };
+
+    static readonly (string Label, IoPriorityLevel? Value)[] IoChoices =
+        { ("(inchangée)", null), ("Très basse", IoPriorityLevel.VeryLow), ("Basse", IoPriorityLevel.Low), ("Normale", IoPriorityLevel.Normal) };
+
+    static readonly (string Label, MemoryPriorityLevel? Value)[] MemoryChoices =
+    {
+        ("(inchangée)", null), ("Très basse", MemoryPriorityLevel.VeryLow), ("Basse", MemoryPriorityLevel.Low),
+        ("Moyenne", MemoryPriorityLevel.Medium), ("Inférieure à la normale", MemoryPriorityLevel.BelowNormal), ("Normale", MemoryPriorityLevel.Normal),
+    };
+
+    void SetMask(long mask)
+    {
+        affinityOn.Checked = true;
+        for (int i = 0; i < cpus.Items.Count; i++)
+            cpus.SetItemChecked(i, ((mask >> i) & 1) == 1);
+        UpdateHelp();
+    }
 
     void AddTemplate(FlowLayoutPanel panel, string name, string description, Action apply)
     {
@@ -184,6 +261,8 @@ public sealed class RuleDialog : Form
         plan.SelectedIndex = 0;
         cpuLimit.Value = 0;
         memLimit.Value = 0;
+        isGame.Checked = false;
+        efficiency.SelectedIndex = ioPriority.SelectedIndex = memoryPriority.SelectedIndex = 0;
     }
 
     void UpdatePreview()
@@ -221,6 +300,25 @@ public sealed class RuleDialog : Form
         planHelp.Text = chosen?.Value == null
             ? "Le plan d'alimentation n'est pas changé."
             : $"« {chosen.Label} » est activé tant que ce programme tourne, puis le plan d'origine revient.";
+
+        efficiencyHelp.Text = efficiency.SelectedIndex switch
+        {
+            1 => "Windows ralentit ce programme pour économiser l'énergie (comme le Mode efficacité du Gestionnaire des tâches). Idéal pour ce qui tourne en arrière-plan.",
+            2 => "Windows ne le mettra jamais en mode efficacité, même réduit ou en arrière-plan.",
+            _ => "Windows décide seul (Windows 11 uniquement).",
+        };
+        ioHelp.Text = ioPriority.SelectedIndex switch
+        {
+            1 or 2 => "Ses lectures et écritures passent après celles des autres programmes : une sauvegarde ne ralentit plus un jeu.",
+            3 => "Accès au disque normal.",
+            _ => "L'accès au disque n'est pas modifié.",
+        };
+        memoryHelp.Text = memoryPriority.SelectedIndex switch
+        {
+            1 or 2 or 3 or 4 => "Quand la mémoire manque, ses données quittent la RAM avant celles des autres programmes.",
+            5 => "Priorité mémoire normale.",
+            _ => "La priorité mémoire n'est pas modifiée.",
+        };
     }
 
     protected override void Dispose(bool disposing)
@@ -291,6 +389,10 @@ public sealed class RuleDialog : Form
 
         cpuLimit.Value = Math.Clamp(rule.CpuLimitPercent ?? 0, 0, 99);
         memLimit.Value = Math.Clamp(rule.MemoryLimitMB ?? 0, 0, 1_048_576);
+        isGame.Checked = rule.IsGame;
+        efficiency.SelectedIndex = Math.Max(0, Array.FindIndex(EfficiencyChoices, c => c.Value == rule.EfficiencyMode));
+        ioPriority.SelectedIndex = Math.Max(0, Array.FindIndex(IoChoices, c => c.Value == rule.IoPriority));
+        memoryPriority.SelectedIndex = Math.Max(0, Array.FindIndex(MemoryChoices, c => c.Value == rule.MemoryPriority));
     }
 
     void OnOk()
@@ -325,6 +427,10 @@ public sealed class RuleDialog : Form
             PowerPlan = ((Choice<Guid?>)plan.SelectedItem!).Value,
             CpuLimitPercent = cpuLimit.Value > 0 ? (int)cpuLimit.Value : null,
             MemoryLimitMB = memLimit.Value > 0 ? (int)memLimit.Value : null,
+            IsGame = isGame.Checked,
+            EfficiencyMode = EfficiencyChoices[Math.Max(0, efficiency.SelectedIndex)].Value,
+            IoPriority = IoChoices[Math.Max(0, ioPriority.SelectedIndex)].Value,
+            MemoryPriority = MemoryChoices[Math.Max(0, memoryPriority.SelectedIndex)].Value,
         };
         DialogResult = DialogResult.OK;
     }
