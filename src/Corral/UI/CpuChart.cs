@@ -10,7 +10,8 @@ namespace Corral.UI;
 /// </summary>
 public sealed class CpuChart : Control
 {
-    const int PadLeft = 46, PadRight = 16, PadTop = 64, PadBottom = 28;
+    const int PadLeft = 52, PadRight = 18, PadTop = 92, PadBottom = 30;
+    static readonly Font HeroFont = new("Segoe UI Semibold", 20f);
     static readonly TimeSpan MaxGap = TimeSpan.FromSeconds(5); // au-delà, la courbe est coupée
 
     readonly CpuHistory history;
@@ -56,12 +57,19 @@ public sealed class CpuChart : Control
         float X(DateTime t) => plot.Left + (float)((t - from).TotalMilliseconds / Range.TotalMilliseconds) * plot.Width;
         float Y(double v) => plot.Bottom - (float)(v / 100.0) * plot.Height;
 
-        // En-tête : titre + valeur actuelle (le chiffre clé)
-        using var titleFont = new Font(Font.FontFamily, Font.Size + 1, FontStyle.Regular);
-        using var heroFont = new Font(Font.FontFamily, Font.Size + 10, FontStyle.Bold);
-        TextRenderer.DrawText(g, "CPU système", titleFont, new Point(PadLeft - 4, 8), p.Muted);
-        var current = data.Count > 0 ? $"{data[^1].Value:0} %" : "—";
-        TextRenderer.DrawText(g, current, heroFont, new Point(PadLeft - 6, 26), p.Fore);
+        // En-tête : trois indicateurs sur la période affichée
+        var stats = new[]
+        {
+            ("Actuel", data.Count > 0 ? $"{data[^1].Value:0} %" : "—"),
+            ("Moyenne", data.Count > 0 ? $"{data.Average(d => d.Value):0} %" : "—"),
+            ("Pic", data.Count > 0 ? $"{data.Max(d => d.Value):0} %" : "—"),
+        };
+        for (int i = 0; i < stats.Length; i++)
+        {
+            int x = PadLeft - 4 + i * 150;
+            TextRenderer.DrawText(g, stats[i].Item1, Font, new Point(x, 10), p.Muted);
+            TextRenderer.DrawText(g, stats[i].Item2, HeroFont, new Point(x - 2, 28), i == 0 ? p.Fore : Ui.Blend(p.Fore, p.Surface, 0.75));
+        }
 
         // Grille horizontale discrète et graduations
         using var gridPen = new Pen(Color.FromArgb(IsDarkSurface(p) ? 45 : 60, p.Muted));

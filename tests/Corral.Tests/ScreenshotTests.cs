@@ -25,6 +25,8 @@ public class ScreenshotTests
                 var settings = new Settings { Theme = mode };
                 settings.ProBalance.Enabled = false;
                 settings.Rules.Add(new Rule { Pattern = "chrome*", Priority = System.Diagnostics.ProcessPriorityClass.BelowNormal, AffinityMask = 0xFF });
+                settings.Rules.Add(new Rule { Pattern = "jeu.exe", Priority = System.Diagnostics.ProcessPriorityClass.High });
+                settings.Rules.Add(new Rule { Pattern = "sauvegarde*", Enabled = false, Priority = System.Diagnostics.ProcessPriorityClass.Idle, CpuLimitPercent = 20, MemoryLimitMB = 2048 });
                 using var engine = new Engine(RuleStore.Clone(settings), new NoPower(), foregroundPid: () => -1);
                 settings.ProBalance.Enabled = true; // seulement côté interface : affiche le seuil sans que le moteur agisse
                 using var form = new MainForm(engine, new RuleStore(Path.Combine(configDir, "config.json")), settings) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(40, 40) };
@@ -53,7 +55,14 @@ public class ScreenshotTests
                 Pump(300);
                 Capture(form, Path.Combine(outDir, $"shot-{mode}-chart-hover.png"));
 
-                using var dlg = new RuleDialog(settings.Rules[0], PowerCfg.List(), isNew: false) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(1040, 40) };
+                foreach (var page in new[] { "Règles", "ProBalance", "Options" })
+                {
+                    form.ShowPage(page);
+                    Pump(400);
+                    Capture(form, Path.Combine(outDir, $"shot-{mode}-{page}.png"));
+                }
+
+                using var dlg = new RuleDialog(settings.Rules[0], PowerCfg.List(), isNew: false) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(1200, 40) };
                 dlg.Show();
                 Pump(500);
                 Capture(dlg, Path.Combine(outDir, $"shot-{mode}-dialog.png"));

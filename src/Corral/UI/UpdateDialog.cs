@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Corral.Core;
 
 namespace Corral.UI;
@@ -9,9 +9,9 @@ public enum UpdateChoice { Later, Skip, Installed }
 public sealed class UpdateDialog : Form
 {
     readonly UpdateInfo info;
-    readonly Button install = new() { Text = "Installer et redémarrer", AutoSize = true };
-    readonly Button later = new() { Text = "Plus tard", AutoSize = true };
-    readonly Button skip = new() { Text = "Ignorer cette version", AutoSize = true };
+    readonly ModernButton install = new("Installer et redémarrer", primary: true);
+    readonly ModernButton later = new("Plus tard");
+    readonly ModernButton skip = new("Ignorer cette version");
     readonly ProgressBar progress = new() { Dock = DockStyle.Fill, Visible = false, Height = 16 };
     readonly Label status = new() { AutoSize = true, Tag = Theme.HintTag };
     CancellationTokenSource? cts;
@@ -20,6 +20,7 @@ public sealed class UpdateDialog : Form
     {
         this.info = info;
         Text = "Mise à jour de Corral";
+        Font = Ui.Base;
         Icon = AppIcon.Load(new Size(32, 32));
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = MinimizeBox = false;
@@ -31,7 +32,7 @@ public sealed class UpdateDialog : Form
         {
             Text = $"La version {info.Version.ToString(3)} est disponible (installée : {Updater.CurrentVersion.ToString(3)}).",
             AutoSize = true,
-            Font = new Font(Font, FontStyle.Bold),
+            Font = Ui.Section,
             Margin = new Padding(3, 3, 3, 8),
         };
         var notes = new TextBox
@@ -40,6 +41,7 @@ public sealed class UpdateDialog : Form
             ReadOnly = true,
             ScrollBars = ScrollBars.Vertical,
             Dock = DockStyle.Fill,
+            Tag = Theme.FlatTag,
             Text = string.IsNullOrWhiteSpace(info.Notes) ? "(pas de notes de version)" : info.Notes.Replace("\r\n", "\n").Replace("\n", Environment.NewLine),
         };
         var link = new LinkLabel { Text = "Voir la page de la version", AutoSize = true, Visible = info.PageUrl.Length > 0 };

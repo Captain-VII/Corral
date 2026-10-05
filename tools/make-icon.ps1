@@ -24,49 +24,17 @@ function Draw([int]$s) {
     # Fond : carré arrondi vert sapin en dégradé
     $m = [math]::Max(0.5, $s * 0.03)
     $bg = RoundRect $m $m ($s - 2 * $m) ($s - 2 * $m) ($s * 0.22)
-    $grad = New-Object System.Drawing.Drawing2D.LinearGradientBrush (New-Object System.Drawing.PointF 0, 0), (New-Object System.Drawing.PointF $s, $s), ([System.Drawing.Color]::FromArgb(255, 38, 150, 128)), ([System.Drawing.Color]::FromArgb(255, 12, 70, 62))
+    $grad = New-Object System.Drawing.Drawing2D.LinearGradientBrush (New-Object System.Drawing.PointF 0, 0), (New-Object System.Drawing.PointF $s, $s), ([System.Drawing.Color]::FromArgb(255, 36, 158, 132)), ([System.Drawing.Color]::FromArgb(255, 14, 84, 72))
     $g.FillPath($grad, $bg)
 
-    $cx = $s * 0.45; $cy = $s * 0.54
-    $gold = [System.Drawing.Color]::FromArgb(255, 246, 196, 72)
-
-    # Puce CPU au centre
-    $c = $s * 0.27
-    $chipX = $cx - $c / 2; $chipY = $cy - $c / 2
-    if ($s -ge 32) {
-        $pinPen = New-Object System.Drawing.Pen $gold, ([math]::Max(1, $s * 0.025))
-        $len = $s * 0.06
-        foreach ($i in 1..3) {
-            $o = $c * $i / 4
-            $g.DrawLine($pinPen, $chipX + $o, $chipY - $len, $chipX + $o, $chipY)
-            $g.DrawLine($pinPen, $chipX + $o, $chipY + $c, $chipX + $o, $chipY + $c + $len)
-            $g.DrawLine($pinPen, $chipX - $len, $chipY + $o, $chipX, $chipY + $o)
-            $g.DrawLine($pinPen, $chipX + $c, $chipY + $o, $chipX + $c + $len, $chipY + $o)
-        }
-    }
-    $chip = RoundRect $chipX $chipY $c $c ($c * 0.18)
-    $g.FillPath((New-Object System.Drawing.SolidBrush $gold), $chip)
-    if ($s -ge 48) {
-        $core = $c * 0.42
-        $corePath = RoundRect ($cx - $core / 2) ($cy - $core / 2) $core $core ($core * 0.2)
-        $g.FillPath((New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 12, 70, 62))), $corePath)
-    }
-
-    # Lasso : boucle blanche autour de la puce + corde qui part en bas à droite
-    $rope = New-Object System.Drawing.Pen ([System.Drawing.Color]::White), ([math]::Max(1.4, $s * 0.075))
-    $rope.StartCap = 'Round'; $rope.EndCap = 'Round'; $rope.LineJoin = 'Round'
-    $rw = $s * 0.64; $rh = $s * 0.54
-    $cy2 = $cy
-    $a = 318
-    $g.DrawArc($rope, $cx - $rw / 2, $cy2 - $rh / 2, $rw, $rh, $a + 12, 336)
-    $sx = $cx + ($rw / 2) * [math]::Cos($a * [math]::PI / 180)
-    $sy = $cy2 + ($rh / 2) * [math]::Sin($a * [math]::PI / 180)
-    # Corde ondulée vers le coin haut droit
-    $g.DrawBezier($rope, $sx, $sy, $sx + $s * 0.14, $sy + $s * 0.03, $s * 0.66, $s * 0.12, $s * 0.82, $s * 0.15)
-    # Nœud coulant
-    $k = $rope.Width * 1.35
-    $g.FillEllipse((New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)), $sx - $k / 2, $sy - $k / 2, $k, $k)
-
+    # Monogramme : « C » ouvert blanc, terminé par un point doré
+    $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::White), ([math]::Max(1.6, $s * 0.11))
+    $pen.StartCap = 'Round'; $pen.EndCap = 'Round'
+    $r = $s * 0.27; $cx = $s / 2; $cy = $s / 2
+    $g.DrawArc($pen, $cx - $r, $cy - $r, 2 * $r, 2 * $r, 45, 270)
+    $d = $s * 0.13; $a = -45 * [math]::PI / 180
+    $gold = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 246, 196, 72))
+    $g.FillEllipse($gold, $cx + $r * [math]::Cos($a) - $d / 2, $cy + $r * [math]::Sin($a) - $d / 2, $d, $d)
     $g.Dispose()
     return $bmp
 }

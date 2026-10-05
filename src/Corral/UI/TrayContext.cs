@@ -30,6 +30,7 @@ public sealed class TrayContext : ApplicationContext
         this.settings = settings;
         form = new MainForm(engine, store, settings);
         form.CheckUpdatesRequested += (_, _) => CheckForUpdates(manual: true);
+        form.PauseRequested += paused => pauseItem!.Checked = paused; // l'élément de menu applique la pause au moteur
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Ouvrir", null, (_, _) => ShowForm());
