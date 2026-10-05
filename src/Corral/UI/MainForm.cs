@@ -163,7 +163,7 @@ public sealed class MainForm : Form
     /// <summary>Historique CPU affiché par l'onglet Graphique (exposé pour les captures de test).</summary>
     public CpuHistory History => cpuHistory;
     public CpuHistory MemoryHistory => memHistory;
-    public TopTracker Top => topTracker;
+    public TopTracker TopUsage => topTracker;
 
     public void ShowPage(string title)
     {
