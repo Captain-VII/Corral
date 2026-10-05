@@ -15,6 +15,28 @@ public static class AutoStart
 
     public static bool IsEnabled() => Run($"/query /tn {TaskName}", out _) == 0;
 
+    /// <summary>Si la tâche existe mais lance un autre exe (Corral déplacé), la recrée vers <paramref name="exePath"/>.</summary>
+    public static void RepairPath(string exePath)
+    {
+        try
+        {
+            if (Run($"/query /tn {TaskName} /xml", out var xml) != 0)
+                return;
+            var m = System.Text.RegularExpressions.Regex.Match(xml, "<Command>(.*?)</Command>");
+            if (!m.Success)
+                return;
+            var current = System.Net.WebUtility.HtmlDecode(m.Groups[1].Value).Trim('"');
+            if (string.Equals(current, exePath, StringComparison.OrdinalIgnoreCase))
+                return;
+            Enable(exePath);
+            Log.Info($"Démarrage automatique mis à jour vers {exePath}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Mise à jour du démarrage automatique", ex);
+        }
+    }
+
     public static void Enable(string exePath)
     {
         var user = SecurityElement.Escape($"{Environment.UserDomainName}\\{Environment.UserName}");

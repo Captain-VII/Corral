@@ -1105,6 +1105,16 @@ public sealed class MainForm : Form
             Theme.Set(settings.Theme);
         };
         autoStart.CheckedChanged += (_, _) => ToggleAutoStart();
+        var startMenu = new ToggleSwitch { Checked = settings.StartMenuShortcut, Enabled = Updater.IsPublishedBuild };
+        if (!Updater.IsPublishedBuild)
+            tips.SetToolTip(startMenu, "Disponible uniquement avec l'exe publié (pas en développement).");
+        startMenu.CheckedChanged += (_, _) =>
+        {
+            settings.StartMenuShortcut = startMenu.Checked;
+            SaveSettings();
+            if (Updater.IsPublishedBuild)
+                StartMenu.Sync(startMenu.Checked, Environment.ProcessPath!);
+        };
         var updates = new ToggleSwitch { Checked = settings.CheckUpdates };
         updates.CheckedChanged += (_, _) =>
         {
@@ -1140,7 +1150,8 @@ public sealed class MainForm : Form
         stack.Controls.Add(new Card(Rows(
             SettingRow("Thème", "« Système » suit le mode clair ou sombre de Windows.", themeChoice)), "Apparence"));
         stack.Controls.Add(new Card(Rows(
-            SettingRow("Lancer Corral à l'ouverture de session", "Démarre réduit dans la zone de notification, avec les droits administrateur.", autoStart)), "Démarrage"));
+            SettingRow("Lancer Corral à l'ouverture de session", "Démarre réduit dans la zone de notification, avec les droits administrateur.", autoStart),
+            SettingRow("Afficher Corral dans le menu Démarrer", "Pour le retrouver avec la recherche Windows. Le raccourci suit l'exe s'il est déplacé.", startMenu)), "Démarrage"));
         stack.Controls.Add(new Card(Rows(
             SettingRow("Rechercher les mises à jour automatiquement", "Au démarrage, puis toutes les 6 heures.", updates),
             SettingRow($"Version {Updater.CurrentVersion.ToString(3)}",

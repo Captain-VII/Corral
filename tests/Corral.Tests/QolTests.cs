@@ -61,6 +61,34 @@ public class ImportExportTests : IDisposable
     }
 }
 
+public class StartMenuTests : IDisposable
+{
+    readonly string dir = Path.Combine(Path.GetTempPath(), "CorralLnk_" + Guid.NewGuid().ToString("N"));
+
+    public void Dispose()
+    {
+        try { Directory.Delete(dir, true); } catch { }
+    }
+
+    [Fact]
+    public void ShortcutIsCreatedFollowedAndRemoved()
+    {
+        var lnk = Path.Combine(dir, "Corral.lnk");
+        var exe1 = Path.Combine(Environment.SystemDirectory, "notepad.exe");
+        var exe2 = Path.Combine(Environment.SystemDirectory, "calc.exe");
+
+        StartMenu.Sync(true, exe1, lnk);
+        Assert.True(File.Exists(lnk));
+        Assert.Equal(exe1, StartMenu.ReadTarget(lnk), ignoreCase: true);
+
+        StartMenu.Sync(true, exe2, lnk); // exe « déplacé » : le raccourci suit
+        Assert.Equal(exe2, StartMenu.ReadTarget(lnk), ignoreCase: true);
+
+        StartMenu.Sync(false, exe2, lnk);
+        Assert.False(File.Exists(lnk));
+    }
+}
+
 public class PresetTests
 {
     [Fact]

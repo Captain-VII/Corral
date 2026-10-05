@@ -72,6 +72,8 @@ public sealed class Settings
     /// <summary>Bulle quand ProBalance abaisse un programme.</summary>
     public bool NotifyProBalance { get; set; }
     public bool WelcomeDismissed { get; set; }
+    /// <summary>Raccourci dans le menu Démarrer (pour la recherche Windows).</summary>
+    public bool StartMenuShortcut { get; set; } = true;
     public WindowSettings Window { get; set; } = new();
 
     /// <summary>Corrige les valeurs nulles ou hors bornes après une lecture JSON.</summary>

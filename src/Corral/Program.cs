@@ -45,6 +45,19 @@ static class Program
         var settings = store.Load();
         UI.Theme.Set(settings.Theme);
 
+        if (Updater.IsPublishedBuild)
+        {
+            // Raccourci du menu Démarrer et tâche de démarrage pointés sur l'exe actuel (même s'il a été déplacé).
+            // En arrière-plan : schtasks et le shell prennent quelques dizaines de ms.
+            var exe = Environment.ProcessPath!;
+            bool shortcut = settings.StartMenuShortcut;
+            Task.Run(() =>
+            {
+                StartMenu.Sync(shortcut, exe);
+                AutoStart.RepairPath(exe);
+            });
+        }
+
         using var engine = new Engine(RuleStore.Clone(settings), powerApi, powerStateFile);
         // Restaure tout si Windows ferme la session sans passer par « Quitter ».
         SystemEvents.SessionEnding += (_, _) => engine.Stop();

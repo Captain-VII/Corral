@@ -45,7 +45,10 @@ public static class Updater
 #endif
 
     /// <summary>Uniquement pour l'exe publié en fichier unique (pas en développement avec dotnet run).</summary>
-    public static bool IsSupported => Repository != null && IsSingleFile && Environment.ProcessPath != null;
+    /// <summary>Exe publié (fichier unique) : seul lui crée des raccourcis système, jamais une version de développement.</summary>
+    public static bool IsPublishedBuild => IsSingleFile && Environment.ProcessPath != null;
+
+    public static bool IsSupported =>Repository != null && IsSingleFile && Environment.ProcessPath != null;
 
     public static string? UnsupportedReason =>
         Repository == null ? "dépôt GitHub non configuré (version compilée localement)"
