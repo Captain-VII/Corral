@@ -43,6 +43,15 @@ public class ScreenshotTests
                     double v = 18 + 8 * Math.Sin(s / 20.0) + rnd.NextDouble() * 6;
                     if (s is > 150 and < 190) v = 80 + rnd.NextDouble() * 15;
                     form.History.Add(start.AddSeconds(s), v);
+                    form.MemoryHistory.Add(start.AddSeconds(s), 46 + 6 * Math.Sin(s / 60.0) + (s > 150 ? 8 : 0));
+                    form.Top.Add(start.AddSeconds(s), new[]
+                    {
+                        new ProcessRow(1, "jeu", s is > 150 and < 190 ? 70 : 8, 6L << 30, null, false),
+                        new ProcessRow(2, "brave", 6, 2L << 30, null, false),
+                        new ProcessRow(3, "Discord", 2.5, 900L << 20, null, false),
+                        new ProcessRow(4, "steamwebhelper", 1.2, 600L << 20, null, false),
+                        new ProcessRow(5, "OneDrive", 0.4, 200L << 20, null, false),
+                    });
                 }
                 form.ShowPage("Graphique");
                 Pump(1200);
@@ -78,6 +87,17 @@ public class ScreenshotTests
                 Pump(500);
                 Capture(dlg, Path.Combine(outDir, $"shot-{mode}-dialog.png"));
                 dlg.Close();
+
+                // Fiche d'un processus (ici, Explorer)
+                var explorer = System.Diagnostics.Process.GetProcessesByName("explorer").FirstOrDefault();
+                if (explorer != null)
+                {
+                    using var details = new ProcessDetailsDialog(ProcessDetails.Read(explorer.Id), null, canCreateRule: true) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(1200, 40) };
+                    details.Show();
+                    Pump(500);
+                    Capture(details, Path.Combine(outDir, $"shot-{mode}-details.png"));
+                    details.Close();
+                }
                 engine.Stop();
                 form.CloseForReal();
             }

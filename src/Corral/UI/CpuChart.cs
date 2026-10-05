@@ -10,7 +10,7 @@ namespace Corral.UI;
 /// </summary>
 public sealed class CpuChart : Control
 {
-    const int PadLeft = 52, PadRight = 18, PadTop = 92, PadBottom = 30;
+    const int PadLeft = 52, PadRight = 18, PadTop = 82, PadBottom = 30;
     static readonly Font HeroFont = new("Segoe UI Semibold", 20f);
     static readonly TimeSpan MaxGap = TimeSpan.FromSeconds(5); // au-delà, la courbe est coupée
 
@@ -27,8 +27,14 @@ public sealed class CpuChart : Control
 
     public TimeSpan Range { get; set; } = TimeSpan.FromMinutes(5);
 
-    /// <summary>Seuil ProBalance affiché (null = ProBalance désactivé).</summary>
+    /// <summary>Seuil affiché en pointillés (null = aucun), avec son libellé.</summary>
     public double? Threshold { get; set; }
+    public string ThresholdLabel { get; set; } = "Seuil ProBalance";
+
+    public string Title { get; set; } = "Processeur";
+
+    /// <summary>Ligne d'information sous la moyenne (ex. « 11,8 Go sur 31,9 Go »).</summary>
+    public string? Caption { get; set; }
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
@@ -57,19 +63,16 @@ public sealed class CpuChart : Control
         float X(DateTime t) => plot.Left + (float)((t - from).TotalMilliseconds / Range.TotalMilliseconds) * plot.Width;
         float Y(double v) => plot.Bottom - (float)(v / 100.0) * plot.Height;
 
-        // En-tête : trois indicateurs sur la période affichée
-        var stats = new[]
-        {
-            ("Actuel", data.Count > 0 ? $"{data[^1].Value:0} %" : "—"),
-            ("Moyenne", data.Count > 0 ? $"{data.Average(d => d.Value):0} %" : "—"),
-            ("Pic", data.Count > 0 ? $"{data.Max(d => d.Value):0} %" : "—"),
-        };
-        for (int i = 0; i < stats.Length; i++)
-        {
-            int x = PadLeft - 4 + i * 150;
-            TextRenderer.DrawText(g, stats[i].Item1, Font, new Point(x, 10), p.Muted);
-            TextRenderer.DrawText(g, stats[i].Item2, HeroFont, new Point(x - 2, 28), i == 0 ? p.Fore : Ui.Blend(p.Fore, p.Surface, 0.75));
-        }
+        // En-tête : titre, valeur actuelle en grand, moyenne et pic sur la période, légende éventuelle
+        int hx = PadLeft - 4;
+        TextRenderer.DrawText(g, Title, Ui.Section, new Point(hx, 6), p.Fore);
+        var current = data.Count > 0 ? $"{data[^1].Value:0} %" : "—";
+        TextRenderer.DrawText(g, current, HeroFont, new Point(hx - 2, 28), p.Fore);
+        int sx = hx + TextRenderer.MeasureText(g, current, HeroFont).Width + 12;
+        var summary = data.Count > 0 ? $"Moyenne {data.Average(d => d.Value):0} %   ·   Pic {data.Max(d => d.Value):0} %" : "";
+        TextRenderer.DrawText(g, summary, Font, new Point(sx, 32), p.Muted);
+        if (Caption != null)
+            TextRenderer.DrawText(g, Caption, Font, new Point(sx, 50), p.Muted);
 
         // Grille horizontale discrète et graduations
         using var gridPen = new Pen(Color.FromArgb(IsDarkSurface(p) ? 45 : 60, p.Muted));
@@ -82,16 +85,22 @@ public sealed class CpuChart : Control
         }
 
         // Graduations de temps relatives (« -4 min », « -30 s »…)
+        // Sur un graphique étroit, une étiquette qui chevaucherait sa voisine est omise
+        // (« maintenant », à droite, est toujours affichée).
+        int nowWidth = TextRenderer.MeasureText(g, "maintenant", Font).Width;
+        int nowLeft = plot.Right - nowWidth;
+        int lastRight = int.MinValue;
         for (int i = 0; i <= 5; i++)
         {
             var offset = TimeSpan.FromTicks(Range.Ticks * (5 - i) / 5);
-            float x = plot.Left + plot.Width * i / 5f;
+            int x = (int)(plot.Left + plot.Width * i / 5f);
             var label = i == 5 ? "maintenant" : Format(offset);
-            var flags = TextFormatFlags.Top | (i == 0 ? TextFormatFlags.Left : i == 5 ? TextFormatFlags.Right : TextFormatFlags.HorizontalCenter);
-            var box = i == 0 ? new Rectangle((int)x, plot.Bottom + 6, 100, 16)
-                    : i == 5 ? new Rectangle((int)x - 100, plot.Bottom + 6, 100, 16)
-                    : new Rectangle((int)x - 50, plot.Bottom + 6, 100, 16);
-            TextRenderer.DrawText(g, label, Font, box, p.Muted, flags);
+            int w = i == 5 ? nowWidth : TextRenderer.MeasureText(g, label, Font).Width;
+            int left = i == 0 ? x : i == 5 ? nowLeft : x - w / 2;
+            if (i < 5 && (left < lastRight + 10 || left + w > nowLeft - 10))
+                continue;
+            TextRenderer.DrawText(g, label, Font, new Point(left, plot.Bottom + 6), p.Muted);
+            lastRight = left + w;
         }
 
         // Seuil ProBalance
@@ -100,7 +109,7 @@ public sealed class CpuChart : Control
             float y = Y(th);
             using var dash = new Pen(p.Muted, 1) { DashStyle = DashStyle.Dash };
             g.DrawLine(dash, plot.Left, y, plot.Right, y);
-            TextRenderer.DrawText(g, $"Seuil ProBalance {th:0} %", Font, new Rectangle(plot.Left, (int)y - 18, plot.Width - 4, 16), p.Muted,
+            TextRenderer.DrawText(g, $"{ThresholdLabel} {th:0} %", Font, new Rectangle(plot.Left, (int)y - 18, plot.Width - 4, 16), p.Muted,
                 TextFormatFlags.Right | TextFormatFlags.Bottom);
         }
 

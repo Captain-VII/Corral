@@ -8,7 +8,11 @@ public sealed record ProcessRow(int Pid, string Name, double Cpu, long MemoryByt
     string? Path = null, string? RuleSummary = null);
 
 public sealed record EngineSnapshot(double SystemCpu, bool Paused, IReadOnlyList<ProcessRow> Rows,
-    bool GameMode = false, string? GameTrigger = null);
+    bool GameMode = false, string? GameTrigger = null, long MemoryUsed = 0, long MemoryTotal = 0)
+{
+    /// <summary>Mémoire physique utilisée, en % (0 si inconnue).</summary>
+    public double MemoryPercent => MemoryTotal > 0 ? MemoryUsed * 100.0 / MemoryTotal : 0;
+}
 
 /// <summary>
 /// Moteur : un seul thread (timer non réentrant) sous verrou. À chaque passage il liste les processus,
@@ -375,7 +379,8 @@ public sealed class Engine : IDisposable
                 p.Dispose();
         }
 
-        return new EngineSnapshot(sysCpu, paused, rows, gameActive, gameTrigger);
+        var (memUsed, memTotal) = Native.GetMemoryUsage();
+        return new EngineSnapshot(sysCpu, paused, rows, gameActive, gameTrigger, memUsed, memTotal);
     }
 
     /// <summary>ProBalance tel qu'appliqué : les seuils « Réactif » remplacent les réglages pendant le Mode Jeu.</summary>

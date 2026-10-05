@@ -23,6 +23,7 @@ public sealed class MainForm : Form
     readonly ProcessSorter sorter = new();
     readonly TextBox search = new() { PlaceholderText = "Rechercher un processus", Width = 240, Margin = new Padding(4, 5, 8, 0) };
     readonly ModernButton createRule = new("Créer une règle") { Enabled = false };
+    readonly ModernButton detailsButton = new("Détails") { Enabled = false };
     readonly UndoBanner processBanner = new();
     readonly Dictionary<string, Image> iconCache = new(StringComparer.OrdinalIgnoreCase);
     readonly Image genericIcon = ScaleIcon(SystemIcons.Application);
@@ -33,6 +34,12 @@ public sealed class MainForm : Form
     // Graphique
     readonly CpuHistory cpuHistory = new(TimeSpan.FromMinutes(15));
     readonly CpuChart chart;
+    readonly CpuHistory memHistory = new(TimeSpan.FromMinutes(15));
+    readonly CpuChart memChart;
+    readonly TopTracker topTracker = new(TimeSpan.FromMinutes(15));
+    readonly TopList topList = new();
+    TopTracker.Metric topMetric = TopTracker.Metric.Cpu;
+    readonly ProBalanceStats stats;
     int snapshotCount;
 
     // Règles
@@ -113,6 +120,15 @@ public sealed class MainForm : Form
         KeyPreview = true;
 
         chart = new CpuChart(cpuHistory);
+        memChart = new CpuChart(memHistory);
+        stats = new ProBalanceStats(Path.Combine(store.ConfigDirectory, "stats.json"));
+        // Interventions comptées même fenêtre cachée (événement levé sur le thread du moteur)
+        engine.ProBalanceActed += (names, _) =>
+        {
+            stats.Record(names);
+            if (shown && IsHandleCreated)
+                BeginInvoke(RefreshStats);
+        };
         // Icônes : codes communs à Segoe Fluent Icons et Segoe MDL2 Assets
         AddPage("", "Processus", BuildProcessPage());
         AddPage("", "Graphique", BuildChartPage());
@@ -146,6 +162,8 @@ public sealed class MainForm : Form
 
     /// <summary>Historique CPU affiché par l'onglet Graphique (exposé pour les captures de test).</summary>
     public CpuHistory History => cpuHistory;
+    public CpuHistory MemoryHistory => memHistory;
+    public TopTracker Top => topTracker;
 
     public void ShowPage(string title)
     {
@@ -379,6 +397,13 @@ public sealed class MainForm : Form
         };
         procList.SelectedIndexChanged += (_, _) => createRule.Enabled = SelectedProcess != null;
         procList.DoubleClick += (_, _) => CreateRuleFromSelection();
+        procList.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter) { ShowDetails(); e.Handled = true; }
+        };
+        detailsButton.Click += (_, _) => ShowDetails();
+        procList.SelectedIndexChanged += (_, _) => detailsButton.Enabled = SelectedProcess != null;
+        tips.SetToolTip(detailsButton, "Fiche du processus sélectionné : éditeur, emplacement, ligne de commande, parent… (Entrée)");
         createRule.Click += (_, _) => CreateRuleFromSelection();
         search.TextChanged += (_, _) =>
         {
@@ -410,7 +435,7 @@ public sealed class MainForm : Form
         body.Controls.Add(processBanner);
 
         return MakePage("Processus", "Processus en cours, triés par usage du processeur. Double-cliquez sur un processus pour lui créer une règle, clic droit pour plus d'actions.",
-            body, search, createRule);
+            body, search, detailsButton, createRule);
     }
 
     Card BuildWelcome()
@@ -446,6 +471,8 @@ public sealed class MainForm : Form
     ContextMenuStrip BuildProcessMenu()
     {
         var menu = new ContextMenuStrip();
+        var details = new ToolStripMenuItem("Détails…", null, (_, _) => ShowDetails()) { ToolTipText = "Emplacement, éditeur, ligne de commande, parent… (Entrée)" };
+        menu.Items.Add(details);
         var create = new ToolStripMenuItem("Créer une règle…", null, (_, _) => CreateRuleFromSelection());
         var now = new ToolStripMenuItem("Priorité maintenant");
         foreach (var (label, value) in RuleDialog.Priorities.Where(p => p.Value != null))
@@ -592,6 +619,31 @@ public sealed class MainForm : Form
         return bmp;
     }
 
+    void ShowDetails()
+    {
+        if (SelectedProcess is not { } row)
+            return;
+        ProcessDetails details;
+        try
+        {
+            details = ProcessDetails.Read(row.Pid);
+        }
+        catch (ArgumentException)
+        {
+            processBanner.Show($"« {row.Name} » s'est fermé entre-temps.");
+            return;
+        }
+        bool canRule = !Exclusions.IsProtected(row.Name, row.Pid, Environment.ProcessId);
+        bool createRuleAfter;
+        using (var dlg = new ProcessDetailsDialog(details, row, canRule))
+        {
+            dlg.ShowDialog(this);
+            createRuleAfter = dlg.CreateRuleRequested;
+        }
+        if (createRuleAfter)
+            AddRule(new Rule { Pattern = row.Name + ".exe" });
+    }
+
     void CreateRuleFromSelection()
     {
         if (SelectedProcess is { } row)
@@ -602,7 +654,13 @@ public sealed class MainForm : Form
     {
         // Historique alimenté même fenêtre cachée ; la toute première mesure (sans référence, donc 0) est ignorée.
         if (Interlocked.Increment(ref snapshotCount) > 1)
-            cpuHistory.Add(DateTime.UtcNow, snapshot.SystemCpu);
+        {
+            var t = DateTime.UtcNow;
+            cpuHistory.Add(t, snapshot.SystemCpu);
+            if (snapshot.MemoryTotal > 0)
+                memHistory.Add(t, snapshot.MemoryPercent);
+            topTracker.Add(t, snapshot.Rows);
+        }
         latestSnapshot = snapshot; // à jour même fenêtre cachée (raccourcis, icône de notification)
         if (!shown)
             return;
@@ -618,7 +676,12 @@ public sealed class MainForm : Form
         nav.SetStatus(snap.SystemCpu, snap.Rows.Count, snap.Paused, snap.GameMode, snap.GameTrigger);
         UpdateGameStatus(snap);
         if (chart.Visible)
+        {
             chart.Invalidate();
+            memChart.Caption = snap.MemoryTotal > 0 ? $"{FormatBytes(snap.MemoryUsed)} utilisés sur {FormatBytes(snap.MemoryTotal)}" : null;
+            memChart.Invalidate();
+            RefreshTop();
+        }
         if (IsPageVisible("Journal"))
             RefreshLog(force: false);
 
@@ -693,15 +756,61 @@ public sealed class MainForm : Form
             {
                 foreach (var other in ranges)
                     other.Toggled = other == b;
-                chart.Range = TimeSpan.FromMinutes(minutes);
+                chart.Range = memChart.Range = TimeSpan.FromMinutes(minutes);
                 chart.Invalidate();
+                memChart.Invalidate();
+                RefreshTop();
             };
             tips.SetToolTip(b, $"Afficher les {minutes} dernières minutes");
             ranges.Add(b);
         }
-        return MakePage("Graphique", "Usage total du processeur. Survolez la courbe pour lire une valeur ; la ligne pointillée est le seuil de ProBalance.",
-            new Card(chart, fill: true), ranges.ToArray());
+
+        memChart.Title = "Mémoire";
+        memChart.Threshold = null;
+
+        // Colonne de droite : les plus gourmands sur la période, en CPU ou en mémoire
+        var byCpu = new ModernButton("Processeur") { Toggled = true, Height = 28 };
+        var byMem = new ModernButton("Mémoire") { Height = 28 };
+        byCpu.Click += (_, _) => { topMetric = TopTracker.Metric.Cpu; byCpu.Toggled = true; byMem.Toggled = false; RefreshTop(); };
+        byMem.Click += (_, _) => { topMetric = TopTracker.Metric.Memory; byMem.Toggled = true; byCpu.Toggled = false; RefreshTop(); };
+        tips.SetToolTip(byCpu, "Classement par usage moyen du processeur sur la période (toutes les instances d'un programme additionnées)");
+        tips.SetToolTip(byMem, "Classement par pic de mémoire sur la période");
+        var topHeader = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top, WrapContents = false, Margin = new Padding(0), Padding = new Padding(0, 0, 0, 12) };
+        topHeader.Controls.Add(byCpu);
+        topHeader.Controls.Add(byMem);
+        var topBody = new Panel();
+        topList.Dock = DockStyle.Fill;
+        topBody.Controls.Add(topList);
+        topBody.Controls.Add(topHeader);
+
+        var grid = new TableLayoutPanel { ColumnCount = 2, RowCount = 2, Margin = new Padding(0) };
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        var cpuCard = new Card(chart, fill: true) { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 14, 7) };
+        var memCard = new Card(memChart, fill: true) { Dock = DockStyle.Fill, Margin = new Padding(0, 7, 14, 0) };
+        var topCard = new Card(topBody, "Les plus gourmands", fill: true) { Dock = DockStyle.Fill, Margin = new Padding(0) };
+        topCard.Padding = new Padding(18, 50, 18, 18);
+        grid.Controls.Add(cpuCard, 0, 0);
+        grid.Controls.Add(memCard, 0, 1);
+        grid.Controls.Add(topCard, 1, 0);
+        grid.SetRowSpan(topCard, 2);
+
+        return MakePage("Graphique", "Processeur et mémoire de tout le PC. Survolez une courbe pour lire une valeur ; la ligne pointillée est le seuil de ProBalance.",
+            grid, ranges.ToArray());
     }
+
+    void RefreshTop()
+    {
+        var from = DateTime.UtcNow - chart.Range;
+        var top = topTracker.Top(from, topMetric);
+        topList.SetItems(top.Select(e => (e.Name, e.Value,
+            topMetric == TopTracker.Metric.Cpu ? $"{e.Value:0.0} %" : FormatBytes((long)e.Value))).ToList());
+    }
+
+    static string FormatBytes(long bytes) =>
+        bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):0.0} Go" : $"{bytes / (1024 * 1024):N0} Mo";
 
     // ---------- Règles ----------
 
@@ -1022,6 +1131,32 @@ public sealed class MainForm : Form
         stack.Controls.Add(new Card(Rows(
             SettingRow("Activer ProBalance", "Abaisse temporairement la priorité des processus qui saturent le processeur. La fenêtre que vous utilisez n'est jamais touchée.", pbEnabled),
             SettingRow("Me prévenir quand ProBalance intervient", "Affiche une bulle près de l'horloge (au plus une toutes les 30 secondes).", pbNotify)), "Fonctionnement"));
+
+        var resetStats = new ModernButton("Remettre à zéro") { Height = 28 };
+        resetStats.Click += (_, _) =>
+        {
+            if (MessageBox.Show(this, "Effacer les statistiques de ProBalance ?", Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            {
+                stats.Reset();
+                RefreshStats();
+            }
+        };
+        var statsGrid = new TableLayoutPanel { AutoSize = true, ColumnCount = 3, Margin = new Padding(0, 0, 0, 8) };
+        for (int i = 0; i < 3; i++)
+            statsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
+        foreach (var (label, value) in new[] { ("Aujourd'hui", statsToday), ("7 derniers jours", statsWeek), ("30 derniers jours", statsMonth) })
+        {
+            var cell = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Margin = new Padding(0) };
+            cell.Controls.Add(new Label { Text = label, AutoSize = true, Tag = Theme.HintTag, Margin = new Padding(0) });
+            cell.Controls.Add(value);
+            statsGrid.Controls.Add(cell);
+        }
+        stack.Controls.Add(new Card(Rows(
+            statsGrid,
+            SettingRow("Les plus souvent abaissés (7 jours)", null, resetStats),
+            statsTop), "Statistiques"));
+        RefreshStats();
+
         stack.Controls.Add(new Card(Rows(
             SettingRow("Préréglage", "Remplit les seuils ci-dessous. Pensez à enregistrer.", presets)), "Sensibilité"));
         stack.Controls.Add(new Card(Rows(
@@ -1064,6 +1199,25 @@ public sealed class MainForm : Form
         foreach (var (button, preset) in presetButtons)
             button.Toggled = preset == current;
         presetState.Text = current == null ? "Personnalisé" : "";
+    }
+
+    readonly Label statsToday = StatValue();
+    readonly Label statsWeek = StatValue();
+    readonly Label statsMonth = StatValue();
+    readonly Label statsTop = new() { AutoSize = true, Tag = Theme.HintTag, MaximumSize = new Size(640, 0), Margin = new Padding(0, 0, 0, 4) };
+
+    static Label StatValue() => new() { AutoSize = true, Font = new Font("Segoe UI Semibold", 18f), Margin = new Padding(0, 2, 0, 0) };
+
+    void RefreshStats()
+    {
+        static string Interventions(int n) => n == 0 ? "0" : n.ToString("N0");
+        statsToday.Text = Interventions(stats.CountToday());
+        statsWeek.Text = Interventions(stats.Count(7));
+        statsMonth.Text = Interventions(stats.Count(30));
+        var top = stats.TopPrograms(7);
+        statsTop.Text = top.Count == 0
+            ? "Aucune intervention ces 7 derniers jours : le processeur n'a pas été saturé, ou ProBalance est désactivé."
+            : string.Join("   ·   ", top.Select(t => $"{t.Name} ({t.Count} fois)"));
     }
 
     void LoadProBalance()

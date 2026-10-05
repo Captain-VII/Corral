@@ -469,3 +469,54 @@ public sealed class BufferedListView : ListView
 {
     public BufferedListView() => DoubleBuffered = true;
 }
+
+/// <summary>Classement compact : nom, valeur et barre proportionnelle au premier (le plus gourmand).</summary>
+public sealed class TopList : Control
+{
+    IReadOnlyList<(string Name, double Value, string Text)> items = Array.Empty<(string, double, string)>();
+    const int RowHeight = 46;
+
+    public TopList()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+    }
+
+    public string EmptyText { get; set; } = "Collecte des mesures…";
+
+    public void SetItems(IReadOnlyList<(string Name, double Value, string Text)> list)
+    {
+        items = list;
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var p = Theme.Current;
+        var g = e.Graphics;
+        g.Clear(p.Surface);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        if (items.Count == 0)
+        {
+            TextRenderer.DrawText(g, EmptyText, Font, ClientRectangle, p.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.WordBreak);
+            return;
+        }
+        double max = Math.Max(items[0].Value, 1e-9);
+        for (int i = 0; i < items.Count; i++)
+        {
+            int y = i * RowHeight;
+            var (name, value, text) = items[i];
+            TextRenderer.DrawText(g, name, Ui.Base, new Rectangle(0, y, Width - 90, 20), p.Fore, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(g, text, Ui.Strong, new Rectangle(Width - 90, y, 90, 20), p.Fore, TextFormatFlags.Right);
+            var track = new RectangleF(0, y + 24, Width - 1, 6);
+            using (var trackPath = Ui.Rounded(track, 3))
+            using (var back = new SolidBrush(p.Surface2))
+                g.FillPath(back, trackPath);
+            float w = (float)Math.Max(6, track.Width * value / max);
+            using var barPath = Ui.Rounded(new RectangleF(track.X, track.Y, w, track.Height), 3);
+            using var bar = new SolidBrush(p.Accent);
+            g.FillPath(bar, barPath);
+        }
+    }
+
+    public override Size GetPreferredSize(Size proposed) => new(proposed.Width, Math.Max(RowHeight, items.Count * RowHeight));
+}

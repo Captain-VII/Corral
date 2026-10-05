@@ -45,6 +45,26 @@ internal static class Native
         }
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    struct MEMORYSTATUSEX
+    {
+        public uint Length;
+        public uint MemoryLoad;
+        public ulong TotalPhys, AvailPhys, TotalPageFile, AvailPageFile, TotalVirtual, AvailVirtual, AvailExtendedVirtual;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX status);
+
+    /// <summary>Mémoire physique utilisée et totale, en octets ((0, 0) en cas d'échec).</summary>
+    public static (long Used, long Total) GetMemoryUsage()
+    {
+        var m = new MEMORYSTATUSEX { Length = (uint)Marshal.SizeOf<MEMORYSTATUSEX>() };
+        if (!GlobalMemoryStatusEx(ref m))
+            return (0, 0);
+        return ((long)(m.TotalPhys - m.AvailPhys), (long)m.TotalPhys);
+    }
+
     public static int GetForegroundPid()
     {
         var hwnd = GetForegroundWindow();
