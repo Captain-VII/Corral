@@ -1,4 +1,4 @@
-using Microsoft.Win32;
+﻿using Microsoft.Win32;
 using Corral.Core;
 using Corral.Models;
 
@@ -18,6 +18,14 @@ public sealed class TrayContext : ApplicationContext
     readonly ToolStripMenuItem pauseItem;
     readonly ToolStripMenuItem updateItem = new() { Visible = false };
     readonly System.Windows.Forms.Timer updateTimer = new();
+    readonly ToolStripMenuItem proBalanceItem = new("ProBalance");
+    readonly SynchronizationContext ui;
+    // Bulles ProBalance : au plus une toutes les 30 s, les suivantes sont regroupées
+    static readonly TimeSpan NotifyCooldown = TimeSpan.FromSeconds(30);
+    readonly System.Windows.Forms.Timer notifyTimer = new();
+    readonly List<string> pendingNotify = new();
+    DateTime lastNotify = DateTime.MinValue;
+    bool lastBalloonIsUpdate;
     UpdateInfo? pendingUpdate;
     bool checking;
     bool updateDialogOpen;
@@ -31,14 +39,20 @@ public sealed class TrayContext : ApplicationContext
         form = new MainForm(engine, store, settings);
         form.CheckUpdatesRequested += (_, _) => CheckForUpdates(manual: true);
         form.PauseRequested += paused => pauseItem!.Checked = paused; // l'élément de menu applique la pause au moteur
+        // La fenêtre (créée ci-dessus) a installé le contexte de synchronisation de l'interface.
+        ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Ouvrir", null, (_, _) => ShowForm());
         updateItem.Click += (_, _) => OfferUpdate();
         menu.Items.Add(updateItem);
-        pauseItem = new ToolStripMenuItem("Pause") { CheckOnClick = true };
+        pauseItem = new ToolStripMenuItem("Pause") { CheckOnClick = true, ToolTipText = "Suspend toutes les règles et ProBalance" };
         pauseItem.CheckedChanged += (_, _) => engine.SetPaused(pauseItem.Checked);
         menu.Items.Add(pauseItem);
+        proBalanceItem.ToolTipText = "Activer ou désactiver ProBalance";
+        proBalanceItem.Click += (_, _) => form.SetProBalanceEnabled(!settings.ProBalance.Enabled);
+        menu.Items.Add(proBalanceItem);
+        menu.Opening += (_, _) => proBalanceItem.Checked = settings.ProBalance.Enabled;
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quitter", null, (_, _) => Exit());
         Theme.ApplyTo(menu);
@@ -60,8 +74,26 @@ public sealed class TrayContext : ApplicationContext
         tray.DoubleClick += (_, _) => ShowForm();
         tray.BalloonTipClicked += (_, _) =>
         {
-            if (pendingUpdate != null)
+            if (lastBalloonIsUpdate && pendingUpdate != null)
                 OfferUpdate();
+            else
+                ShowForm();
+        };
+
+        // Infobulle de l'icône : charge du processeur (mise à jour sur le thread de l'interface)
+        engine.SnapshotReady += snap => ui.Post(_ =>
+        {
+            if (exiting)
+                return;
+            var text = $"Corral — CPU {snap.SystemCpu:0} %" + (snap.Paused ? " (en pause)" : "");
+            if (tray.Text != text)
+                tray.Text = text;
+        }, null);
+        engine.ProBalanceActed += (names, cpu) => ui.Post(_ => NotifyProBalance(names), null);
+        notifyTimer.Tick += (_, _) =>
+        {
+            notifyTimer.Stop();
+            FlushNotify();
         };
 
         engine.Start();
@@ -83,6 +115,38 @@ public sealed class TrayContext : ApplicationContext
             };
             updateTimer.Start();
         }
+    }
+
+    void NotifyProBalance(IReadOnlyList<string> names)
+    {
+        if (exiting || !settings.NotifyProBalance)
+            return;
+        pendingNotify.AddRange(names);
+        var wait = lastNotify + NotifyCooldown - DateTime.UtcNow;
+        if (wait <= TimeSpan.Zero)
+            FlushNotify();
+        else if (!notifyTimer.Enabled)
+        {
+            notifyTimer.Interval = Math.Max(100, (int)wait.TotalMilliseconds);
+            notifyTimer.Start();
+        }
+    }
+
+    void FlushNotify()
+    {
+        if (exiting || pendingNotify.Count == 0 || !settings.NotifyProBalance)
+        {
+            pendingNotify.Clear();
+            return;
+        }
+        var names = pendingNotify.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        pendingNotify.Clear();
+        var text = names.Count == 1
+            ? $"« {names[0]} » saturait le processeur : sa priorité a été baissée un moment pour garder le PC réactif."
+            : $"{names.Count} programmes abaissés pour garder le PC réactif : {string.Join(", ", names.Take(3))}{(names.Count > 3 ? "…" : "")}.";
+        lastBalloonIsUpdate = false;
+        tray.ShowBalloonTip(6000, "ProBalance", text, ToolTipIcon.Info);
+        lastNotify = DateTime.UtcNow;
     }
 
     async void CheckForUpdates(bool manual)
@@ -111,18 +175,21 @@ public sealed class TrayContext : ApplicationContext
             pendingUpdate = info;
             updateItem.Text = $"Installer la mise à jour {info.Version.ToString(3)}…";
             updateItem.Visible = true;
-            Log.Info($"Mise à jour disponible : {info.Version.ToString(3)}");
+            Log.Info($"Mise à jour disponible : {info.Version.ToString(3)}", LogCategory.Update);
 
             if (manual)
                 OfferUpdate();
             else if (settings.SkippedVersion != info.Version.ToString(3))
+            {
+                lastBalloonIsUpdate = true;
                 tray.ShowBalloonTip(10_000, "Mise à jour de Corral",
                     $"La version {info.Version.ToString(3)} est disponible. Cliquez ici pour l'installer.", ToolTipIcon.Info);
+            }
         }
         catch (Exception ex)
         {
             // Hors ligne, GitHub indisponible, limite d'API… : on réessaiera au prochain passage.
-            Log.Warn($"Vérification des mises à jour : {ex.Message}");
+            Log.Warn($"Vérification des mises à jour : {ex.Message}", LogCategory.Update);
             if (manual)
                 Message("Impossible de vérifier les mises à jour : " + ex.Message, MessageBoxIcon.Warning);
         }
@@ -179,6 +246,7 @@ public sealed class TrayContext : ApplicationContext
             return;
         exiting = true;
         updateTimer.Stop();
+        notifyTimer.Stop();
         engine.Stop();
         tray.Visible = false;
         tray.Dispose();

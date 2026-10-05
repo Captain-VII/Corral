@@ -89,7 +89,7 @@ public static class Updater
         }
         if (exe == null || sha == null)
         {
-            Log.Warn($"Release {version} ignorée : {ExeAsset} ou {ShaAsset} manquant");
+            Log.Warn($"Release {version} ignorée : {ExeAsset} ou {ShaAsset} manquant", LogCategory.Update);
             return null;
         }
         var notes = root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "";
@@ -179,7 +179,7 @@ public static class Updater
             Rollback(exe);
             throw;
         }
-        Log.Info("Mise à jour installée, redémarrage");
+        Log.Info("Mise à jour installée, redémarrage", LogCategory.Update);
     }
 
     /// <summary>exe → exe.old, téléchargé → exe. Annule si la seconde étape échoue.</summary>

@@ -16,6 +16,35 @@ internal static class Native
     [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern bool GetSystemTimes(out long idleTime, out long kernelTime, out long userTime);
 
+    const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern bool QueryFullProcessImageName(IntPtr process, uint flags, System.Text.StringBuilder name, ref uint size);
+
+    [DllImport("kernel32.dll")]
+    static extern bool CloseHandle(IntPtr handle);
+
+    /// <summary>Chemin de l'exécutable, ou null (processus protégé ou terminé). Fonctionne sans droits complets.</summary>
+    public static string? GetProcessPath(int pid)
+    {
+        var h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (h == IntPtr.Zero)
+            return null;
+        try
+        {
+            var sb = new System.Text.StringBuilder(1024);
+            uint size = (uint)sb.Capacity;
+            return QueryFullProcessImageName(h, 0, sb, ref size) ? sb.ToString(0, (int)size) : null;
+        }
+        finally
+        {
+            CloseHandle(h);
+        }
+    }
+
     public static int GetForegroundPid()
     {
         var hwnd = GetForegroundWindow();

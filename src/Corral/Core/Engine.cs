@@ -3,7 +3,9 @@ using Corral.Models;
 
 namespace Corral.Core;
 
-public sealed record ProcessRow(int Pid, string Name, double Cpu, long MemoryBytes, string? Rule, bool Restrained);
+/// <param name="RuleSummary">Effet de la règle en clair (« Priorité haute · 8 cœurs »), pour l'infobulle.</param>
+public sealed record ProcessRow(int Pid, string Name, double Cpu, long MemoryBytes, string? Rule, bool Restrained,
+    string? Path = null, string? RuleSummary = null);
 
 public sealed record EngineSnapshot(double SystemCpu, bool Paused, IReadOnlyList<ProcessRow> Rows);
 
@@ -24,6 +26,8 @@ public sealed class Engine : IDisposable
         public ProcessPriorityClass? ProBalanceOrig;
         public TimeSpan? LastCpu;
         public bool CpuDenied;
+        public string? Path;
+        public bool PathLoaded;
     }
 
     readonly object sync = new();
@@ -33,6 +37,7 @@ public sealed class Engine : IDisposable
     readonly Func<int> foregroundPid;
     readonly Dictionary<ProcKey, Tracked> tracked = new();
     readonly HashSet<ProcKey> jobLimited = new();
+    readonly List<string> pendingActed = new();
     readonly Stopwatch clock = new();
     readonly int ownPid = Environment.ProcessId;
     readonly int cores = Environment.ProcessorCount;
@@ -51,6 +56,9 @@ public sealed class Engine : IDisposable
 
     /// <summary>Levé sur le thread du moteur après chaque passage.</summary>
     public event Action<EngineSnapshot>? SnapshotReady;
+
+    /// <summary>ProBalance vient d'abaisser des programmes (noms, CPU système). Levé sur le thread du moteur.</summary>
+    public event Action<IReadOnlyList<string>, double>? ProBalanceActed;
 
     public void Start()
     {
@@ -113,6 +121,7 @@ public sealed class Engine : IDisposable
     void OnTimer()
     {
         EngineSnapshot? snapshot = null;
+        List<string>? acted = null;
         lock (sync)
         {
             if (stopped)
@@ -120,12 +129,77 @@ public sealed class Engine : IDisposable
             try { snapshot = Tick(); }
             catch (Exception ex) { Log.Error("Erreur moteur", ex); }
             finally { timer?.Change(settings.PollIntervalMs, Timeout.Infinite); }
+            if (pendingActed.Count > 0)
+            {
+                acted = new List<string>(pendingActed);
+                pendingActed.Clear();
+            }
         }
-        if (snapshot != null)
+        // Événements levés hors verrou : un abonné lent ne bloque pas le moteur.
+        try
         {
-            try { SnapshotReady?.Invoke(snapshot); }
-            catch (Exception ex) { Log.Error("Affichage", ex); }
+            if (snapshot != null)
+                SnapshotReady?.Invoke(snapshot);
+            if (acted != null && snapshot != null)
+                ProBalanceActed?.Invoke(acted, snapshot.SystemCpu);
         }
+        catch (Exception ex) { Log.Error("Affichage", ex); }
+    }
+
+    /// <summary>
+    /// Change la priorité d'un processus une seule fois, sans règle (menu « Priorité maintenant »).
+    /// Renvoie un message d'erreur, ou null si c'est fait.
+    /// </summary>
+    public string? SetPriorityOnce(int pid, string name, ProcessPriorityClass priority)
+    {
+        lock (sync)
+        {
+            if (Exclusions.IsProtected(name, pid, ownPid))
+                return "Processus système : Corral n'y touche pas.";
+            var key = tracked.Keys.FirstOrDefault(k => k.Pid == pid && string.Equals(k.Name, name, StringComparison.OrdinalIgnoreCase));
+            using var p = key.Name == null ? null : OpenSame(key);
+            if (p == null)
+                return "Le processus n'existe plus.";
+            if (priority == ProcessPriorityClass.RealTime)
+                priority = ProcessPriorityClass.High;
+            try
+            {
+                p.PriorityClass = priority;
+            }
+            catch (Exception ex)
+            {
+                return "Accès refusé : " + ex.Message;
+            }
+            // ProBalance ne doit pas « restaurer » par-dessus le choix de l'utilisateur.
+            if (tracked.TryGetValue(key, out var t))
+                t.ProBalanceOrig = null;
+            Log.Info($"{name} ({pid}) : priorité changée en {PriorityLabel(priority)} (ponctuel)", LogCategory.Rule);
+            return null;
+        }
+    }
+
+    public static string PriorityLabel(ProcessPriorityClass p) => p switch
+    {
+        ProcessPriorityClass.Idle => "Inactive",
+        ProcessPriorityClass.BelowNormal => "Inférieure à la normale",
+        ProcessPriorityClass.Normal => "Normale",
+        ProcessPriorityClass.AboveNormal => "Supérieure à la normale",
+        ProcessPriorityClass.High => "Haute",
+        _ => "Temps réel",
+    };
+
+    /// <summary>Effet d'une règle en une ligne, pour les infobulles.</summary>
+    public static string? Summary(Rule? r)
+    {
+        if (r == null)
+            return null;
+        var parts = new List<string>();
+        if (r.Priority is { } p) parts.Add("priorité " + PriorityLabel(p).ToLowerInvariant());
+        if (r.AffinityMask is { } m) parts.Add($"{System.Numerics.BitOperations.PopCount((ulong)m)} cœurs");
+        if (r.PowerPlan != null) parts.Add("plan d'alimentation");
+        if (r.CpuLimitPercent is { } c) parts.Add($"CPU max {c} %");
+        if (r.MemoryLimitMB is { } mem) parts.Add($"RAM max {mem} Mo");
+        return parts.Count == 0 ? "aucun effet" : string.Join(" · ", parts);
     }
 
     EngineSnapshot Tick()
@@ -182,7 +256,12 @@ public sealed class Engine : IDisposable
 
                 long mem = 0;
                 try { mem = p.WorkingSet64; } catch { }
-                rows.Add(new ProcessRow(key.Pid, key.Name, cpu, mem, t.Rule?.Pattern, t.ProBalanceOrig != null));
+                if (!t.PathLoaded)
+                {
+                    t.Path = Native.GetProcessPath(key.Pid);
+                    t.PathLoaded = true;
+                }
+                rows.Add(new ProcessRow(key.Pid, key.Name, cpu, mem, t.Rule?.Pattern, t.ProBalanceOrig != null, t.Path, Summary(t.Rule)));
             }
 
             foreach (var gone in tracked.Keys.Where(k => !live.ContainsKey(k)).ToList())
@@ -232,7 +311,7 @@ public sealed class Engine : IDisposable
         if (rule.AffinityMask is { } mask)
         {
             if (!RuleMatcher.IsValidAffinity(mask, cores))
-                Log.Warn($"Règle « {rule.Pattern} » : masque d'affinité 0x{mask:X} invalide pour {cores} CPU");
+                Log.Warn($"Règle « {rule.Pattern} » : masque d'affinité 0x{mask:X} invalide pour {cores} CPU", LogCategory.Rule);
             else if (TryDo(key, "affinité", () =>
                      {
                          var current = p.ProcessorAffinity;
@@ -258,7 +337,7 @@ public sealed class Engine : IDisposable
         }
 
         if (done.Count > 0)
-            Log.Info($"{key.Name} ({key.Pid}) : règle « {rule.Pattern} » → {string.Join(", ", done)}");
+            Log.Info($"{key.Name} ({key.Pid}) : règle « {rule.Pattern} » → {string.Join(", ", done)}", LogCategory.Rule);
     }
 
     void RunProBalance(double sysCpu, List<ProBalanceLogic.Sample> samples, Dictionary<ProcKey, Process> live, ProBalanceSettings cfg)
@@ -277,7 +356,10 @@ public sealed class Engine : IDisposable
                     p.PriorityClass = ProcessPriorityClass.BelowNormal;
                     t.ProBalanceOrig = current;
                 }))
-                Log.Info($"ProBalance : {key.Name} ({key.Pid}) abaissé (CPU système {sysCpu:0}%)");
+            {
+                Log.Info($"ProBalance : {key.Name} ({key.Pid}) abaissé (CPU système {sysCpu:0}%)", LogCategory.ProBalance);
+                pendingActed.Add(key.Name);
+            }
         }
 
         foreach (var key in toRestore)
@@ -286,7 +368,7 @@ public sealed class Engine : IDisposable
                 continue;
             t.ProBalanceOrig = null;
             if (live.TryGetValue(key, out var p) && TryDo(key, "ProBalance restauration", () => p.PriorityClass = orig))
-                Log.Info($"ProBalance : {key.Name} ({key.Pid}) restauré en {orig}");
+                Log.Info($"ProBalance : {key.Name} ({key.Pid}) restauré en {orig}", LogCategory.ProBalance);
         }
     }
 

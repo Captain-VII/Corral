@@ -55,14 +55,17 @@ public class ScreenshotTests
                 Pump(300);
                 Capture(form, Path.Combine(outDir, $"shot-{mode}-chart-hover.png"));
 
-                foreach (var page in new[] { "Règles", "ProBalance", "Options" })
+                Log.Info("chrome (1234) : règle « chrome* » → priorité BelowNormal", LogCategory.Rule);
+                Log.Info("ProBalance : jeu (4321) abaissé (CPU système 91%)", LogCategory.ProBalance);
+                Log.Warn("powercfg : délai dépassé", LogCategory.Power);
+                foreach (var page in new[] { "Règles", "ProBalance", "Options", "Journal" })
                 {
                     form.ShowPage(page);
                     Pump(400);
                     Capture(form, Path.Combine(outDir, $"shot-{mode}-{page}.png"));
                 }
 
-                using var dlg = new RuleDialog(settings.Rules[0], PowerCfg.List(), isNew: false) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(1200, 40) };
+                using var dlg = new RuleDialog(settings.Rules[0], PowerCfg.List(), isNew: false, new[] { "chrome", "chrome", "chrome", "code", "System" }) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(1200, 40) };
                 dlg.Show();
                 Pump(500);
                 Capture(dlg, Path.Combine(outDir, $"shot-{mode}-dialog.png"));

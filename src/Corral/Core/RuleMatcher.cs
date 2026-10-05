@@ -29,6 +29,10 @@ public static class RuleMatcher
     public static Rule? Find(IEnumerable<Rule> rules, string processName) =>
         rules.FirstOrDefault(r => r.Enabled && Matches(r.Pattern, processName));
 
+    /// <summary>Noms des processus en cours visés par un motif (aperçu dans la fenêtre de règle).</summary>
+    public static List<string> Preview(string pattern, IEnumerable<string> runningNames) =>
+        runningNames.Where(n => Matches(pattern, n)).ToList();
+
     public static bool IsValidAffinity(long mask, int cpuCount)
     {
         if (mask <= 0)

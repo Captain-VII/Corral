@@ -164,7 +164,28 @@ public static class Theme
     /// <summary>Champs de saisie : un cran plus clair que la carte en sombre, pour rester visibles.</summary>
     static Color InputBack(Palette p) => IsDark ? p.Surface2 : p.Surface;
 
-    public sealed record CellStyle(string? Text = null, Color? Fore = null, Color? Back = null);
+    public sealed record CellStyle(string? Text = null, Color? Fore = null, Color? Back = null, Image? Icon = null);
+
+    /// <summary>Infobulle dessinée aux couleurs du thème courant (lu au moment de l'affichage).</summary>
+    public static ToolTip CreateToolTip()
+    {
+        var tip = new ToolTip { OwnerDraw = true, InitialDelay = 400, AutoPopDelay = 15_000, ReshowDelay = 100 };
+        tip.Popup += (_, e) =>
+        {
+            var size = TextRenderer.MeasureText(tip.GetToolTip(e.AssociatedControl!), Ui.Base, new Size(420, 0), TextFormatFlags.WordBreak);
+            e.ToolTipSize = new Size(Math.Min(size.Width, 420) + 20, size.Height + 14);
+        };
+        tip.Draw += (_, e) =>
+        {
+            var p = Current;
+            using (var back = new SolidBrush(p.Surface2))
+                e.Graphics.FillRectangle(back, e.Bounds);
+            using (var border = new Pen(p.Border))
+                e.Graphics.DrawRectangle(border, 0, 0, e.Bounds.Width - 1, e.Bounds.Height - 1);
+            TextRenderer.DrawText(e.Graphics, e.ToolTipText, Ui.Base, Rectangle.Inflate(e.Bounds, -10, -7), p.Fore, TextFormatFlags.WordBreak);
+        };
+        return tip;
+    }
 
     /// <summary>
     /// Liste entièrement dessinée (les deux thèmes) : lignes de 32 px, en-tête discret, sélection teintée d'accent.
@@ -224,8 +245,14 @@ public static class Theme
             var back = e.Item.Selected ? Ui.Blend(p.Accent, p.Surface, IsDark ? 0.30 : 0.16) : style?.Back ?? p.Surface;
             using (var brush = new SolidBrush(back))
                 e.Graphics.FillRectangle(brush, bounds);
+            var textBounds = Rectangle.Inflate(bounds, -10, 0);
+            if (style?.Icon is { } icon)
+            {
+                e.Graphics.DrawImage(icon, textBounds.Left, bounds.Top + (bounds.Height - 16) / 2, 16, 16);
+                textBounds = new Rectangle(textBounds.Left + 24, textBounds.Top, Math.Max(0, textBounds.Width - 24), textBounds.Height);
+            }
             var align = lv.Columns[e.ColumnIndex].TextAlign == HorizontalAlignment.Right ? TextFormatFlags.Right : TextFormatFlags.Left;
-            TextRenderer.DrawText(e.Graphics, style?.Text ?? e.SubItem.Text, lv.Font, Rectangle.Inflate(bounds, -10, 0), style?.Fore ?? p.Fore,
+            TextRenderer.DrawText(e.Graphics, style?.Text ?? e.SubItem.Text, lv.Font, textBounds, style?.Fore ?? p.Fore,
                 align | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         };
         lv.DrawColumnHeader += (_, e) =>

@@ -1,12 +1,18 @@
-﻿namespace Corral.Core;
+namespace Corral.Core;
 
-/// <summary>Journal fichier (rotation à 1 Mo) et mémoire des 500 dernières lignes. Ne lève jamais d'exception.</summary>
+public enum LogLevel { Info, Warning, Error }
+
+public enum LogCategory { General, Rule, ProBalance, Power, Update }
+
+public sealed record LogEntry(DateTime Time, LogLevel Level, LogCategory Category, string Message);
+
+/// <summary>Journal fichier (rotation à 1 Mo) et mémoire des 500 dernières entrées. Ne lève jamais d'exception.</summary>
 public static class Log
 {
     const int MaxRecent = 500;
     const long MaxFileSize = 1_000_000;
     static readonly object sync = new();
-    static readonly LinkedList<string> recent = new();
+    static readonly LinkedList<LogEntry> recent = new();
     static string? path;
 
     public static void Init(string directory)
@@ -19,22 +25,24 @@ public static class Log
         catch { }
     }
 
-    public static void Info(string message) => Write("INFO", message);
-    public static void Warn(string message) => Write("WARN", message);
+    public static void Info(string message, LogCategory category = LogCategory.General) => Write(LogLevel.Info, category, message);
+    public static void Warn(string message, LogCategory category = LogCategory.General) => Write(LogLevel.Warning, category, message);
     public static void Error(string message, Exception? ex = null) =>
-        Write("ERREUR", ex == null ? message : $"{message} : {ex}");
+        Write(LogLevel.Error, LogCategory.General, ex == null ? message : $"{message} : {ex}");
 
-    public static string[] Recent()
+    public static LogEntry[] Recent()
     {
         lock (sync) return recent.ToArray();
     }
 
-    static void Write(string level, string message)
+    static void Write(LogLevel level, LogCategory category, string message)
     {
-        var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{level}] {message}";
+        var entry = new LogEntry(DateTime.Now, level, category, message);
+        var tag = level switch { LogLevel.Warning => "WARN", LogLevel.Error => "ERREUR", _ => "INFO" };
+        var line = $"{entry.Time:yyyy-MM-dd HH:mm:ss} [{tag}] [{category}] {message}";
         lock (sync)
         {
-            recent.AddLast(line);
+            recent.AddLast(entry);
             if (recent.Count > MaxRecent)
                 recent.RemoveFirst();
             if (path == null)

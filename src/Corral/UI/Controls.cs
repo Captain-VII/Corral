@@ -393,6 +393,59 @@ public sealed class NavBar : Control
     }
 }
 
+/// <summary>Bandeau « action faite — Annuler » qui disparaît seul après quelques secondes.</summary>
+public sealed class UndoBanner : Panel
+{
+    readonly Label text = new() { AutoSize = true, Margin = new Padding(0, 8, 12, 0) };
+    readonly ModernButton undo = new("Annuler") { Height = 30 };
+    readonly System.Windows.Forms.Timer timer = new() { Interval = 8000 };
+    Action? onUndo;
+
+    public UndoBanner()
+    {
+        Dock = DockStyle.Bottom;
+        Height = 46;
+        Visible = false;
+        Padding = new Padding(0, 8, 0, 0);
+        var row = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
+        row.Controls.Add(text);
+        row.Controls.Add(undo);
+        Controls.Add(row);
+        undo.Click += (_, _) =>
+        {
+            var action = onUndo;
+            Hide();
+            action?.Invoke();
+        };
+        timer.Tick += (_, _) => Hide();
+    }
+
+    /// <summary>Sans action d'annulation, le bandeau sert de simple confirmation.</summary>
+    public void Show(string message, Action? undoAction = null)
+    {
+        text.Text = message;
+        onUndo = undoAction;
+        undo.Visible = undoAction != null;
+        Visible = true;
+        timer.Stop();
+        timer.Start();
+    }
+
+    public new void Hide()
+    {
+        timer.Stop();
+        onUndo = null;
+        Visible = false;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            timer.Dispose();
+        base.Dispose(disposing);
+    }
+}
+
 public sealed class BufferedListView : ListView
 {
     public BufferedListView() => DoubleBuffered = true;

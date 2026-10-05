@@ -48,6 +48,45 @@ public sealed class RuleStore
         File.Move(tmp, FilePath, overwrite: true);
     }
 
+    sealed class RulesFile
+    {
+        public string App { get; set; } = "Corral";
+        public List<Rule>? Rules { get; set; } // nul si le fichier n'a pas de liste « Rules »
+    }
+
+    /// <summary>Export des seules règles (pour sauvegarder ou partager).</summary>
+    public static void ExportRules(IEnumerable<Rule> rules, string path) =>
+        File.WriteAllText(path, JsonSerializer.Serialize(new RulesFile { Rules = rules.ToList() }, Options));
+
+    /// <summary>
+    /// Lit un fichier exporté. Lève <see cref="InvalidDataException"/> si le fichier n'est pas un export de règles.
+    /// Les règles sans nom sont écartées et les masques d'affinité invalides retirés.
+    /// </summary>
+    public static List<Rule> ImportRules(string path)
+    {
+        RulesFile? file;
+        try
+        {
+            file = JsonSerializer.Deserialize<RulesFile>(File.ReadAllText(path), Options);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException("Ce fichier n'est pas un export de règles Corral.", ex);
+        }
+        if (file?.Rules == null)
+            throw new InvalidDataException("Ce fichier ne contient aucune règle.");
+        var rules = file.Rules.Where(r => r != null && !string.IsNullOrWhiteSpace(r.Pattern)).ToList();
+        foreach (var r in rules)
+        {
+            r.Pattern = r.Pattern.Trim();
+            if (r.AffinityMask is { } m && !RuleMatcher.IsValidAffinity(m, Environment.ProcessorCount))
+                r.AffinityMask = null;
+            if (r.CpuLimitPercent is < 1 or > 99) r.CpuLimitPercent = null;
+            if (r.MemoryLimitMB is < 1) r.MemoryLimitMB = null;
+        }
+        return rules;
+    }
+
     public static Settings Clone(Settings settings)
     {
         var s = JsonSerializer.Deserialize<Settings>(JsonSerializer.Serialize(settings, Options), Options)!;

@@ -114,7 +114,7 @@ public sealed class PowerPlanManager
             original = api.GetActive();
             if (original == null)
             {
-                Log.Warn("Plan d'alimentation actif introuvable, changement ignoré");
+                Log.Warn("Plan d'alimentation actif introuvable, changement ignoré", LogCategory.Power);
                 return;
             }
             WriteState(original.Value);
@@ -139,7 +139,7 @@ public sealed class PowerPlanManager
         if (original is { } o && applied != null && applied != o)
         {
             if (api.SetActive(o))
-                Log.Info($"Plan d'alimentation restauré : {o}");
+                Log.Info($"Plan d'alimentation restauré : {o}", LogCategory.Power);
         }
         original = null;
         applied = null;
@@ -154,7 +154,7 @@ public sealed class PowerPlanManager
             if (!File.Exists(stateFile))
                 return;
             if (Guid.TryParse(File.ReadAllText(stateFile).Trim(), out var plan) && api.SetActive(plan))
-                Log.Info($"Plan d'alimentation d'origine restauré après un arrêt inattendu : {plan}");
+                Log.Info($"Plan d'alimentation d'origine restauré après un arrêt inattendu : {plan}", LogCategory.Power);
             File.Delete(stateFile);
         }
         catch (Exception ex)
@@ -170,7 +170,7 @@ public sealed class PowerPlanManager
         if (api.SetActive(plan))
         {
             applied = plan;
-            Log.Info($"Plan d'alimentation activé : {plan}");
+            Log.Info($"Plan d'alimentation activé : {plan}", LogCategory.Power);
         }
     }
 
