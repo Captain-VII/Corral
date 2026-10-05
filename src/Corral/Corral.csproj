@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>corral.ico</ApplicationIcon>
+    <SatelliteResourceLanguages>fr</SatelliteResourceLanguages>
+
+    <!-- Remplacée par le tag (vX.Y.Z) lors d'une release GitHub -->
+    <Version>1.0.0</Version>
+    <!-- Dépôt GitHub des mises à jour (propriétaire/nom). Le workflow de release le remplit automatiquement ;
+         tant qu'il vaut OWNER/Corral, la mise à jour automatique est désactivée. -->
+    <UpdateRepository Condition="'$(UpdateRepository)' == ''">OWNER/Corral</UpdateRepository>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="corral.ico" LogicalName="Corral.corral.ico" />
+    <AssemblyMetadata Include="UpdateRepository" Value="$(UpdateRepository)" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,45 @@
+# Publie une release à chaque tag vX.Y.Z :
+#   git tag v1.1.0
+#   git push origin v1.1.0
+# Les installations existantes de Corral la proposeront ensuite automatiquement.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Tests
+        run: dotnet test -c Release
+
+      - name: Publication
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          dotnet publish src/Corral -c Release -r win-x64 --self-contained `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true -p:DebugType=none `
+            -p:Version=$version -p:UpdateRepository=${{ github.repository }} `
+            -o publish
+          $hash = (Get-FileHash publish/Corral.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  Corral.exe" | Out-File publish/Corral.exe.sha256 -Encoding ascii -NoNewline
+
+      - name: Release GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            publish/Corral.exe
+            publish/Corral.exe.sha256
