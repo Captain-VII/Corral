@@ -37,13 +37,19 @@ public static class Updater
         }
     }
 
+    /// <summary>Vrai pour l'exe publié en fichier unique (constante définie dans Corral.csproj).</summary>
+#if SINGLE_FILE
+    const bool IsSingleFile = true;
+#else
+    const bool IsSingleFile = false;
+#endif
+
     /// <summary>Uniquement pour l'exe publié en fichier unique (pas en développement avec dotnet run).</summary>
-    public static bool IsSupported =>
-        Repository != null && string.IsNullOrEmpty(typeof(Updater).Assembly.Location) && Environment.ProcessPath != null;
+    public static bool IsSupported => Repository != null && IsSingleFile && Environment.ProcessPath != null;
 
     public static string? UnsupportedReason =>
         Repository == null ? "dépôt GitHub non configuré (version compilée localement)"
-        : !string.IsNullOrEmpty(typeof(Updater).Assembly.Location) ? "version de développement"
+        : !IsSingleFile ? "version de développement"
         : null;
 
     public static async Task<UpdateInfo?> CheckAsync(CancellationToken ct = default)
