@@ -36,6 +36,8 @@ public sealed class Engine : IDisposable
         public IoPriorityLevel? OrigIo;
         public MemoryPriorityLevel? OrigMemory;
         public bool EfficiencySet;
+        /// <summary>Priorité d'origine si le boost du premier plan l'a relevée.</summary>
+        public ProcessPriorityClass? BoostOrig;
         public DateTime? AlertSince;
         public bool AlertFired;
     }
@@ -280,6 +282,7 @@ public sealed class Engine : IDisposable
         if (r.IoPriority is { } io) parts.Add("disque " + IoLabel(io).ToLowerInvariant());
         if (r.MemoryPriority is { } mp) parts.Add("mémoire " + MemoryLabel(mp).ToLowerInvariant());
         if (r.IsGame) parts.Add("jeu (Mode Jeu)");
+        if (r.GpuPreference is { } gpu) parts.Add("carte graphique " + GpuPreferences.Label(gpu).ToLowerInvariant());
         if (r.KeepAwake) parts.Add("empêche la veille");
         if (r.Block == BlockMode.Always) parts.Add("bloqué");
         if (r.Block == BlockMode.SingleInstance) parts.Add("une seule instance");
@@ -295,6 +298,7 @@ public sealed class Engine : IDisposable
             reapply = false;
             RestoreAll();
             tracked.Clear();
+            CleanUpGpuPreferences(s);
         }
 
         double elapsedMs = clock.IsRunning ? clock.Elapsed.TotalMilliseconds : 0;
@@ -324,6 +328,9 @@ public sealed class Engine : IDisposable
                 {
                     t = new Tracked(key.Name);
                     tracked[key] = t;
+                    // Chemin lu avant la règle : la préférence GPU en a besoin
+                    t.Path = Native.GetProcessPath(key.Pid);
+                    t.PathLoaded = true;
                     if (!paused)
                         ApplyRule(p, key, t, s);
                 }
@@ -372,6 +379,9 @@ public sealed class Engine : IDisposable
                 RunAlerts(live, cpuByKey);
             }
             UpdateKeepAwake();
+            UpdateForegroundBoost(s, live, fg);
+            UpdateIdleSaver(s);
+            RunMemoryCleanup(s, live, rows);
         }
         finally
         {
@@ -500,6 +510,174 @@ public sealed class Engine : IDisposable
         }
     }
 
+    // ---------- Optimisations (v1.6) ----------
+
+    static readonly ProcKey IdleKey = new(-2, "__economie_au_repos", 0);
+    ProcKey? boosted;
+    bool idleActive;
+    DateTime lastCleanup = DateTime.MinValue;
+    bool cleanupRequested;
+    static readonly TimeSpan CleanupCooldown = TimeSpan.FromMinutes(5);
+
+    /// <summary>Temps d'inactivité de l'utilisateur (remplaçable pour les tests).</summary>
+    public Func<TimeSpan> IdleTimeSource { get; set; } = Idle.UserIdleTime;
+
+    /// <summary>Une vidéo ou une présentation demande l'écran (remplaçable pour les tests).</summary>
+    public Func<bool> DisplayRequiredSource { get; set; } = Idle.DisplayRequired;
+
+    /// <summary>Préférences GPU par programme (null = fonction désactivée, par exemple dans les tests).</summary>
+    public GpuPreferences? Gpu { get; set; }
+
+    public bool IdleSaverActive
+    {
+        get { lock (sync) return idleActive; }
+    }
+
+    /// <summary>Demande un nettoyage mémoire au prochain passage (bouton « Nettoyer maintenant »).</summary>
+    public void CleanMemoryNow()
+    {
+        lock (sync)
+            cleanupRequested = true;
+    }
+
+    /// <summary>
+    /// Boost du premier plan : la fenêtre active passe en priorité supérieure (si elle est en priorité normale
+    /// et qu'aucune règle ne fixe sa priorité) ; la précédente retrouve sa priorité.
+    /// </summary>
+    void UpdateForegroundBoost(Settings s, Dictionary<ProcKey, Process> live, int fg)
+    {
+        bool enabled = s.ForegroundBoost.Enabled && !paused;
+        if (boosted is { } b && (!enabled || b.Pid != fg || !live.ContainsKey(b)))
+        {
+            if (tracked.TryGetValue(b, out var bt) && bt.BoostOrig is { } orig && live.TryGetValue(b, out var bp))
+                TryDo(b, "fin du boost", () =>
+                {
+                    if (bp.PriorityClass == ProcessPriorityClass.AboveNormal) // inchangé depuis le boost
+                        bp.PriorityClass = orig;
+                });
+            if (tracked.TryGetValue(b, out var t0))
+                t0.BoostOrig = null;
+            boosted = null;
+        }
+        if (!enabled || boosted != null)
+            return;
+        var key = live.Keys.FirstOrDefault(k => k.Pid == fg);
+        if (key.Name == null || !tracked.TryGetValue(key, out var t) || t.Rule?.Priority != null
+            || Exclusions.IsProtected(key.Name, key.Pid, ownPid) || t.ProBalanceOrig != null)
+            return;
+        var p = live[key];
+        if (TryDo(key, "boost du premier plan", () =>
+            {
+                if (p.PriorityClass != ProcessPriorityClass.Normal)
+                    return;
+                p.PriorityClass = ProcessPriorityClass.AboveNormal;
+                t.BoostOrig = ProcessPriorityClass.Normal;
+            }) && t.BoostOrig != null)
+            boosted = key;
+    }
+
+    /// <summary>
+    /// Économie au repos : plan économique après N minutes sans clavier ni souris, sauf pendant le Mode Jeu,
+    /// une vidéo (écran demandé) ou quand une règle impose déjà un plan.
+    /// </summary>
+    void UpdateIdleSaver(Settings s)
+    {
+        var cfg = s.IdleSaver;
+        bool want = cfg.Enabled && !paused && !gameActive
+                    && IdleTimeSource() >= TimeSpan.FromMinutes(cfg.Minutes)
+                    && !DisplayRequiredSource()
+                    && !power.HasRequestsOtherThan(IdleKey);
+        if (want == idleActive)
+            return;
+        idleActive = want;
+        if (want)
+        {
+            power.OnStart(IdleKey, cfg.Plan);
+            Log.Info($"Économie au repos : aucune activité depuis {cfg.Minutes} min, plan économique activé", LogCategory.Power);
+        }
+        else
+        {
+            power.OnExit(IdleKey);
+            Log.Info("Économie au repos : retour au plan habituel", LogCategory.Power);
+        }
+    }
+
+    /// <summary>
+    /// Nettoyage mémoire au-delà du seuil (au plus toutes les 5 min) ou sur demande : liste de veille vidée
+    /// et programmes inactifs allégés (ni premier plan, ni jeu, ni système, moins de 1 % de CPU).
+    /// </summary>
+    void RunMemoryCleanup(Settings s, Dictionary<ProcKey, Process> live, List<ProcessRow> rows)
+    {
+        var cfg = s.MemoryCleanup;
+        var (usedBefore, total) = Native.GetMemoryUsage();
+        bool auto = cfg.Enabled && !paused && total > 0 && usedBefore * 100.0 / total >= cfg.ThresholdPercent
+                    && now() - lastCleanup >= CleanupCooldown;
+        if (!auto && !cleanupRequested)
+            return;
+        bool manual = cleanupRequested;
+        cleanupRequested = false;
+        lastCleanup = now();
+
+        var done = new List<string>();
+        if (cfg.PurgeStandby || manual)
+        {
+            try
+            {
+                MemoryCleaner.PurgeStandbyList();
+                done.Add("cache vidé");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"Nettoyage mémoire : liste de veille non vidée ({ex.Message})", LogCategory.Power);
+            }
+        }
+        if (cfg.TrimIdle || manual)
+        {
+            int fg = foregroundPid();
+            var cpu = rows.ToDictionary(r => r.Pid, r => r.Cpu);
+            int trimmed = 0;
+            foreach (var (key, p) in live)
+            {
+                if (key.Pid == fg || Exclusions.IsProtected(key.Name, key.Pid, ownPid)
+                    || (tracked.TryGetValue(key, out var t) && t.Rule?.IsGame == true)
+                    || cpu.GetValueOrDefault(key.Pid) >= 1)
+                    continue;
+                try
+                {
+                    MemoryCleaner.TrimWorkingSet(p);
+                    trimmed++;
+                }
+                catch { } // processus protégé ou terminé : ignoré
+            }
+            done.Add($"{trimmed} programmes inactifs allégés");
+        }
+
+        var (usedAfter, _) = Native.GetMemoryUsage();
+        long freed = Math.Max(0, usedBefore - usedAfter);
+        var message = $"{freed / (1024 * 1024):N0} Mo libérés ({string.Join(", ", done)}).";
+        Log.Info($"Nettoyage mémoire{(manual ? "" : " automatique")} : {message}", LogCategory.Power);
+        if (manual) // l'automatique reste discret : journal seulement
+            pendingNotifications.Add(("Nettoyage mémoire", message));
+    }
+
+    /// <summary>Retire les préférences GPU posées par Corral pour les programmes qu'aucune règle ne vise plus.</summary>
+    void CleanUpGpuPreferences(Settings s)
+    {
+        if (Gpu == null)
+            return;
+        try
+        {
+            var wanted = Gpu.Managed.Where(path => s.Rules.Any(r =>
+                r.Enabled && r.GpuPreference != null && RuleMatcher.Matches(r.Pattern, Path.GetFileNameWithoutExtension(path))));
+            foreach (var removed in Gpu.RemoveExcept(wanted.ToList()))
+                Log.Info($"Préférence GPU retirée : {removed}", LogCategory.Rule);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Nettoyage des préférences GPU", ex);
+        }
+    }
+
     /// <summary>Demande « pas de mise en veille » tant qu'un programme dont la règle l'exige tourne.</summary>
     void UpdateKeepAwake()
     {
@@ -591,6 +769,10 @@ public sealed class Engine : IDisposable
             }
         }
 
+        if (rule.GpuPreference is { } gpuPref && t.Path != null && Gpu != null
+            && TryDo(key, "préférence GPU", () => Gpu.Set(t.Path, gpuPref)))
+            done.Add($"carte graphique « {GpuPreferences.Label(gpuPref)} » (au prochain lancement)");
+
         if (rule.PowerPlan is { } plan)
         {
             power.OnStart(key, plan);
@@ -660,7 +842,8 @@ public sealed class Engine : IDisposable
     {
         foreach (var (key, t) in tracked)
         {
-            var priority = t.OrigPriority ?? t.ProBalanceOrig;
+            var priority = t.OrigPriority ?? t.ProBalanceOrig ?? t.BoostOrig;
+            t.BoostOrig = null;
             var affinity = t.OrigAffinity;
             var io = t.OrigIo;
             var memory = t.OrigMemory;
@@ -684,6 +867,8 @@ public sealed class Engine : IDisposable
         }
         power.RestoreAll();
         gamePlanApplied = false;
+        boosted = null;
+        idleActive = false;
         proBalance.Reset();
     }
 

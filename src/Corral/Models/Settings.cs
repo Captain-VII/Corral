@@ -33,6 +33,33 @@ public sealed class Rule
     public AlertAction AlertAction { get; set; }
 
     public bool HasAlert => AlertCpuPercent is > 0 || AlertMemoryMB is > 0;
+
+    /// <summary>Carte graphique préférée (null = ne pas toucher). Prend effet au prochain lancement.</summary>
+    public Corral.Core.GpuPreference? GpuPreference { get; set; }
+}
+
+/// <summary>La fenêtre au premier plan passe en priorité supérieure le temps qu'on l'utilise.</summary>
+public sealed class ForegroundBoostSettings
+{
+    public bool Enabled { get; set; }
+}
+
+/// <summary>Plan Économie d'énergie après N minutes sans clavier ni souris.</summary>
+public sealed class IdleSaverSettings
+{
+    public bool Enabled { get; set; }
+    public int Minutes { get; set; } = 10;
+    /// <summary>Plan à activer pendant l'absence (Économie d'énergie de Windows par défaut).</summary>
+    public Guid Plan { get; set; } = Guid.Parse("a1841308-3541-4fab-bc81-f71556f20b4a");
+}
+
+/// <summary>Nettoyage automatique quand la mémoire utilisée dépasse un seuil.</summary>
+public sealed class MemoryCleanupSettings
+{
+    public bool Enabled { get; set; }
+    public int ThresholdPercent { get; set; } = 85;
+    public bool PurgeStandby { get; set; } = true;
+    public bool TrimIdle { get; set; } = true;
 }
 
 public enum BlockMode { None, Always, SingleInstance }
@@ -133,6 +160,9 @@ public sealed class Settings
     public WindowSettings Window { get; set; } = new();
     public GameModeSettings GameMode { get; set; } = new();
     public HotkeySettings Hotkeys { get; set; } = new();
+    public ForegroundBoostSettings ForegroundBoost { get; set; } = new();
+    public IdleSaverSettings IdleSaver { get; set; } = new();
+    public MemoryCleanupSettings MemoryCleanup { get; set; } = new();
 
     /// <summary>Corrige les valeurs nulles ou hors bornes après une lecture JSON.</summary>
     public void Normalize()
@@ -153,6 +183,11 @@ public sealed class Settings
         Window ??= new();
         GameMode ??= new();
         Hotkeys ??= new();
+        ForegroundBoost ??= new();
+        IdleSaver ??= new();
+        IdleSaver.Minutes = Math.Clamp(IdleSaver.Minutes, 1, 240);
+        MemoryCleanup ??= new();
+        MemoryCleanup.ThresholdPercent = Math.Clamp(MemoryCleanup.ThresholdPercent, 50, 98);
         foreach (var r in Rules)
             r.AlertMinutes = Math.Clamp(r.AlertMinutes, 1, 120);
         GameMode.BackgroundApps ??= new();

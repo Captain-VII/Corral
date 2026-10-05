@@ -140,6 +140,9 @@ public sealed class PowerPlanManager
             RestoreAll();
     }
 
+    /// <summary>Un autre demandeur (règle, Mode Jeu) impose déjà un plan.</summary>
+    public bool HasRequestsOtherThan(ProcKey key) => requests.Any(r => r.Key != key);
+
     public void RestoreAll()
     {
         requests.Clear();

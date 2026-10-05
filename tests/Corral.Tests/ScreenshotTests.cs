@@ -67,7 +67,7 @@ public class ScreenshotTests
                 Log.Info("chrome (1234) : règle « chrome* » → priorité BelowNormal", LogCategory.Rule);
                 Log.Info("ProBalance : jeu (4321) abaissé (CPU système 91%)", LogCategory.ProBalance);
                 Log.Warn("powercfg : délai dépassé", LogCategory.Power);
-                foreach (var page in new[] { "Règles", "ProBalance", "Mode Jeu", "Options", "Journal" })
+                foreach (var page in new[] { "Règles", "ProBalance", "Mode Jeu", "Optimisations", "Options", "Journal" })
                 {
                     form.ShowPage(page);
                     Pump(400);

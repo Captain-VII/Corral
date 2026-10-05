@@ -114,8 +114,8 @@ public sealed class MainForm : Form
         Text = "Corral";
         Font = Ui.Base;
         Icon = AppIcon.Load(new Size(32, 32));
-        Size = new Size(1120, 720);
-        MinimumSize = new Size(880, 580);
+        Size = new Size(1120, 760);
+        MinimumSize = new Size(880, 690);
         StartPosition = FormStartPosition.CenterScreen;
         KeyPreview = true;
 
@@ -135,6 +135,7 @@ public sealed class MainForm : Form
         AddPage("", "Règles", BuildRulesPage());
         AddPage("", "ProBalance", BuildProBalancePage());
         AddPage("", "Mode Jeu", BuildGamePage());
+        AddPage("\uE945", "Optimisations", BuildOptimizationPage());
         AddPage("", "Options", BuildOptionsPage());
         AddPage("", "Journal", BuildLogPage());
         nav.SelectedChanged += SelectPage;
@@ -675,6 +676,10 @@ public sealed class MainForm : Form
         lastSnapshot = snap;
         nav.SetStatus(snap.SystemCpu, snap.Rows.Count, snap.Paused, snap.GameMode, snap.GameTrigger);
         UpdateGameStatus(snap);
+        if (IsPageVisible("Optimisations"))
+            optMemNow.Text = snap.MemoryTotal > 0
+                ? $"Mémoire utilisée en ce moment : {snap.MemoryPercent:0} % ({FormatBytes(snap.MemoryUsed)} sur {FormatBytes(snap.MemoryTotal)})"
+                : "";
         if (chart.Visible)
         {
             chart.Invalidate();
@@ -1267,6 +1272,7 @@ public sealed class MainForm : Form
     {
         var parts = new List<string>();
         if (r.IsGame) parts.Add("Jeu");
+        if (r.GpuPreference is { } gpu) parts.Add("GPU " + GpuPreferences.Label(gpu).ToLowerInvariant());
         if (r.PowerPlan is { } g) parts.Add("Plan " + PlanName(g));
         if (r.CpuLimitPercent is { } c) parts.Add($"CPU max {c} %");
         if (r.MemoryLimitMB is { } mem) parts.Add($"RAM max {mem} Mo");
@@ -1416,6 +1422,100 @@ public sealed class MainForm : Form
         gameToggle.Enabled = !(snap.GameMode && !engine.GameModeManual);
     }
 
+    // ---------- Optimisations ----------
+
+    readonly ToggleSwitch optBoost = new();
+    readonly ToggleSwitch optIdle = new();
+    readonly NumericUpDown optIdleMinutes = Num(1, 240);
+    readonly ComboBox optIdlePlan = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 240 };
+    readonly List<Guid> optIdlePlanIds = new();
+    readonly ToggleSwitch optMem = new();
+    readonly NumericUpDown optMemThreshold = Num(50, 98);
+    readonly ToggleSwitch optMemPurge = new();
+    readonly ToggleSwitch optMemTrim = new();
+    readonly Label optMemNow = new() { AutoSize = true, Tag = Theme.HintTag, Margin = new Padding(0, 6, 0, 0) };
+
+    Control BuildOptimizationPage()
+    {
+        var cleanNow = new ModernButton("Nettoyer maintenant");
+        cleanNow.Click += (_, _) =>
+        {
+            engine.CleanMemoryNow();
+            cleanNow.Enabled = false; // le résultat arrive en bulle ; on évite les clics répétés
+            var t = new System.Windows.Forms.Timer { Interval = 5000 };
+            t.Tick += (_, _) => { cleanNow.Enabled = true; t.Dispose(); };
+            t.Start();
+        };
+        tips.SetToolTip(cleanNow, "Vide le cache mémoire inutilisé et allège les programmes inactifs, tout de suite");
+
+        var stack = new CardStack();
+        stack.Controls.Add(new Card(Rows(
+            SettingRow("Boost du premier plan",
+                "La fenêtre que vous utilisez passe en priorité « supérieure à la normale », et retrouve sa priorité quand vous changez de fenêtre. " +
+                "Sans effet sur les programmes dont une règle fixe la priorité.", optBoost)), "Premier plan"));
+        stack.Controls.Add(new Card(Rows(
+            SettingRow("Économie au repos",
+                "Après un moment sans clavier ni souris, passe sur un plan économique ; le plan habituel revient dès votre retour. " +
+                "Jamais pendant le Mode Jeu, une vidéo, ou quand une règle impose un plan.", optIdle),
+            SettingRow("Après", null, WithUnit(optIdleMinutes, "minutes d'inactivité")),
+            SettingRow("Plan pendant l'absence", null, optIdlePlan)), "Au repos"));
+        stack.Controls.Add(new Card(Rows(
+            SettingRow("Nettoyage automatique",
+                "Quand la mémoire utilisée dépasse le seuil (au plus toutes les 5 minutes). Utile en jeu avec 16 Go de RAM ou moins.", optMem),
+            SettingRow("Seuil", null, WithUnit(optMemThreshold, "% de mémoire utilisée")),
+            SettingRow("Vider le cache inutilisé", "La « liste de veille » de Windows : des fichiers gardés en mémoire au cas où.", optMemPurge),
+            SettingRow("Alléger les programmes inactifs", "Leurs données peu utilisées repartent sur le disque ; elles reviennent à la demande. " +
+                "Jamais la fenêtre active, un jeu, ou un programme qui travaille.", optMemTrim),
+            SettingRow("Maintenant", null, cleanNow),
+            optMemNow), "Mémoire"));
+
+        var save = new ModernButton("Enregistrer", primary: true);
+        save.Click += (_, _) => ApplyOptimizations();
+        LoadOptimizations();
+        return MakePage("Optimisations", "Des automatismes pour un PC plus réactif et plus économe. Tous sont désactivés par défaut.", stack, save);
+    }
+
+    void LoadOptimizations()
+    {
+        optBoost.Checked = settings.ForegroundBoost.Enabled;
+        var idle = settings.IdleSaver;
+        optIdle.Checked = idle.Enabled;
+        SetNum(optIdleMinutes, idle.Minutes);
+        optIdlePlan.Items.Clear();
+        optIdlePlanIds.Clear();
+        foreach (var p in plans ??= PowerCfg.List())
+        {
+            optIdlePlan.Items.Add(p.Name);
+            optIdlePlanIds.Add(p.Id);
+        }
+        if (!optIdlePlanIds.Contains(idle.Plan))
+        {
+            optIdlePlan.Items.Add($"(introuvable) {idle.Plan}");
+            optIdlePlanIds.Add(idle.Plan);
+        }
+        optIdlePlan.SelectedIndex = optIdlePlanIds.IndexOf(idle.Plan);
+        var mem = settings.MemoryCleanup;
+        optMem.Checked = mem.Enabled;
+        SetNum(optMemThreshold, mem.ThresholdPercent);
+        optMemPurge.Checked = mem.PurgeStandby;
+        optMemTrim.Checked = mem.TrimIdle;
+    }
+
+    void ApplyOptimizations()
+    {
+        settings.ForegroundBoost.Enabled = optBoost.Checked;
+        settings.IdleSaver.Enabled = optIdle.Checked;
+        settings.IdleSaver.Minutes = (int)optIdleMinutes.Value;
+        if (optIdlePlan.SelectedIndex >= 0)
+            settings.IdleSaver.Plan = optIdlePlanIds[optIdlePlan.SelectedIndex];
+        settings.MemoryCleanup.Enabled = optMem.Checked;
+        settings.MemoryCleanup.ThresholdPercent = (int)optMemThreshold.Value;
+        settings.MemoryCleanup.PurgeStandby = optMemPurge.Checked;
+        settings.MemoryCleanup.TrimIdle = optMemTrim.Checked;
+        SaveAndApply();
+        LoadOptimizations();
+    }
+
     // ---------- Options ----------
 
     Control BuildOptionsPage()
@@ -1466,7 +1566,7 @@ public sealed class MainForm : Form
             AutoSize = true,
             Tag = Theme.HintTag,
             MaximumSize = new Size(640, 0),
-            Text = "Ctrl+F : rechercher un processus · Ctrl+N : nouvelle règle · Ctrl+1 à 8 : changer de page · " +
+            Text = "Ctrl+F : rechercher un processus · Ctrl+N : nouvelle règle · Ctrl+1 à 9 : changer de page · " +
                    "F5 : actualiser · Suppr / Entrée / Espace : supprimer, modifier, activer la règle sélectionnée",
         };
 

@@ -51,6 +51,9 @@ public sealed class RuleDialog : Form
     readonly Label efficiencyHelp = Help();
     readonly Label ioHelp = Help();
     readonly Label memoryHelp = Help();
+    readonly ComboBox gpu = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+    readonly Label gpuHelp = Help();
+    static readonly GpuPreference?[] GpuChoices = { null, GpuPreference.HighPerformance, GpuPreference.PowerSaving, GpuPreference.Default };
     readonly ToggleSwitch keepAwake = new();
     readonly ComboBox block = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
     readonly NumericUpDown alertCpu = new() { Minimum = 0, Maximum = 100, Width = 80, TextAlign = HorizontalAlignment.Right };
@@ -155,6 +158,8 @@ public sealed class RuleDialog : Form
         efficiency.SelectedIndexChanged += (_, _) => UpdateHelp();
         ioPriority.SelectedIndexChanged += (_, _) => UpdateHelp();
         memoryPriority.SelectedIndexChanged += (_, _) => UpdateHelp();
+        gpu.Items.AddRange(new object[] { "(inchangée)", "Haute performance", "Économie d'énergie", "Laisser Windows décider" });
+        gpu.SelectedIndexChanged += (_, _) => UpdateHelp();
 
         tips.SetToolTip(enabled, "Une règle inactive est conservée mais n'est plus appliquée.");
         tips.SetToolTip(isGame, "Tant que ce programme tourne, le Mode Jeu s'active (s'il est en automatique).");
@@ -207,6 +212,8 @@ public sealed class RuleDialog : Form
         AddRow(right, "", ioHelp);
         AddRow(right, "Priorité mémoire", memoryPriority);
         AddRow(right, "", memoryHelp);
+        AddRow(right, "Carte graphique", gpu);
+        AddRow(right, "", gpuHelp);
 
         block.Items.AddRange(new object[] { "Non", "Toujours (fermé dès son lancement)", "Une seule instance" });
         alertAction.Items.AddRange(new object[] { "Me prévenir", "Baisser sa priorité au minimum", "Le fermer" });
@@ -288,7 +295,7 @@ public sealed class RuleDialog : Form
         cpuLimit.Value = 0;
         memLimit.Value = 0;
         isGame.Checked = false;
-        efficiency.SelectedIndex = ioPriority.SelectedIndex = memoryPriority.SelectedIndex = 0;
+        efficiency.SelectedIndex = ioPriority.SelectedIndex = memoryPriority.SelectedIndex = gpu.SelectedIndex = 0;
         keepAwake.Checked = false;
         block.SelectedIndex = 0;
         alertCpu.Value = alertMemory.Value = 0;
@@ -369,6 +376,13 @@ public sealed class RuleDialog : Form
               (alertAction.SelectedIndex switch { 1 => "baisse sa priorité au minimum", 2 => "le ferme", _ => "vous prévient" }) +
               ", une seule fois jusqu'à ce qu'il repasse sous le seuil.";
 
+        gpuHelp.Text = gpu.SelectedIndex switch
+        {
+            1 => "Utilise la carte graphique la plus puissante (PC portable ou PC avec deux cartes). Prend effet au prochain lancement du programme.",
+            2 => "Utilise la carte graphique économique, souvent intégrée au processeur. Prend effet au prochain lancement.",
+            3 => "Retire tout choix : Windows décide. Prend effet au prochain lancement.",
+            _ => "Le choix de carte graphique n'est pas modifié.",
+        };
         memoryHelp.Text = memoryPriority.SelectedIndex switch
         {
             1 or 2 or 3 or 4 => "Quand la mémoire manque, ses données quittent la RAM avant celles des autres programmes.",
@@ -455,6 +469,7 @@ public sealed class RuleDialog : Form
         alertMemory.Value = Math.Clamp(rule.AlertMemoryMB ?? 0, 0, 1_048_576);
         alertMinutes.Value = Math.Clamp(rule.AlertMinutes, 1, 120);
         alertAction.SelectedIndex = (int)rule.AlertAction;
+        gpu.SelectedIndex = Math.Max(0, Array.IndexOf(GpuChoices, rule.GpuPreference));
     }
 
     void OnOk()
@@ -499,6 +514,7 @@ public sealed class RuleDialog : Form
             AlertMemoryMB = alertMemory.Value > 0 ? (int)alertMemory.Value : null,
             AlertMinutes = (int)alertMinutes.Value,
             AlertAction = (AlertAction)Math.Max(0, alertAction.SelectedIndex),
+            GpuPreference = GpuChoices[Math.Max(0, gpu.SelectedIndex)],
         };
 
         // Garde-fous du blocage : jamais sur un motif qui viserait tout, confirmation si des programmes tournent
