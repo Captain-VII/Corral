@@ -8,7 +8,7 @@ public sealed class ProcessDetailsDialog : Form
 {
     readonly ToolTip tips = Theme.CreateToolTip();
 
-    public ProcessDetailsDialog(ProcessDetails d, ProcessRow? row, bool canCreateRule)
+    public ProcessDetailsDialog(ProcessDetails d, ProcessRow? row, bool canCreateRule, ProcessHistory? history = null)
     {
         Text = $"Détails — {d.Name}";
         Font = Ui.Base;
@@ -65,6 +65,9 @@ public sealed class ProcessDetailsDialog : Form
         Row("Mémoire", d.WorkingSet is { } ws ? $"{ws / (1024 * 1024):N0} Mo en RAM · {(d.PrivateBytes ?? 0) / (1024 * 1024):N0} Mo privés" : null);
         Row("Threads / handles", d.Threads is { } th ? $"{th} threads · {d.Handles} handles" : null);
 
+        if (history != null)
+            AddActivity(grid, history, d.Pid, row?.Name ?? d.Name);
+
         Section("Corral");
         Row("Règle", row?.Rule != null ? $"« {row.Rule} » : {row.RuleSummary}" : "aucune");
         Row("ProBalance", row?.Restrained == true ? "abaissé temporairement (il saturait le processeur)" : "pas d'intervention en cours");
@@ -104,6 +107,46 @@ public sealed class ProcessDetailsDialog : Form
         Theme.Apply(this);
     }
 
+    /// <summary>Quatre courbes (processeur, GPU, mémoire, disque) rafraîchies chaque seconde tant que la fiche est ouverte.</summary>
+    void AddActivity(TableLayoutPanel grid, ProcessHistory history, int pid, string name)
+    {
+        var title = new Label { Text = $"Activité ({history.Keep.TotalMinutes:0} dernières minutes)", Font = Ui.Section, AutoSize = true, Margin = new Padding(0, 16, 0, 6) };
+        grid.Controls.Add(title, 0, grid.RowCount);
+        grid.SetColumnSpan(title, 2);
+        grid.RowCount++;
+
+        var cpu = new MiniChart { Title = "Processeur", Format = v => $"{v:0.0} %" };
+        var gpu = new MiniChart { Title = "GPU" };
+        var mem = new MiniChart { Title = "Mémoire", Max = null, Format = v => $"{v / (1 << 20):N0} Mo" };
+        var io = new MiniChart { Title = "Disque et réseau (E/S)", Max = null, Format = Units.Rate };
+        tips.SetToolTip(io, "Octets lus et écrits par le programme : fichiers, mais aussi réseau et périphériques");
+        tips.SetToolTip(gpu, "Moteur graphique le plus sollicité par ce programme (3D, vidéo, copie…), comme dans le Gestionnaire des tâches");
+        var charts = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Margin = new Padding(0) };
+        foreach (var (c, i) in new[] { cpu, gpu, mem, io }.Select((c, i) => (c, i)))
+        {
+            c.Range = history.Keep;
+            c.Margin = new Padding(0, 0, i % 2 == 0 ? 10 : 0, 10);
+            charts.Controls.Add(c, i % 2, i / 2);
+        }
+        grid.Controls.Add(charts, 0, grid.RowCount);
+        grid.SetColumnSpan(charts, 2);
+        grid.RowCount++;
+
+        void Refresh()
+        {
+            var s = history.Get(pid, name);
+            cpu.SetData(s.Select(x => (x.Time, (double)x.Cpu)).ToList());
+            gpu.SetData(s.Select(x => (x.Time, (double)x.Gpu)).ToList());
+            mem.SetData(s.Select(x => (x.Time, (double)x.Memory)).ToList());
+            io.SetData(s.Select(x => (x.Time, (double)x.Io)).ToList());
+        }
+        Refresh();
+        refresh.Tick += (_, _) => Refresh();
+        refresh.Start();
+    }
+
+    readonly System.Windows.Forms.Timer refresh = new() { Interval = 1000 };
+
     /// <summary>L'utilisateur a cliqué sur « Créer une règle » (traité par l'appelant une fois la fiche fermée).</summary>
     public bool CreateRuleRequested { get; private set; }
 
@@ -116,7 +159,10 @@ public sealed class ProcessDetailsDialog : Form
     protected override void Dispose(bool disposing)
     {
         if (disposing)
+        {
+            refresh.Dispose();
             tips.Dispose();
+        }
         base.Dispose(disposing);
     }
 }

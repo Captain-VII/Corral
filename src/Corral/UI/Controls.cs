@@ -253,7 +253,7 @@ public sealed class CardStack : FlowLayoutPanel
 /// <summary>Navigation latérale : logo, pages avec icône, état et bouton Pause en bas.</summary>
 public sealed class NavBar : Control
 {
-    const int ItemHeight = 40, ItemTop = 76, Side = 10;
+    const int ItemHeight = 38, ItemTop = 76, Side = 10;
     readonly List<(string Glyph, string Text)> items = new();
     readonly ModernButton pause = new("Mettre en pause");
     readonly ModernButton game = new("Mode Jeu");

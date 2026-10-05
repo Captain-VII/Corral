@@ -67,7 +67,7 @@ public class ScreenshotTests
                 Log.Info("chrome (1234) : règle « chrome* » → priorité BelowNormal", LogCategory.Rule);
                 Log.Info("ProBalance : jeu (4321) abaissé (CPU système 91%)", LogCategory.ProBalance);
                 Log.Warn("powercfg : délai dépassé", LogCategory.Power);
-                foreach (var page in new[] { "Règles", "ProBalance", "Mode Jeu", "Optimisations", "Options", "Journal" })
+                foreach (var page in new[] { "Règles", "ProBalance", "Mode Jeu", "Optimisations", "Démarrage", "Options", "Journal" })
                 {
                     form.ShowPage(page);
                     Pump(400);
@@ -92,7 +92,11 @@ public class ScreenshotTests
                 var explorer = System.Diagnostics.Process.GetProcessesByName("explorer").FirstOrDefault();
                 if (explorer != null)
                 {
-                    using var details = new ProcessDetailsDialog(ProcessDetails.Read(explorer.Id), null, canCreateRule: true) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(1200, 40) };
+                    var hist = new ProcessHistory(TimeSpan.FromMinutes(5));
+                    var t0 = DateTime.UtcNow.AddMinutes(-5);
+                    for (int s = 0; s <= 300; s++)
+                        hist.Add(t0.AddSeconds(s), new[] { new ProcessRow(explorer.Id, explorer.ProcessName, 3 + 2 * Math.Sin(s / 15.0), (180L << 20) + s * (1L << 18), null, false, IoBytesPerSec: s % 40 < 5 ? 3L << 20 : 20_000, Gpu: s > 200 ? 12 : 1) });
+                    using var details = new ProcessDetailsDialog(ProcessDetails.Read(explorer.Id), null, canCreateRule: true, hist) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(1200, 40) };
                     details.Show();
                     Pump(500);
                     Capture(details, Path.Combine(outDir, $"shot-{mode}-details.png"));

@@ -34,6 +34,8 @@ public sealed class TestProcesses : IDisposable
             RedirectStandardOutput = true,
             RedirectStandardInput = source == "cmd.exe", // cmd /k attend sur l'entrée standard
         })!;
+        // Priorité héritée du lanceur (dotnet peut avoir été abaissé par un Corral installé) : on repart de Normale
+        try { p.PriorityClass = ProcessPriorityClass.Normal; } catch { }
         started.Add(p);
         return p;
     }

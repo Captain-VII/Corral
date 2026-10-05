@@ -66,9 +66,11 @@ static class Program
             });
         }
 
+        using var gpuSampler = new GpuSampler();
         using var engine = new Engine(RuleStore.Clone(settings), powerApi, powerStateFile)
         {
             Gpu = new GpuPreferences(Path.Combine(dir, "gpu-managed.json")),
+            GpuUsage = gpuSampler.Sample,
         };
         // Restaure tout si Windows ferme la session sans passer par « Quitter ».
         SystemEvents.SessionEnding += (_, _) => engine.Stop();

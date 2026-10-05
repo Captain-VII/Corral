@@ -197,3 +197,76 @@ public sealed class CpuChart : Control
 
     static bool IsDarkSurface(Palette p) => p.Surface.GetBrightness() < 0.5f;
 }
+
+/// <summary>Petite courbe pour la fiche d'un processus : titre, valeur actuelle, pic, échelle fixe (%) ou automatique.</summary>
+public sealed class MiniChart : Control
+{
+    static readonly Font ValueFont = new("Segoe UI Semibold", 12f);
+    List<(DateTime Time, double Value)> data = new();
+
+    public MiniChart()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        Size = new Size(290, 92);
+    }
+
+    public string Title { get; set; } = "";
+    public Func<double, string> Format { get; set; } = v => $"{v:0} %";
+
+    /// <summary>Haut de l'échelle (100 pour un pourcentage) ; null = adapté au pic.</summary>
+    public double? Max { get; set; } = 100;
+    public TimeSpan Range { get; set; } = TimeSpan.FromMinutes(5);
+
+    public void SetData(List<(DateTime Time, double Value)> points)
+    {
+        data = points;
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var p = Theme.Current;
+        var g = e.Graphics;
+        g.Clear(p.Surface);
+        using (var border = new Pen(p.Border))
+            g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+
+        TextRenderer.DrawText(g, Title, Font, new Point(10, 8), p.Muted);
+        var current = data.Count > 0 ? Format(data[^1].Value) : "—";
+        TextRenderer.DrawText(g, current, ValueFont, new Rectangle(0, 4, Width - 10, 24), p.Fore, TextFormatFlags.Right | TextFormatFlags.VerticalCenter);
+
+        var plot = new Rectangle(10, 34, Width - 20, Height - 56);
+        double peak = data.Count > 0 ? data.Max(d => d.Value) : 0;
+        double top = Max ?? Math.Max(peak * 1.15, 1);
+        TextRenderer.DrawText(g, data.Count > 0 ? $"Pic {Format(peak)}" : "Collecte des mesures…", Font,
+            new Point(10, plot.Bottom + 4), p.Muted);
+
+        var now = DateTime.UtcNow;
+        var from = now - Range;
+        var pts = data.Where(d => d.Time >= from)
+            .Select(d => new PointF(plot.Left + (float)((d.Time - from).TotalMilliseconds / Range.TotalMilliseconds) * plot.Width,
+                plot.Bottom - (float)Math.Min(1, d.Value / top) * plot.Height))
+            .ToArray();
+        if (pts.Length < 2)
+            return;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using (var area = new GraphicsPath())
+        {
+            area.AddLine(pts[0].X, plot.Bottom, pts[0].X, pts[0].Y);
+            area.AddLines(pts);
+            area.AddLine(pts[^1].X, pts[^1].Y, pts[^1].X, plot.Bottom);
+            area.CloseFigure();
+            using var fill = new SolidBrush(Color.FromArgb(p.Surface.GetBrightness() < 0.5f ? 55 : 40, p.Accent));
+            g.FillPath(fill, area);
+        }
+        using var line = new Pen(p.Accent, 1.6f) { LineJoin = LineJoin.Round };
+        g.DrawLines(line, pts);
+    }
+}
+
+public static class Units
+{
+    /// <summary>Débit lisible : « 0 Ko/s », « 850 Ko/s », « 12,4 Mo/s ».</summary>
+    public static string Rate(double bytesPerSec) =>
+        bytesPerSec >= 1 << 20 ? $"{bytesPerSec / (1 << 20):0.0} Mo/s" : $"{bytesPerSec / 1024:0} Ko/s";
+}

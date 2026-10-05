@@ -37,6 +37,7 @@ public sealed class MainForm : Form
     readonly CpuHistory memHistory = new(TimeSpan.FromMinutes(15));
     readonly CpuChart memChart;
     readonly TopTracker topTracker = new(TimeSpan.FromMinutes(15));
+    readonly ProcessHistory processHistory = new(TimeSpan.FromMinutes(5));
     readonly TopList topList = new();
     TopTracker.Metric topMetric = TopTracker.Metric.Cpu;
     readonly ProBalanceStats stats;
@@ -136,6 +137,7 @@ public sealed class MainForm : Form
         AddPage("", "ProBalance", BuildProBalancePage());
         AddPage("", "Mode Jeu", BuildGamePage());
         AddPage("\uE945", "Optimisations", BuildOptimizationPage());
+        AddPage("", "Démarrage", BuildStartupPage());
         AddPage("", "Options", BuildOptionsPage());
         AddPage("", "Journal", BuildLogPage());
         nav.SelectedChanged += SelectPage;
@@ -189,6 +191,8 @@ public sealed class MainForm : Form
         settings.Window.LastPage = pages[index].Title;
         if (pages[index].Title == "Journal")
             RefreshLog(force: true);
+        else if (pages[index].Title == "Démarrage")
+            RefreshStartup();
         if (pages[index].Page.Contains(chart))
             chart.Invalidate();
     }
@@ -357,6 +361,8 @@ public sealed class MainForm : Form
             case Keys.F5:
                 if (IsPageVisible("Journal"))
                     RefreshLog(force: true);
+                else if (IsPageVisible("Démarrage"))
+                    RefreshStartup();
                 else if (lastSnapshot != null)
                     ApplySnapshot(lastSnapshot);
                 return true;
@@ -380,19 +386,21 @@ public sealed class MainForm : Form
 
     Control BuildProcessPage()
     {
-        procList.Columns.Add("Nom", 240);
+        procList.Columns.Add("Nom", 200);
         procList.Columns.Add("PID", 70, HorizontalAlignment.Right);
-        procList.Columns.Add("CPU", 90, HorizontalAlignment.Right);
-        procList.Columns.Add("Mémoire", 110, HorizontalAlignment.Right);
-        procList.Columns.Add("Règle", 160);
-        procList.Columns.Add("ProBalance", 120);
+        procList.Columns.Add("CPU", 80, HorizontalAlignment.Right);
+        procList.Columns.Add("Mémoire", 86, HorizontalAlignment.Right);
+        procList.Columns.Add("Disque", 80, HorizontalAlignment.Right);
+        procList.Columns.Add("GPU", 60, HorizontalAlignment.Right);
+        procList.Columns.Add("Règle", 120);
+        procList.Columns.Add("ProBalance", 100);
         Theme.StyleList(procList, ProcessCell, col => col == sorter.Column ? (sorter.Descending ? SortOrder.Descending : SortOrder.Ascending) : SortOrder.None);
         procList.ColumnClick += (_, e) =>
         {
             if (sorter.Column == e.Column)
                 sorter.Descending = !sorter.Descending;
             else
-                (sorter.Column, sorter.Descending) = (e.Column, e.Column is 2 or 3);
+                (sorter.Column, sorter.Descending) = (e.Column, e.Column is >= 2 and <= 5);
             procList.Sort();
             Theme.InvalidateHeader(procList);
         };
@@ -584,8 +592,10 @@ public sealed class MainForm : Form
             0 => new Theme.CellStyle(Icon: IconFor(r.Path)),
             // Chaleur : la cellule CPU se teinte avec la charge (comme le Gestionnaire des tâches)
             2 when r.Cpu >= 0.5 => new Theme.CellStyle(Back: Ui.Blend(p.Accent, p.Surface, Math.Min(r.Cpu / 40, 1) * (Theme.IsDark ? 0.55 : 0.35))),
-            4 when r.Rule != null => new Theme.CellStyle(Fore: p.Accent),
-            5 when r.Restrained => new Theme.CellStyle(Text: "▼ abaissé", Fore: p.Warning),
+            4 when r.IoBytesPerSec >= 100 << 10 => new Theme.CellStyle(Back: Ui.Blend(p.Accent, p.Surface, Math.Min(r.IoBytesPerSec / (20.0 * (1 << 20)), 1) * (Theme.IsDark ? 0.55 : 0.35))),
+            5 when r.Gpu >= 0.5 => new Theme.CellStyle(Back: Ui.Blend(p.Accent, p.Surface, Math.Min(r.Gpu / 40, 1) * (Theme.IsDark ? 0.55 : 0.35))),
+            6 when r.Rule != null => new Theme.CellStyle(Fore: p.Accent),
+            7 when r.Restrained => new Theme.CellStyle(Text: "▼ abaissé", Fore: p.Warning),
             _ => null,
         };
     }
@@ -636,7 +646,7 @@ public sealed class MainForm : Form
         }
         bool canRule = !Exclusions.IsProtected(row.Name, row.Pid, Environment.ProcessId);
         bool createRuleAfter;
-        using (var dlg = new ProcessDetailsDialog(details, row, canRule))
+        using (var dlg = new ProcessDetailsDialog(details, row, canRule, processHistory))
         {
             dlg.ShowDialog(this);
             createRuleAfter = dlg.CreateRuleRequested;
@@ -661,6 +671,7 @@ public sealed class MainForm : Form
             if (snapshot.MemoryTotal > 0)
                 memHistory.Add(t, snapshot.MemoryPercent);
             topTracker.Add(t, snapshot.Rows);
+            processHistory.Add(t, snapshot.Rows);
         }
         latestSnapshot = snapshot; // à jour même fenêtre cachée (raccourcis, icône de notification)
         if (!shown)
@@ -702,7 +713,7 @@ public sealed class MainForm : Form
             seen.Add(key);
             if (!procItems.TryGetValue(key, out var item))
             {
-                item = new ListViewItem(Enumerable.Repeat("", 6).ToArray());
+                item = new ListViewItem(Enumerable.Repeat("", 8).ToArray());
                 procItems[key] = item;
                 procList.Items.Add(item);
                 SetText(item, 0, r.Name);
@@ -712,8 +723,10 @@ public sealed class MainForm : Form
             item.Tag = r;
             SetText(item, 2, $"{r.Cpu:0.0} %");
             SetText(item, 3, $"{r.MemoryBytes / (1024 * 1024):N0} Mo");
-            SetText(item, 4, r.Rule ?? "");
-            SetText(item, 5, r.Restrained ? "abaissé" : "");
+            SetText(item, 4, Units.Rate(r.IoBytesPerSec));
+            SetText(item, 5, $"{r.Gpu:0} %");
+            SetText(item, 6, r.Rule ?? "");
+            SetText(item, 7, r.Restrained ? "abaissé" : "");
             var tip = ProcessTip(r);
             if (item.ToolTipText != tip)
                 item.ToolTipText = tip;
@@ -816,6 +829,110 @@ public sealed class MainForm : Form
 
     static string FormatBytes(long bytes) =>
         bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):0.0} Go" : $"{bytes / (1024 * 1024):N0} Mo";
+
+    // ---------- Démarrage ----------
+
+    readonly BufferedListView startupList = new() { View = View.Details, FullRowSelect = true, HideSelection = false, MultiSelect = false, ShowItemToolTips = true };
+    readonly ModernButton startupToggle = new("Désactiver") { Enabled = false };
+    readonly ModernButton startupOpen = new("Ouvrir l'emplacement") { Enabled = false };
+    readonly UndoBanner startupBanner = new();
+    readonly StartupManager startup = StartupManager.ForSystem();
+
+    Control BuildStartupPage()
+    {
+        startupList.Columns.Add("Programme", 200);
+        startupList.Columns.Add("État", 126);
+        startupList.Columns.Add("Éditeur", 160);
+        startupList.Columns.Add("Source", 190);
+        startupList.Columns.Add("Commande", 300);
+        Theme.StyleList(startupList, (item, col) => item.Tag is not StartupItem s ? null : col switch
+        {
+            0 => new Theme.CellStyle(Icon: IconFor(s.Path)),
+            1 => new Theme.CellStyle(Text: s.Enabled ? "● Activé" : "○ Désactivé", Fore: s.Enabled ? Theme.Current.Accent : Theme.Current.Muted),
+            _ => null,
+        });
+        startupList.SelectedIndexChanged += (_, _) => UpdateStartupButtons();
+        startupList.MouseClick += (_, e) =>
+        {
+            // Un clic sur l'état active ou désactive, comme pour les règles
+            var hit = startupList.HitTest(e.Location);
+            if (e.Button == MouseButtons.Left && hit.Item?.Tag is StartupItem s && hit.Item.SubItems.IndexOf(hit.SubItem) == 1)
+                ToggleStartup(s);
+        };
+        startupList.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Space && SelectedStartup is { } s) { ToggleStartup(s); e.Handled = true; }
+        };
+        startupToggle.Click += (_, _) => ToggleStartup(SelectedStartup);
+        startupOpen.Click += (_, _) =>
+        {
+            if (SelectedStartup?.Path is not { } path)
+                return;
+            try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true }); }
+            catch (Exception ex) { Log.Error("Ouverture de l'emplacement", ex); }
+        };
+        var refresh = new ModernButton("Actualiser");
+        refresh.Click += (_, _) => RefreshStartup();
+        tips.SetToolTip(startupToggle, "Empêcher ce programme de se lancer avec Windows, ou le réautoriser (Espace)");
+        tips.SetToolTip(startupOpen, "Afficher le fichier dans l'Explorateur");
+        tips.SetToolTip(refresh, "Relire la liste (F5)");
+
+        var body = new Panel();
+        body.Controls.Add(new Card(startupList, fill: true) { Dock = DockStyle.Fill });
+        body.Controls.Add(startupBanner);
+        return MakePage("Démarrage", "Programmes lancés à l'ouverture de votre session. Désactiver un programme l'empêche seulement de démarrer avec Windows : rien n'est supprimé, et vous pouvez le réactiver à tout moment.",
+            body, refresh, startupOpen, startupToggle);
+    }
+
+    StartupItem? SelectedStartup => startupList.SelectedItems.Count == 1 ? startupList.SelectedItems[0].Tag as StartupItem : null;
+
+    void UpdateStartupButtons()
+    {
+        var s = SelectedStartup;
+        startupToggle.Enabled = s != null;
+        startupToggle.Text = s?.Enabled == false ? "Activer" : "Désactiver";
+        startupOpen.Enabled = s?.Path != null;
+    }
+
+    void RefreshStartup()
+    {
+        var selected = SelectedStartup;
+        var items = startup.List();
+        startupList.BeginUpdate();
+        startupList.Items.Clear();
+        foreach (var s in items)
+        {
+            var item = new ListViewItem(new[] { s.Name, "", s.Publisher ?? "", s.SourceLabel, s.Command }) { Tag = s, ToolTipText = s.Command };
+            startupList.Items.Add(item);
+            if (selected != null && s.Source == selected.Source && s.Entry == selected.Entry)
+                item.Selected = true;
+        }
+        startupList.EndUpdate();
+        Theme.FitColumns(startupList);
+        UpdateStartupButtons();
+    }
+
+    void ToggleStartup(StartupItem? s)
+    {
+        if (s == null)
+            return;
+        try
+        {
+            startup.SetEnabled(s, !s.Enabled);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Impossible de modifier ce programme : " + ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        RefreshStartup();
+        startupBanner.Show(s.Enabled ? $"« {s.Name} » ne se lancera plus avec Windows." : $"« {s.Name} » se lancera de nouveau avec Windows.", () =>
+        {
+            try { startup.SetEnabled(s, s.Enabled); }
+            catch (Exception ex) { Log.Error("Démarrage", ex); }
+            RefreshStartup();
+        });
+    }
 
     // ---------- Règles ----------
 
@@ -1749,8 +1866,10 @@ sealed class ProcessSorter : IComparer
             1 => a.Pid.CompareTo(b.Pid),
             2 => a.Cpu.CompareTo(b.Cpu),
             3 => a.MemoryBytes.CompareTo(b.MemoryBytes),
-            4 => string.Compare(a.Rule, b.Rule, StringComparison.OrdinalIgnoreCase),
-            5 => a.Restrained.CompareTo(b.Restrained),
+            4 => a.IoBytesPerSec.CompareTo(b.IoBytesPerSec),
+            5 => a.Gpu.CompareTo(b.Gpu),
+            6 => string.Compare(a.Rule, b.Rule, StringComparison.OrdinalIgnoreCase),
+            7 => a.Restrained.CompareTo(b.Restrained),
             _ => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase),
         };
         if (c == 0 && Column != 0)

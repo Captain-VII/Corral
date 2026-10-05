@@ -5,7 +5,7 @@ namespace Corral.Core;
 
 /// <param name="RuleSummary">Effet de la règle en clair (« Priorité haute · 8 cœurs »), pour l'infobulle.</param>
 public sealed record ProcessRow(int Pid, string Name, double Cpu, long MemoryBytes, string? Rule, bool Restrained,
-    string? Path = null, string? RuleSummary = null);
+    string? Path = null, string? RuleSummary = null, long IoBytesPerSec = 0, double Gpu = 0);
 
 public sealed record EngineSnapshot(double SystemCpu, bool Paused, IReadOnlyList<ProcessRow> Rows,
     bool GameMode = false, string? GameTrigger = null, long MemoryUsed = 0, long MemoryTotal = 0)
@@ -30,6 +30,8 @@ public sealed class Engine : IDisposable
         public IntPtr? OrigAffinity;
         public ProcessPriorityClass? ProBalanceOrig;
         public TimeSpan? LastCpu;
+        public ulong? LastIo;
+        public bool IoDenied;
         public bool CpuDenied;
         public string? Path;
         public bool PathLoaded;
@@ -309,6 +311,10 @@ public sealed class Engine : IDisposable
         bool pbActive = pb.Enabled && !paused;
         var userExclusions = pb.Exclusions;
 
+        IReadOnlyDictionary<int, double> gpu = NoGpu;
+        try { if (GpuUsage != null) gpu = GpuUsage(); }
+        catch (Exception ex) { GpuUsage = null; Log.Error("Usage GPU", ex); }
+
         var procs = Process.GetProcesses();
         var live = new Dictionary<ProcKey, Process>(procs.Length);
         var rows = new List<ProcessRow>(procs.Length);
@@ -357,7 +363,8 @@ public sealed class Engine : IDisposable
                     t.Path = Native.GetProcessPath(key.Pid);
                     t.PathLoaded = true;
                 }
-                rows.Add(new ProcessRow(key.Pid, key.Name, cpu, mem, t.Rule?.Pattern, t.ProBalanceOrig != null, t.Path, Summary(t.Rule)));
+                rows.Add(new ProcessRow(key.Pid, key.Name, cpu, mem, t.Rule?.Pattern, t.ProBalanceOrig != null, t.Path, Summary(t.Rule),
+                    SampleIo(key.Pid, t, elapsedMs), gpu.GetValueOrDefault(key.Pid)));
             }
 
             foreach (var gone in tracked.Keys.Where(k => !live.ContainsKey(k)).ToList())
@@ -527,6 +534,11 @@ public sealed class Engine : IDisposable
 
     /// <summary>Préférences GPU par programme (null = fonction désactivée, par exemple dans les tests).</summary>
     public GpuPreferences? Gpu { get; set; }
+
+    /// <summary>Usage du GPU par PID, appelé à chaque passage sur le thread du moteur (null = colonne GPU à 0).</summary>
+    public Func<IReadOnlyDictionary<int, double>>? GpuUsage { get; set; }
+
+    static readonly IReadOnlyDictionary<int, double> NoGpu = new Dictionary<int, double>();
 
     public bool IdleSaverActive
     {
@@ -888,6 +900,23 @@ public sealed class Engine : IDisposable
             pct = Math.Clamp((current - last).TotalMilliseconds / (elapsedMs * cores) * 100, 0, 100);
         t.LastCpu = current;
         return pct;
+    }
+
+    static long SampleIo(int pid, Tracked t, double elapsedMs)
+    {
+        if (t.IoDenied)
+            return 0;
+        var current = ProcessIo.Read(pid);
+        if (current == null)
+        {
+            t.IoDenied = true;
+            return 0;
+        }
+        long rate = 0;
+        if (t.LastIo is { } last && elapsedMs > 0 && current >= last)
+            rate = (long)((current.Value - last) * 1000 / elapsedMs);
+        t.LastIo = current;
+        return rate;
     }
 
     static bool HasNormalPriority(Process p)
