@@ -12,7 +12,7 @@
     <MajorUpgrade DowngradeErrorMessage="Une version plus récente de Corral est déjà installée. / A newer version of Corral is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
-    <Icon Id="corral.ico" SourceFile="../src/Corral/corral.ico" />
+    <Icon Id="corral.ico" SourceFile="$(sys.SOURCEFILEDIR)../src/Corral/corral.ico" />
     <Property Id="ARPPRODUCTICON" Value="corral.ico" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/Captain-VII/Corral" />
     <Property Id="ARPHELPLINK" Value="https://github.com/Captain-VII/Corral/issues" />
