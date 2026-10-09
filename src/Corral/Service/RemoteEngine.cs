@@ -16,6 +16,7 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
 {
     readonly string pipeName;
     readonly bool requireService;
+    readonly bool mirrorLog;
     readonly CancellationTokenSource cts = new();
     readonly ConcurrentDictionary<long, TaskCompletionSource<string?>> pending = new();
     readonly object writeLock = new();
@@ -27,10 +28,11 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
     volatile string? keepAwake;
     bool started;
 
-    RemoteEngine(string pipeName, bool requireService)
+    RemoteEngine(string pipeName, bool requireService, bool mirrorLog)
     {
         this.pipeName = pipeName;
         this.requireService = requireService;
+        this.mirrorLog = mirrorLog;
     }
 
     /// <summary>Le service Corral est-il installé sur ce PC ?</summary>
@@ -52,9 +54,13 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
 
     /// <summary>Se connecte au service (en réessayant jusqu'à <paramref name="timeout"/>), ou null.</summary>
     /// <param name="requireService">Refuse un pipe qui ne serait pas servi depuis la session 0 (les tests le désactivent).</param>
-    public static RemoteEngine? Connect(TimeSpan timeout, string pipeName = Protocol.PipeName, bool requireService = true)
+    /// <param name="mirrorLog">
+    /// Recopie le journal du service dans celui de l'interface. Les tests le désactivent : service et interface y partagent
+    /// le même journal, que la recopie doublerait.
+    /// </param>
+    public static RemoteEngine? Connect(TimeSpan timeout, string pipeName = Protocol.PipeName, bool requireService = true, bool mirrorLog = true)
     {
-        var remote = new RemoteEngine(pipeName, requireService);
+        var remote = new RemoteEngine(pipeName, requireService, mirrorLog);
         var deadline = DateTime.UtcNow + timeout;
         do
         {
@@ -63,8 +69,9 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
                 remote.InitialSettings = welcome.Settings ?? new Settings();
                 remote.InitialSettings.Normalize();
                 remote.Fresh = welcome.Flag;
-                foreach (var entry in welcome.Log ?? Array.Empty<LogEntry>())
-                    Log.Append(entry);
+                if (mirrorLog)
+                    foreach (var entry in welcome.Log ?? Array.Empty<LogEntry>())
+                        Log.Append(entry);
                 return remote;
             }
             Thread.Sleep(500);
@@ -198,7 +205,7 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
             case "notify":
                 Notification?.Invoke(m.Text ?? "", m.Text2 ?? "");
                 break;
-            case "log":
+            case "log" when mirrorLog:
                 foreach (var entry in m.Log ?? Array.Empty<LogEntry>())
                     Log.Append(entry);
                 break;

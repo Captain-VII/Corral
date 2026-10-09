@@ -115,6 +115,7 @@ static class Program
         PowerPlanManager.RecoverFromCrash(powerApi, powerStateFile);
 
         var settings = PrepareSettings(store, Policies.Current);
+        Lang.Set(settings.Language);
         UI.Theme.Set(settings.Theme);
 
         if (Updater.IsPublishedBuild)
@@ -147,7 +148,6 @@ static class Program
     internal static Settings PrepareSettings(RuleStore store, PolicySet policies)
     {
         var settings = store.Load();
-        Lang.Set(settings.Language);
         Profiles.Ensure(settings, Tr("Principal", "Main"));
         Policies.Apply(settings, policies);
         if (settings.GameMode.PowerPlan == null)

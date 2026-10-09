@@ -63,7 +63,7 @@ public class ServiceTests : IDisposable
         var ping = procs.Ping(name);
         using var host = StartHost();
 
-        using var remote = RemoteEngine.Connect(TimeSpan.FromSeconds(5), pipe, requireService: false)!;
+        using var remote = RemoteEngine.Connect(TimeSpan.FromSeconds(5), pipe, requireService: false, mirrorLog: false)!;
         Assert.NotNull(remote);
         Assert.False(remote.Fresh);
         Assert.False(remote.InitialSettings.ProBalance.Enabled);
@@ -93,7 +93,7 @@ public class ServiceTests : IDisposable
     {
         WriteQuietConfig();
         var host = StartHost();
-        using var remote = RemoteEngine.Connect(TimeSpan.FromSeconds(5), pipe, requireService: false)!;
+        using var remote = RemoteEngine.Connect(TimeSpan.FromSeconds(5), pipe, requireService: false, mirrorLog: false)!;
         var states = new List<bool>();
         remote.ConnectionChanged += c => { lock (states) states.Add(c); };
         remote.Start();
@@ -111,7 +111,7 @@ public class ServiceTests : IDisposable
     public void FreshServiceAndLockedSettings()
     {
         using var host = StartHost(new PolicySet(LockSettings: true));
-        using var remote = RemoteEngine.Connect(TimeSpan.FromSeconds(5), pipe, requireService: false)!;
+        using var remote = RemoteEngine.Connect(TimeSpan.FromSeconds(5), pipe, requireService: false, mirrorLog: false)!;
         Assert.True(remote.Fresh); // aucune configuration : l'interface lui transmettra celle de l'exe portable
         remote.Start();
         var s = remote.InitialSettings;
