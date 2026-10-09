@@ -62,8 +62,9 @@ jobs:
           wix build packaging/Corral.wxs -arch x64 -ext WixToolset.Util.wixext `
             -d Version=$version -d ExePath=publish/Corral.exe -o publish/Corral.msi
           if ($LASTEXITCODE -ne 0) { throw "Échec de la compilation du MSI" }
-          # ICE43/ICE57 : faux positifs des paquets « par machine » (raccourci du menu Démarrer commun)
-          wix msi validate -sice ICE43 -sice ICE57 publish/Corral.msi
+          # ICE43/ICE57 : faux positifs des paquets « par machine » (raccourci du menu Démarrer commun) ;
+          # ICE61 : réinstaller la même version remplace l'installation (AllowSameVersionUpgrades)
+          wix msi validate -sice ICE43 -sice ICE57 -sice ICE61 publish/Corral.msi
           if ($LASTEXITCODE -ne 0) { throw "MSI invalide" }
           $hash = (Get-FileHash publish/Corral.msi -Algorithm SHA256).Hash.ToLower()
           "$hash  Corral.msi" | Out-File publish/Corral.msi.sha256 -Encoding ascii -NoNewline

@@ -65,7 +65,7 @@ public class ServiceTests : IDisposable
 
         using var remote = RemoteEngine.Connect(TimeSpan.FromSeconds(5), pipe, requireService: false, mirrorLog: false)!;
         Assert.NotNull(remote);
-        Assert.False(remote.Fresh);
+        Assert.True(remote.Fresh); // aucune interface ne lui a encore envoyé de configuration
         Assert.False(remote.InitialSettings.ProBalance.Enabled);
 
         EngineSnapshot? snap = null;
@@ -86,6 +86,8 @@ public class ServiceTests : IDisposable
         Wait(() => { ping.Refresh(); return ping.PriorityClass == ProcessPriorityClass.AboveNormal ? "" : null; }, "règle appliquée");
         var saved = new RuleStore(Path.Combine(dir, "config.json")).Load();
         Assert.Contains(saved.Rules, r => r.Pattern == name);
+        using (var second = RemoteEngine.Connect(TimeSpan.FromSeconds(5), pipe, requireService: false, mirrorLog: false)!)
+            Assert.False(second.Fresh); // la configuration de l'exe portable ne sera plus reprise
     }
 
     [Fact]
@@ -105,6 +107,17 @@ public class ServiceTests : IDisposable
         using var again = StartHost();
         Wait(() => { lock (states) return states.LastOrDefault() ? "" : null; }, "reconnexion");
         Assert.True(remote.Connected);
+    }
+
+    [Fact]
+    public void ServerSessionIsReadFromThePipe()
+    {
+        using var host = StartHost();
+        using var client = Protocol.OpenClient(pipe, RemoteEngine.ClientRights, 1000)!;
+        // Serveur de test dans la session de l'utilisateur : ce n'est pas le service, la vraie interface le refuserait
+        Assert.Equal(System.Diagnostics.Process.GetCurrentProcess().SessionId, Protocol.ServerSession(client.SafePipeHandle));
+        Assert.False(Protocol.ServedByService(client.SafePipeHandle));
+        Assert.Null(RemoteEngine.Connect(TimeSpan.Zero, pipe, requireService: true, mirrorLog: false));
     }
 
     [Fact]

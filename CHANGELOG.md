@@ -1,5 +1,11 @@
 # Journal des modifications
 
+## 2.1.1
+
+- Corrige l'interface qui ne se connectait pas au service pour un utilisateur sans droits administrateur (« Le service Corral ne répond pas »).
+- La configuration de l'exe portable est bien reprise par le service, même s'il a déjà redémarré.
+- Réinstaller la même version du MSI remplace l'installation existante.
+
 ## 2.1.0
 
 - **Service Windows** (installation MSI) : le moteur tourne dans le service « Corral » ; l'interface s'y connecte par un pipe nommé protégé, sans droits administrateur ni invite UAC. Elle se relance seule après une mise à jour.

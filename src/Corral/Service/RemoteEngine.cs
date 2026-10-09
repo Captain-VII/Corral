@@ -83,7 +83,7 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
     /// <summary>Configuration tenue par le service au moment de la connexion.</summary>
     public Settings InitialSettings { get; private set; } = new();
 
-    /// <summary>Le service n'avait encore aucune configuration (premier démarrage après l'installation).</summary>
+    /// <summary>Aucune interface n'a encore envoyé de configuration au service (juste après l'installation).</summary>
     public bool Fresh { get; private set; }
 
     public bool Connected { get; private set; }

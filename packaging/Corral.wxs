@@ -9,7 +9,7 @@
   <Package Name="Corral" Manufacturer="Corral" Version="$(Version)"
            UpgradeCode="31D4CBD5-E6DE-4F73-A8C0-4205DD50BBB3" Scope="perMachine">
     <SummaryInformation Description="Corral - gestion des processus" />
-    <MajorUpgrade DowngradeErrorMessage="Une version plus récente de Corral est déjà installée. / A newer version of Corral is already installed." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="Une version plus récente de Corral est déjà installée. / A newer version of Corral is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <Icon Id="corral.ico" SourceFile="$(sys.SOURCEFILEDIR)../src/Corral/corral.ico" />

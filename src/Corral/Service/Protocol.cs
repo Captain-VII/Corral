@@ -55,10 +55,7 @@ public static class Protocol
     static extern bool GetNamedPipeClientSessionId(SafeHandle pipe, out uint sessionId);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool GetNamedPipeServerProcessId(SafeHandle pipe, out uint processId);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool ProcessIdToSessionId(uint processId, out uint sessionId);
+    static extern bool GetNamedPipeServerSessionId(SafeHandle pipe, out uint sessionId);
 
     [DllImport("kernel32.dll")]
     static extern uint WTSGetActiveConsoleSessionId();
@@ -97,9 +94,13 @@ public static class Protocol
 
     public static int ClientSession(SafeHandle pipe) => GetNamedPipeClientSessionId(pipe, out var s) ? (int)s : -1;
 
-    /// <summary>Le pipe est-il servi par un service (session 0) ? Évite qu'un autre programme se fasse passer pour Corral.</summary>
-    public static bool ServedByService(SafeHandle pipe) =>
-        GetNamedPipeServerProcessId(pipe, out var pid) && ProcessIdToSessionId(pid, out var session) && session == 0;
+    /// <summary>
+    /// Le pipe est-il servi par un service (session 0) ? Évite qu'un autre programme se fasse passer pour Corral.
+    /// Lu sur le pipe lui-même : un utilisateur standard ne peut pas ouvrir le processus du service (SYSTEM).
+    /// </summary>
+    public static bool ServedByService(SafeHandle pipe) => ServerSession(pipe) == 0;
+
+    public static int ServerSession(SafeHandle pipe) => GetNamedPipeServerSessionId(pipe, out var s) ? (int)s : -1;
 
     public static int ConsoleSession => (int)WTSGetActiveConsoleSessionId();
 }

@@ -50,6 +50,8 @@ public sealed class ServiceHost : IDisposable
     bool disposed;
 
     string RelaunchFile => Path.Combine(dir, "relaunch.json");
+    /// <summary>Présent dès qu'une interface a envoyé sa configuration : avant, celle de l'exe portable peut être reprise.</summary>
+    string ConfiguredFlag => Path.Combine(dir, "configured");
 
     /// <param name="powerApi">Plans d'alimentation (les tests en passent un factice).</param>
     public ServiceHost(string dataDirectory, string pipeName, PolicySet policies, bool firstInstance = true, IPowerPlanApi? powerApi = null)
@@ -61,7 +63,7 @@ public sealed class ServiceHost : IDisposable
         var powerStateFile = Path.Combine(dir, "powerplan.restore");
         PowerPlanManager.RecoverFromCrash(powerApi, powerStateFile);
         store = new RuleStore(Path.Combine(dir, "config.json"));
-        fresh = !File.Exists(store.FilePath);
+        fresh = !File.Exists(ConfiguredFlag);
         settings = Program.PrepareSettings(store, policies);
 
         server = new PipeServer(pipeName, firstInstance);
@@ -191,7 +193,12 @@ public sealed class ServiceHost : IDisposable
         lock (sync)
         {
             settings = incoming;
-            fresh = false;
+            if (fresh)
+            {
+                try { File.WriteAllText(ConfiguredFlag, ""); }
+                catch (Exception ex) { Log.Error("Configuration du service", ex); }
+                fresh = false;
+            }
             try { store.Save(incoming); }
             catch (Exception ex) { Log.Error("Enregistrement de la configuration", ex); }
         }
