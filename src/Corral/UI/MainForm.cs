@@ -1775,8 +1775,11 @@ public sealed class MainForm : Form
             Theme.Set(settings.Theme);
         };
         autoStart.CheckedChanged += (_, _) => ToggleAutoStart();
-        var startMenu = new ToggleSwitch { Checked = settings.StartMenuShortcut, Enabled = Updater.IsPublishedBuild };
-        if (!Updater.IsPublishedBuild)
+        bool msi = Installation.IsMsi;
+        var startMenu = new ToggleSwitch { Checked = settings.StartMenuShortcut || msi, Enabled = Updater.IsPublishedBuild && !msi };
+        if (msi)
+            tips.SetToolTip(startMenu, Tr("Raccourci géré par l'installeur.", "Shortcut managed by the installer."));
+        else if (!Updater.IsPublishedBuild)
             tips.SetToolTip(startMenu, Tr("Disponible uniquement avec l'exe publié (pas en développement).", "Only available with the published exe (not in development)."));
         startMenu.CheckedChanged += (_, _) =>
         {

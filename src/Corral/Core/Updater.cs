@@ -8,11 +8,12 @@ using System.Text.RegularExpressions;
 
 namespace Corral.Core;
 
-public sealed record UpdateInfo(Version Version, string Notes, string PageUrl, string ExeUrl, string ShaUrl);
+public sealed record UpdateInfo(Version Version, string Notes, string PageUrl, string ExeUrl, string ShaUrl, string SigUrl);
 
 /// <summary>
-/// Mise à jour via GitHub Releases. Une release doit contenir Corral.exe et Corral.exe.sha256
-/// (le workflow .github/workflows/release.yml les produit).
+/// Mise à jour via GitHub Releases. Une release doit contenir Corral.exe, Corral.exe.sha256 et Corral.exe.sig
+/// (le workflow .github/workflows/release.yml les produit). La signature ECDSA prouve que l'exe vient bien du workflow
+/// du projet : un compte GitHub compromis ne suffit pas à pousser un exe piégé sans la clé privée.
 /// Installation : l'exe en cours est renommé en .old (Windows l'autorise), le nouveau prend sa place,
 /// puis on relance. En cas d'échec, l'ancien exe est remis en place.
 /// </summary>
@@ -20,6 +21,10 @@ public static class Updater
 {
     public const string ExeAsset = "Corral.exe";
     public const string ShaAsset = "Corral.exe.sha256";
+    public const string SigAsset = "Corral.exe.sig";
+
+    /// <summary>Clé publique ECDSA P-256 (SubjectPublicKeyInfo en base64) ; la clé privée est un secret du dépôt GitHub.</summary>
+    public const string PublicKey = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEB9O83LQqIR5OioCbJ26TNrWwn+k1G6uQIaL0J1jPCgagGIQSKKjbxAA54qAWFAxgu3b2oupSGNv10pesWkOHhg==";
     const string Placeholder = "OWNER/Corral";
 
     static readonly HttpClient http = CreateClient();
@@ -44,7 +49,6 @@ public static class Updater
     const bool IsSingleFile = false;
 #endif
 
-    /// <summary>Uniquement pour l'exe publié en fichier unique (pas en développement avec dotnet run).</summary>
     /// <summary>Exe publié (fichier unique) : seul lui crée des raccourcis système, jamais une version de développement.</summary>
     public static bool IsPublishedBuild => IsSingleFile && Environment.ProcessPath != null;
 
@@ -79,7 +83,7 @@ public static class Updater
         if (version == null || version <= Normalize(current))
             return null;
 
-        string? exe = null, sha = null;
+        string? exe = null, sha = null, sig = null;
         if (root.TryGetProperty("assets", out var assets))
         {
             foreach (var a in assets.EnumerateArray())
@@ -88,16 +92,17 @@ public static class Updater
                 var link = a.GetProperty("browser_download_url").GetString();
                 if (string.Equals(name, ExeAsset, StringComparison.OrdinalIgnoreCase)) exe = link;
                 else if (string.Equals(name, ShaAsset, StringComparison.OrdinalIgnoreCase)) sha = link;
+                else if (string.Equals(name, SigAsset, StringComparison.OrdinalIgnoreCase)) sig = link;
             }
         }
-        if (exe == null || sha == null)
+        if (exe == null || sha == null || sig == null)
         {
-            Log.Warn($"Release {version} ignorée : {ExeAsset} ou {ShaAsset} manquant", LogCategory.Update);
+            Log.Warn(Tr($"Release {version} ignorée : fichier manquant (exe, somme de contrôle ou signature)", $"Release {version} ignored: missing file (exe, checksum or signature)"), LogCategory.Update);
             return null;
         }
         var notes = root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "";
         var page = root.TryGetProperty("html_url", out var html) ? html.GetString() ?? "" : "";
-        return new UpdateInfo(version, notes.Trim(), page, exe, sha);
+        return new UpdateInfo(version, notes.Trim(), page, exe, sha, sig);
     }
 
     /// <summary>« v1.2.3 » → 1.2.3.0 ; les suffixes (« -beta ») sont ignorés.</summary>
@@ -110,11 +115,12 @@ public static class Updater
     static Version Normalize(Version v) =>
         new(v.Major, v.Minor, Math.Max(0, v.Build), Math.Max(0, v.Revision));
 
-    /// <summary>Télécharge l'exe à côté de l'actuel (même volume, pour un renommage atomique) et vérifie son SHA-256.</summary>
+    /// <summary>Télécharge l'exe à côté de l'actuel (même volume, pour un renommage atomique) et vérifie son SHA-256 et sa signature.</summary>
     public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<int>? progress, CancellationToken ct = default)
     {
         var expected = ParseSha(await http.GetStringAsync(info.ShaUrl, ct))
                        ?? throw new InvalidDataException(Tr("Fichier de somme de contrôle illisible", "Unreadable checksum file"));
+        var signature = await http.GetStringAsync(info.SigUrl, ct);
 
         var target = Environment.ProcessPath! + ".download";
         using (var response = await http.GetAsync(info.ExeUrl, HttpCompletionOption.ResponseHeadersRead, ct))
@@ -138,6 +144,7 @@ public static class Updater
         try
         {
             Verify(target, expected);
+            VerifySignature(target, signature, PublicKey);
         }
         catch
         {
@@ -166,6 +173,25 @@ public static class Updater
             if (actual != expectedSha.ToLowerInvariant())
                 throw new InvalidDataException(Tr("Somme de contrôle incorrecte : téléchargement corrompu", "Wrong checksum: corrupted download"));
         }
+    }
+
+    /// <summary>Vérifie la signature ECDSA (base64, IEEE P1363) du fichier avec la clé publique donnée.</summary>
+    public static void VerifySignature(string file, string signatureBase64, string publicKey)
+    {
+        bool valid;
+        try
+        {
+            using var key = ECDsa.Create();
+            key.ImportSubjectPublicKeyInfo(Convert.FromBase64String(publicKey), out _);
+            using var stream = File.OpenRead(file);
+            valid = key.VerifyData(stream, Convert.FromBase64String(signatureBase64.Trim()), HashAlgorithmName.SHA256);
+        }
+        catch (FormatException)
+        {
+            valid = false;
+        }
+        if (!valid)
+            throw new InvalidDataException(Tr("Signature invalide : ce fichier ne vient pas du projet Corral", "Invalid signature: this file does not come from the Corral project"));
     }
 
     /// <summary>Remplace l'exe et relance. L'appelant doit ensuite quitter l'application.</summary>

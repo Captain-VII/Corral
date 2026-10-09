@@ -1,0 +1,40 @@
+name: Bug
+description: Quelque chose ne fonctionne pas
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Que se passe-t-il ?
+      description: Ce que vous avez fait, ce que vous attendiez et ce qui s'est passé.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version de Corral
+      description: Options → Mises à jour
+      placeholder: "2.0.0"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Version de Windows
+      placeholder: "Windows 11 24H2"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installation
+      options:
+        - Installeur MSI
+        - Exe portable
+        - winget
+  - type: textarea
+    id: log
+    attributes:
+      label: Journal
+      description: Extrait de %AppData%\Corral\corral.log autour du problème.
+      render: text

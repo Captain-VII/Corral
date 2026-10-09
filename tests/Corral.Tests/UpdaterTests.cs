@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using Corral.Core;
 
 namespace Corral.Tests;
@@ -14,11 +14,12 @@ public class UpdaterTests : IDisposable
         try { Directory.Delete(dir, true); } catch { }
     }
 
-    static string Release(string tag, bool withExe = true, bool withSha = true, bool prerelease = false)
+    static string Release(string tag, bool withExe = true, bool withSha = true, bool prerelease = false, bool withSig = true)
     {
         var assets = new List<string>();
         if (withExe) assets.Add("""{ "name": "Corral.exe", "browser_download_url": "https://example/Corral.exe" }""");
         if (withSha) assets.Add("""{ "name": "Corral.exe.sha256", "browser_download_url": "https://example/Corral.exe.sha256" }""");
+        if (withSig) assets.Add("""{ "name": "Corral.exe.sig", "browser_download_url": "https://example/Corral.exe.sig" }""");
         return $$"""
             { "tag_name": "{{tag}}", "draft": false, "prerelease": {{(prerelease ? "true" : "false")}},
               "body": "Nouveautés", "html_url": "https://example/release",
@@ -41,6 +42,7 @@ public class UpdaterTests : IDisposable
         Assert.NotNull(info);
         Assert.Equal(new Version(1, 1, 0, 0), info!.Version);
         Assert.Equal("https://example/Corral.exe", info.ExeUrl);
+        Assert.Equal("https://example/Corral.exe.sig", info.SigUrl);
         Assert.Equal("Nouveautés", info.Notes);
     }
 
@@ -56,6 +58,7 @@ public class UpdaterTests : IDisposable
         var current = new Version(1, 0, 0);
         Assert.Null(Updater.ParseRelease(Release("v2.0.0", withExe: false), current));
         Assert.Null(Updater.ParseRelease(Release("v2.0.0", withSha: false), current));
+        Assert.Null(Updater.ParseRelease(Release("v2.0.0", withSig: false), current));
         Assert.Null(Updater.ParseRelease(Release("v2.0.0", prerelease: true), current));
     }
 
@@ -78,6 +81,23 @@ public class UpdaterTests : IDisposable
 
         File.WriteAllBytes(file, new byte[] { 1, 2, 3 });
         Assert.Throws<InvalidDataException>(() => Updater.Verify(file, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file)))));
+    }
+
+    [Fact]
+    public void SignatureMustMatchFileAndKey()
+    {
+        var file = Path.Combine(dir, "x.exe");
+        File.WriteAllBytes(file, new byte[] { (byte)'M', (byte)'Z', 1, 2, 3 });
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKey = Convert.ToBase64String(key.ExportSubjectPublicKeyInfo());
+        var signature = Convert.ToBase64String(key.SignData(File.ReadAllBytes(file), HashAlgorithmName.SHA256));
+
+        Updater.VerifySignature(file, signature + "\n", publicKey);
+        // Clé du projet : une signature faite avec une autre clé est refusée
+        Assert.Throws<InvalidDataException>(() => Updater.VerifySignature(file, signature, Updater.PublicKey));
+        Assert.Throws<InvalidDataException>(() => Updater.VerifySignature(file, "pas du base64 !", publicKey));
+        File.AppendAllText(file, "piège");
+        Assert.Throws<InvalidDataException>(() => Updater.VerifySignature(file, signature, publicKey));
     }
 
     [Fact]
@@ -105,6 +125,14 @@ public class UpdaterTests : IDisposable
         Assert.Equal("ancien", File.ReadAllText(exe));
         Assert.False(File.Exists(exe + ".old"));
     }
+
+    [Theory]
+    [InlineData(@"C:\Program Files\Corral", @"C:\Program Files\Corral\Corral.exe", true)]
+    [InlineData(@"c:\program files\corral\", @"C:\Program Files\Corral\Corral.exe", true)]
+    [InlineData(@"C:\Program Files\Corral", @"C:\Outils\Corral.exe", false)]
+    [InlineData(null, @"C:\Program Files\Corral\Corral.exe", false)]
+    public void MsiInstallIsDetectedByFolder(string? installDir, string exe, bool expected) =>
+        Assert.Equal(expected, Installation.IsInstallDir(installDir, exe));
 
     [Fact]
     public void LocalBuildHasUpdatesDisabled()

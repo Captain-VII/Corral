@@ -62,7 +62,8 @@ static class Program
             // Raccourci du menu Démarrer et tâche de démarrage pointés sur l'exe actuel (même s'il a été déplacé).
             // En arrière-plan : schtasks et le shell prennent quelques dizaines de ms.
             var exe = Environment.ProcessPath!;
-            bool shortcut = settings.StartMenuShortcut;
+            // Installé par le MSI : son raccourci (tous les utilisateurs) suffit, on retire celui de l'exe portable.
+            bool shortcut = settings.StartMenuShortcut && !Installation.IsMsi;
             Task.Run(() =>
             {
                 StartMenu.Sync(shortcut, exe);

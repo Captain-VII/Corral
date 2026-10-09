@@ -12,6 +12,9 @@
 
     <!-- Remplacée par le tag (vX.Y.Z) lors d'une release GitHub -->
     <Version>1.0.0</Version>
+    <Product>Corral</Product>
+    <Company>Corral</Company>
+    <Copyright>Copyright © 2026 Captain VII — GPL-3.0</Copyright>
     <!-- Dépôt GitHub des mises à jour (propriétaire/nom). Le workflow de release le remplit automatiquement ;
          tant qu'il vaut OWNER/Corral, la mise à jour automatique est désactivée. -->
     <UpdateRepository Condition="'$(UpdateRepository)' == ''">OWNER/Corral</UpdateRepository>

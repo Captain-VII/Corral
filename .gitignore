@@ -8,3 +8,6 @@ TestResults/
 # Captures générées par les tests et le script d'icône
 tools/shot-*.png
 tools/exe-icon-check.png
+
+# Extensions WiX téléchargées par « wix extension add »
+.wix/
