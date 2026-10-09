@@ -18,15 +18,16 @@ Gestionnaire de processus libre et gratuit pour Windows 10/11, alternative open 
 - **Restauration** : priorités, affinités et plan d'alimentation d'origine sont rétablis à la fermeture ou en pause, et aussi après un plantage (pour le plan d'alimentation).
 - **Interface** : en français ou en anglais (selon Windows), thème clair ou sombre, icône de notification avec la charge du processeur, mini-fenêtre toujours visible, raccourcis clavier globaux (Mode Jeu, pause), démarrage à l'ouverture de session, raccourci dans le menu Démarrer.
 - **Mises à jour automatiques** via les releases GitHub, vérifiées par somme SHA-256 et signature numérique.
+- **Entreprise** : service Windows (aucune invite UAC, fonctionne pour les utilisateurs standard), modèles de stratégie de groupe (ADMX) pour verrouiller les réglages ou imposer des règles, événements dans l'Observateur d'événements.
 
 ## Installation
 
 Depuis la page [Releases](../../releases/latest), au choix :
 
-- **`Corral.msi`** : installeur classique (Program Files, menu Démarrer, désinstallation depuis les Paramètres de Windows). Installation silencieuse pour un déploiement : `msiexec /i Corral.msi /qn`.
-- **`Corral.exe`** : version portable, à lancer depuis n'importe quel dossier.
+- **`Corral.msi`** (recommandé) : installe Corral dans Program Files avec un **service Windows** qui applique les règles. L'interface se lance à l'ouverture de session, sans invite UAC, y compris pour un utilisateur standard. Désinstallation depuis les Paramètres de Windows.
+- **`Corral.exe`** : version portable, à lancer depuis n'importe quel dossier. Elle demande les droits administrateur à chaque lancement (invite UAC), sauf si elle est lancée par sa tâche de démarrage.
 
-Aucune installation de .NET n'est nécessaire. Corral demande les droits administrateur pour agir sur tous les processus.
+Aucune installation de .NET n'est nécessaire.
 
 Pour vérifier qu'un fichier vient bien du workflow de ce dépôt :
 
@@ -34,7 +35,25 @@ Pour vérifier qu'un fichier vient bien du workflow de ce dépôt :
 gh attestation verify Corral.exe --repo Captain-VII/Corral
 ```
 
-La configuration et le journal sont dans `%AppData%\Corral\`.
+La configuration et le journal sont dans `%ProgramData%\Corral\` avec le MSI, dans `%AppData%\Corral\` pour la version portable. En passant de la version portable au MSI, la configuration est reprise automatiquement.
+
+## Déploiement en entreprise
+
+- **Installation silencieuse** : `msiexec /i Corral.msi /qn` (Intune, SCCM, GPO…).
+- **Stratégies de groupe** : `Corral-ADMX.zip` (page Releases) contient les modèles ADMX/ADML en français et en anglais. Copiez `Corral.admx` et les dossiers `fr-FR` / `en-US` dans `C:\Windows\PolicyDefinitions` ou le magasin central. Les réglages sont écrits dans `HKLM\SOFTWARE\Policies\Corral` et peuvent aussi être poussés par Intune (OMA-URI) :
+
+  | Stratégie | Valeur | Effet |
+  |---|---|---|
+  | Verrouiller les réglages | `LockSettings` = 1 | Règles, ProBalance, Mode Jeu et optimisations en lecture seule |
+  | Règles imposées | `RulesFile` = chemin | Les règles d'un export Corral (partage réseau possible) remplacent les règles locales |
+  | ProBalance | `ProBalance` = 0 ou 1 | Forcé désactivé ou activé |
+  | Désactiver les mises à jour | `DisableUpdates` = 1 | Les versions sont déployées par l'équipe informatique |
+  | Interdire de terminer des processus | `DisableProcessTermination` = 1 | |
+  | Interdire la gestion du démarrage | `DisableStartupManager` = 1 | Page Démarrage en lecture seule |
+
+  Les stratégies sont lues au démarrage du service.
+- **Supervision** : avertissements, erreurs et événements importants sont inscrits dans l'Observateur d'événements (journal Application, source `Corral`).
+- **Sécurité** : sans stratégie, tout utilisateur connecté peut modifier les règles depuis l'interface. Sur un poste partagé, activez *Verrouiller les réglages*.
 
 ## Développement
 

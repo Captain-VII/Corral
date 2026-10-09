@@ -4,7 +4,7 @@ using Corral.Models;
 
 namespace Corral.Core;
 
-public sealed class RuleStore
+public sealed class RuleStore : ISettingsStore
 {
     public static readonly JsonSerializerOptions Options = new()
     {

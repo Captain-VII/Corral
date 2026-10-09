@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                           revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <displayName>Corral</displayName>
+  <description>Policies for Corral, the process manager</description>
+  <resources>
+    <stringTable>
+      <string id="Corral">Corral</string>
+      <string id="SUPPORTED_Corral21">Corral 2.1 or later</string>
+      <string id="LockSettings">Lock settings</string>
+      <string id="LockSettings_Help">If you enable this setting, nobody can change rules, ProBalance, Game Mode or optimizations from the Corral interface, nor change a process priority. The affected pages stay visible as read-only.
+
+Use “Enforced rules” to provide the rules.
+
+Takes effect when the Corral service or the PC restarts.</string>
+      <string id="RulesFile">Enforced rules</string>
+      <string id="RulesFile_Help">Path of a rules file exported from Corral (Rules page, ⋯ menu › Export). Its rules replace the local rules on every computer.
+
+The file can be on a network share: it is read by the Corral service (computer account), which must be able to access it. If it cannot be read, the local rules are kept and a warning is written to the Event Viewer.
+
+Environment variables are accepted (%ProgramData%…).</string>
+      <string id="ProBalance">ProBalance</string>
+      <string id="ProBalance_Help">Enabled: ProBalance is always on. Disabled: ProBalance is always off. Not configured: the user decides.</string>
+      <string id="DisableUpdates">Turn off automatic updates</string>
+      <string id="DisableUpdates_Help">If you enable this setting, Corral neither checks for nor installs updates: deploy new versions yourself (Corral.msi, silent install with msiexec /i Corral.msi /qn).</string>
+      <string id="DisableProcessTermination">Prevent ending processes</string>
+      <string id="DisableProcessTermination_Help">If you enable this setting, Corral's “End process” command is refused.</string>
+      <string id="DisableStartupManager">Prevent managing startup programs</string>
+      <string id="DisableStartupManager_Help">If you enable this setting, Corral's Startup page is read-only.</string>
+    </stringTable>
+    <presentationTable>
+      <presentation id="RulesFile">
+        <textBox refId="RulesFilePath">
+          <label>Rules file:</label>
+        </textBox>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>

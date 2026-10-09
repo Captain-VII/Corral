@@ -23,6 +23,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- ServiceBase : mode service Windows (installation MSI) -->
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="corral.ico" LogicalName="Corral.corral.ico" />
     <AssemblyMetadata Include="UpdateRepository" Value="$(UpdateRepository)" />
   </ItemGroup>

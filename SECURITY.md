@@ -18,3 +18,9 @@ Indiquez la version concernée, les étapes pour reproduire et l'impact. Vous re
   ```bash
   gh attestation verify Corral.exe --repo Captain-VII/Corral
   ```
+- Avec l'installation MSI, le moteur tourne dans un service (compte SYSTEM). L'interface lui parle par un pipe nommé :
+  - accessible uniquement aux utilisateurs connectés sur le PC (refusé depuis le réseau) ;
+  - seuls SYSTEM et les administrateurs peuvent en créer une instance ;
+  - l'interface vérifie que le pipe est bien servi depuis la session des services avant de s'y connecter.
+- Le service n'installe que des MSI signés par la clé du projet.
+- Sans stratégie, tout utilisateur connecté peut modifier les règles (comme avec l'exe portable sur un PC personnel). Sur un poste partagé, activez la stratégie « Verrouiller les réglages ».

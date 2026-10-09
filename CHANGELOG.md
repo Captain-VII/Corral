@@ -1,5 +1,13 @@
 # Journal des modifications
 
+## 2.1.0
+
+- **Service Windows** (installation MSI) : le moteur tourne dans le service « Corral » ; l'interface s'y connecte par un pipe nommé protégé, sans droits administrateur ni invite UAC. Elle se relance seule après une mise à jour.
+- **Stratégies de groupe** : modèles ADMX/ADML (français, anglais) pour verrouiller les réglages, imposer des règles depuis un fichier, forcer ProBalance, désactiver les mises à jour, la fin de processus ou la gestion du démarrage.
+- **Observateur d'événements** : avertissements, erreurs et événements importants dans le journal Application (source « Corral »).
+- Mises à jour par l'installeur MSI signé pour les installations MSI.
+- L'exe portable demande lui-même les droits administrateur (invite UAC) au lieu de les exiger dans son manifeste.
+
 ## 2.0.0
 
 - **Open source** sous licence GPL-3.0, avec guide de contribution, politique de sécurité et modèles d'issues.

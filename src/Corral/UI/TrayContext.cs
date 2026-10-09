@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Win32;
 using Corral.Core;
 using Corral.Models;
+using Corral.Service;
 
 namespace Corral.UI;
 
@@ -11,8 +12,8 @@ public sealed class TrayContext : ApplicationContext
     static readonly TimeSpan FirstCheckDelay = TimeSpan.FromSeconds(30);
     static readonly TimeSpan CheckInterval = TimeSpan.FromHours(6);
 
-    readonly Engine engine;
-    readonly RuleStore store;
+    readonly IEngine engine;
+    readonly ISettingsStore store;
     readonly Settings settings;
     readonly NotifyIcon tray;
     readonly Icon logo = AppIcon.Load(SystemInformation.SmallIconSize);
@@ -40,7 +41,7 @@ public sealed class TrayContext : ApplicationContext
     bool updateDialogOpen;
     bool exiting;
 
-    public TrayContext(Engine engine, RuleStore store, Settings settings, bool startHidden, bool justUpdated = false)
+    public TrayContext(IEngine engine, ISettingsStore store, Settings settings, bool startHidden, bool justUpdated = false)
     {
         this.engine = engine;
         this.store = store;
@@ -52,6 +53,22 @@ public sealed class TrayContext : ApplicationContext
         form.RestartRequested += Restart;
         // La fenêtre (créée ci-dessus) a installé le contexte de synchronisation de l'interface.
         ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+        if (engine is RemoteEngine remote)
+        {
+            // Le service installe une mise à jour : il relancera l'interface ensuite
+            remote.ServiceUpdating += () => ui.Post(_ => Exit(), null);
+            remote.ConnectionChanged += connected => ui.Post(_ =>
+            {
+                if (!exiting)
+                    tray!.Text = connected ? "Corral" : Tr("Corral — service indisponible", "Corral — service unavailable");
+            }, null);
+        }
+        // Fermeture de session ou installeur (MSI) qui demande la fermeture : on part sans attendre
+        SystemEvents.SessionEnded += (_, _) =>
+        {
+            engine.Stop();
+            Environment.Exit(0);
+        };
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(Tr("Ouvrir", "Open"), null, (_, _) => ShowForm());
@@ -62,6 +79,7 @@ public sealed class TrayContext : ApplicationContext
         menu.Items.Add(pauseItem);
         proBalanceItem.ToolTipText = Tr("Activer ou désactiver ProBalance", "Turn ProBalance on or off");
         proBalanceItem.Click += (_, _) => form.SetProBalanceEnabled(!settings.ProBalance.Enabled);
+        proBalanceItem.Enabled = !Policies.Current.Locks("ProBalance");
         menu.Items.Add(proBalanceItem);
         var gameItem = new ToolStripMenuItem(Tr("Mode Jeu", "Game Mode")) { ToolTipText = Tr("Plan Performances, ProBalance réactif, programmes de fond calmés", "Performance plan, responsive ProBalance, calmed background programs") };
         gameItem.Click += (_, _) => form.ToggleGameMode();
@@ -154,9 +172,10 @@ public sealed class TrayContext : ApplicationContext
         if (justUpdated)
             tray.ShowBalloonTip(5000, "Corral", Tr($"Corral a été mis à jour en version {Updater.CurrentVersion.ToString(3)}.", $"Corral was updated to version {Updater.CurrentVersion.ToString(3)}."), ToolTipIcon.Info);
 
-        if (Updater.IsSupported)
+        if (Updater.IsSupported && !Policies.Current.DisableUpdates)
         {
-            Updater.CleanupLeftovers();
+            if (engine is not RemoteEngine)
+                Updater.CleanupLeftovers();
             updateTimer.Interval = (int)FirstCheckDelay.TotalMilliseconds;
             updateTimer.Tick += (_, _) =>
             {
@@ -306,6 +325,12 @@ public sealed class TrayContext : ApplicationContext
 
     async void CheckForUpdates(bool manual)
     {
+        if (Policies.Current.DisableUpdates)
+        {
+            if (manual)
+                Message(Tr("Les mises à jour sont gérées par votre organisation.", "Updates are managed by your organization."), MessageBoxIcon.Information);
+            return;
+        }
         if (!Updater.IsSupported)
         {
             if (manual)
@@ -361,7 +386,7 @@ public sealed class TrayContext : ApplicationContext
         updateDialogOpen = true;
         try
         {
-            using var dlg = new UpdateDialog(pendingUpdate);
+            using var dlg = new UpdateDialog(pendingUpdate, engine is RemoteEngine remote ? remote.InstallUpdateAsync : null);
             dlg.ShowDialog();
             switch (dlg.Choice)
             {

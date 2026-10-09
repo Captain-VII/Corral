@@ -8,7 +8,9 @@ using System.Text.RegularExpressions;
 
 namespace Corral.Core;
 
-public sealed record UpdateInfo(Version Version, string Notes, string PageUrl, string ExeUrl, string ShaUrl, string SigUrl);
+/// <param name="MsiUrl">Installeur signé (utilisé par le service), absent des releases antérieures à la 2.1.</param>
+public sealed record UpdateInfo(Version Version, string Notes, string PageUrl, string ExeUrl, string ShaUrl, string SigUrl,
+    string? MsiUrl = null, string? MsiSigUrl = null);
 
 /// <summary>
 /// Mise à jour via GitHub Releases. Une release doit contenir Corral.exe, Corral.exe.sha256 et Corral.exe.sig
@@ -22,6 +24,8 @@ public static class Updater
     public const string ExeAsset = "Corral.exe";
     public const string ShaAsset = "Corral.exe.sha256";
     public const string SigAsset = "Corral.exe.sig";
+    public const string MsiAsset = "Corral.msi";
+    public const string MsiSigAsset = "Corral.msi.sig";
 
     /// <summary>Clé publique ECDSA P-256 (SubjectPublicKeyInfo en base64) ; la clé privée est un secret du dépôt GitHub.</summary>
     public const string PublicKey = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEB9O83LQqIR5OioCbJ26TNrWwn+k1G6uQIaL0J1jPCgagGIQSKKjbxAA54qAWFAxgu3b2oupSGNv10pesWkOHhg==";
@@ -83,7 +87,7 @@ public static class Updater
         if (version == null || version <= Normalize(current))
             return null;
 
-        string? exe = null, sha = null, sig = null;
+        string? exe = null, sha = null, sig = null, msi = null, msiSig = null;
         if (root.TryGetProperty("assets", out var assets))
         {
             foreach (var a in assets.EnumerateArray())
@@ -93,6 +97,8 @@ public static class Updater
                 if (string.Equals(name, ExeAsset, StringComparison.OrdinalIgnoreCase)) exe = link;
                 else if (string.Equals(name, ShaAsset, StringComparison.OrdinalIgnoreCase)) sha = link;
                 else if (string.Equals(name, SigAsset, StringComparison.OrdinalIgnoreCase)) sig = link;
+                else if (string.Equals(name, MsiAsset, StringComparison.OrdinalIgnoreCase)) msi = link;
+                else if (string.Equals(name, MsiSigAsset, StringComparison.OrdinalIgnoreCase)) msiSig = link;
             }
         }
         if (exe == null || sha == null || sig == null)
@@ -102,7 +108,7 @@ public static class Updater
         }
         var notes = root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "";
         var page = root.TryGetProperty("html_url", out var html) ? html.GetString() ?? "" : "";
-        return new UpdateInfo(version, notes.Trim(), page, exe, sha, sig);
+        return new UpdateInfo(version, notes.Trim(), page, exe, sha, sig, msi, msiSig);
     }
 
     /// <summary>« v1.2.3 » → 1.2.3.0 ; les suffixes (« -beta ») sont ignorés.</summary>
@@ -144,6 +150,29 @@ public static class Updater
         try
         {
             Verify(target, expected);
+            VerifySignature(target, signature, PublicKey);
+        }
+        catch
+        {
+            TryDelete(target);
+            throw;
+        }
+        return target;
+    }
+
+    /// <summary>Télécharge l'installeur MSI dans <paramref name="directory"/> et vérifie sa signature (service uniquement).</summary>
+    public static async Task<string> DownloadMsiAsync(UpdateInfo info, string directory, CancellationToken ct = default)
+    {
+        if (info.MsiUrl == null || info.MsiSigUrl == null)
+            throw new InvalidDataException(Tr("Cette version n'a pas d'installeur signé", "This version has no signed installer"));
+        var signature = await http.GetStringAsync(info.MsiSigUrl, ct);
+        Directory.CreateDirectory(directory);
+        var target = Path.Combine(directory, MsiAsset);
+        await using (var input = await http.GetStreamAsync(info.MsiUrl, ct))
+        await using (var output = File.Create(target))
+            await input.CopyToAsync(output, ct);
+        try
+        {
             VerifySignature(target, signature, PublicKey);
         }
         catch

@@ -9,6 +9,7 @@ public enum UpdateChoice { Later, Skip, Installed }
 public sealed class UpdateDialog : Form
 {
     readonly UpdateInfo info;
+    readonly Func<Task<string?>>? serviceInstall;
     readonly ModernButton install = new(Tr("Installer et redémarrer", "Install and restart"), primary: true);
     readonly ModernButton later = new(Tr("Plus tard", "Later"));
     readonly ModernButton skip = new(Tr("Ignorer cette version", "Skip this version"));
@@ -16,9 +17,11 @@ public sealed class UpdateDialog : Form
     readonly Label status = new() { AutoSize = true, Tag = Theme.HintTag };
     CancellationTokenSource? cts;
 
-    public UpdateDialog(UpdateInfo info)
+    /// <param name="serviceInstall">Installation confiée au service (MSI) ; null pour l'exe portable qui se remplace lui-même.</param>
+    public UpdateDialog(UpdateInfo info, Func<Task<string?>>? serviceInstall = null)
     {
         this.info = info;
+        this.serviceInstall = serviceInstall;
         Text = Tr("Mise à jour de Corral", "Corral update");
         Font = Ui.Base;
         Icon = AppIcon.Load(new Size(32, 32));
@@ -98,8 +101,36 @@ public sealed class UpdateDialog : Form
         progress.Visible = true;
         status.Text = Tr("Téléchargement…", "Downloading…");
         cts = new CancellationTokenSource();
+        if (serviceInstall != null)
+        {
+            status.Text = Tr("Téléchargement et installation par le service Corral…", "Download and installation by the Corral service…");
+            progress.Style = ProgressBarStyle.Marquee;
+            var error = await serviceInstall();
+            if (IsDisposed)
+                return;
+            if (error == null)
+            {
+                Choice = UpdateChoice.Installed;
+                Close();
+                return;
+            }
+            status.Text = Tr("Échec : ", "Failed: ") + error;
+            progress.Visible = false;
+            install.Enabled = later.Enabled = skip.Enabled = true;
+            return;
+        }
         try
         {
+            if (Installation.IsMsi && info.MsiUrl != null)
+            {
+                // Installé par le MSI : on passe par l'installeur signé (il installe aussi le service s'il manque)
+                var msi = await Updater.DownloadMsiAsync(info, Path.Combine(Path.GetTempPath(), "CorralUpdate"), cts.Token);
+                status.Text = Tr("Installation…", "Installing…");
+                Process.Start(new ProcessStartInfo("msiexec.exe", $"/i \"{msi}\" /passive /norestart") { UseShellExecute = false });
+                Choice = UpdateChoice.Installed;
+                Close();
+                return;
+            }
             var file = await Updater.DownloadAsync(info, new Progress<int>(p => progress.Value = Math.Clamp(p, 0, 100)), cts.Token);
             status.Text = Tr("Installation…", "Installing…");
             Updater.InstallAndRestart(file);

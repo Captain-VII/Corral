@@ -8,8 +8,8 @@ namespace Corral.UI;
 
 public sealed class MainForm : Form
 {
-    readonly Engine engine;
-    readonly RuleStore store;
+    readonly IEngine engine;
+    readonly ISettingsStore store;
     readonly Settings settings; // copie détenue par l'interface ; le moteur reçoit des clones
 
     readonly NavBar nav = new();
@@ -108,7 +108,7 @@ public sealed class MainForm : Form
         hotkeyStatus.ForeColor = failed.Count == 0 ? Theme.Current.Muted : Theme.Current.Warning;
     }
 
-    public MainForm(Engine engine, RuleStore store, Settings settings)
+    public MainForm(IEngine engine, ISettingsStore store, Settings settings)
     {
         this.engine = engine;
         this.store = store;
@@ -182,6 +182,21 @@ public sealed class MainForm : Form
     {
         page.Dock = DockStyle.Fill;
         page.Visible = false;
+        if (Policies.Current.Locks(title))
+        {
+            // Réglages imposés par l'organisation : visibles mais en lecture seule
+            foreach (Control c in page.Controls)
+                c.Enabled = false;
+            page.Controls.Add(new Label
+            {
+                Text = Tr("🔒 Géré par votre organisation : ces réglages sont en lecture seule.", "🔒 Managed by your organization: these settings are read-only."),
+                Dock = DockStyle.Top,
+                AutoSize = false,
+                Height = 30,
+                Tag = Theme.HintTag,
+                Padding = new Padding(28, 8, 0, 0),
+            });
+        }
         pageHost.Controls.Add(page);
         pages.Add((title, page));
         nav.Add(glyph, PageLabel(title));
@@ -324,7 +339,7 @@ public sealed class MainForm : Form
     {
         base.OnShown(e);
         updatingAutoStart = true;
-        try { autoStart.Checked = AutoStart.IsEnabled(); }
+        try { autoStart.Checked = Installation.IsMsi || AutoStart.IsEnabled(); }
         catch (Exception ex) { Log.Error("Lecture du démarrage automatique", ex); }
         finally { updatingAutoStart = false; }
     }
@@ -577,6 +592,12 @@ public sealed class MainForm : Form
     {
         if (SelectedProcess is not { } row || Exclusions.IsProtected(row.Name, row.Pid, Environment.ProcessId))
             return;
+        if (Policies.Current.DisableProcessTermination)
+        {
+            MessageBox.Show(this, Tr("Votre organisation ne permet pas de terminer des processus depuis Corral.", "Your organization does not allow ending processes from Corral."),
+                Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
         if (MessageBox.Show(this, Tr($"Terminer « {row.Name} » (PID {row.Pid}) ?\n\nLe programme se fermera immédiatement : ce qui n'est pas enregistré sera perdu.",
                     $"End “{row.Name}” (PID {row.Pid})?\n\nThe program will close immediately: anything unsaved will be lost."),
                 Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
@@ -1788,7 +1809,12 @@ public sealed class MainForm : Form
             if (Updater.IsPublishedBuild)
                 StartMenu.Sync(startMenu.Checked, Environment.ProcessPath!);
         };
-        var updates = new ToggleSwitch { Checked = settings.CheckUpdates };
+        if (msi)
+        {
+            autoStart.Enabled = false;
+            tips.SetToolTip(autoStart, Tr("Lancement à l'ouverture de session géré par l'installeur.", "Start at sign-in managed by the installer."));
+        }
+        var updates = new ToggleSwitch { Checked = settings.CheckUpdates, Enabled = !Policies.Current.DisableUpdates };
         updates.CheckedChanged += (_, _) =>
         {
             settings.CheckUpdates = updates.Checked;

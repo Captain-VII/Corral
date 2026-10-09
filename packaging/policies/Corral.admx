@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stratégies de groupe de Corral : copier Corral.admx dans C:\Windows\PolicyDefinitions (ou le magasin central)
+     et les dossiers fr-FR / en-US à côté. Valeurs écrites dans HKLM\SOFTWARE\Policies\Corral (voir Core/Policies.cs). -->
+<policyDefinitions xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <policyNamespaces>
+    <target prefix="corral" namespace="Corral.Policies" />
+    <using prefix="windows" namespace="Microsoft.Policies.Windows" />
+  </policyNamespaces>
+  <resources minRequiredRevision="1.0" />
+  <supportedOn>
+    <definitions>
+      <definition name="SUPPORTED_Corral21" displayName="$(string.SUPPORTED_Corral21)" />
+    </definitions>
+  </supportedOn>
+  <categories>
+    <category name="Corral" displayName="$(string.Corral)" />
+  </categories>
+  <policies>
+    <policy name="LockSettings" class="Machine" displayName="$(string.LockSettings)" explainText="$(string.LockSettings_Help)"
+            key="SOFTWARE\Policies\Corral" valueName="LockSettings">
+      <parentCategory ref="Corral" />
+      <supportedOn ref="SUPPORTED_Corral21" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="RulesFile" class="Machine" displayName="$(string.RulesFile)" explainText="$(string.RulesFile_Help)"
+            presentation="$(presentation.RulesFile)" key="SOFTWARE\Policies\Corral">
+      <parentCategory ref="Corral" />
+      <supportedOn ref="SUPPORTED_Corral21" />
+      <elements>
+        <text id="RulesFilePath" valueName="RulesFile" required="true" expandable="true" />
+      </elements>
+    </policy>
+    <policy name="ProBalance" class="Machine" displayName="$(string.ProBalance)" explainText="$(string.ProBalance_Help)"
+            key="SOFTWARE\Policies\Corral" valueName="ProBalance">
+      <parentCategory ref="Corral" />
+      <supportedOn ref="SUPPORTED_Corral21" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableUpdates" class="Machine" displayName="$(string.DisableUpdates)" explainText="$(string.DisableUpdates_Help)"
+            key="SOFTWARE\Policies\Corral" valueName="DisableUpdates">
+      <parentCategory ref="Corral" />
+      <supportedOn ref="SUPPORTED_Corral21" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableProcessTermination" class="Machine" displayName="$(string.DisableProcessTermination)" explainText="$(string.DisableProcessTermination_Help)"
+            key="SOFTWARE\Policies\Corral" valueName="DisableProcessTermination">
+      <parentCategory ref="Corral" />
+      <supportedOn ref="SUPPORTED_Corral21" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableStartupManager" class="Machine" displayName="$(string.DisableStartupManager)" explainText="$(string.DisableStartupManager_Help)"
+            key="SOFTWARE\Policies\Corral" valueName="DisableStartupManager">
+      <parentCategory ref="Corral" />
+      <supportedOn ref="SUPPORTED_Corral21" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+  </policies>
+</policyDefinitions>

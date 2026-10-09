@@ -67,6 +67,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "MSI invalide" }
           $hash = (Get-FileHash publish/Corral.msi -Algorithm SHA256).Hash.ToLower()
           "$hash  Corral.msi" | Out-File publish/Corral.msi.sha256 -Encoding ascii -NoNewline
+          # Modèles de stratégie de groupe
+          Compress-Archive -Path packaging/policies/* -DestinationPath publish/Corral-ADMX.zip
+
+      - name: Signature de l'installeur
+        shell: pwsh
+        env:
+          CORRAL_SIGNING_KEY: ${{ secrets.CORRAL_SIGNING_KEY }}
+        run: |
+          # Le service n'installe que des MSI signés par cette clé (voir Updater.DownloadMsiAsync)
+          dotnet run --project tools/UpdateSigner -c Release -- sign publish/Corral.msi publish/Corral.msi.sig
+          if ($LASTEXITCODE -ne 0) { throw "Signature du MSI impossible" }
 
       - name: Attestation de provenance
         uses: actions/attest-build-provenance@v4
@@ -85,3 +96,5 @@ jobs:
             publish/Corral.exe.sig
             publish/Corral.msi
             publish/Corral.msi.sha256
+            publish/Corral.msi.sig
+            publish/Corral-ADMX.zip

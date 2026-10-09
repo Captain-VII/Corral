@@ -143,6 +143,12 @@ public sealed class GpuPreferences
 
     public IReadOnlyCollection<string> Managed => managed;
 
+    /// <summary>
+    /// Ruche de l'utilisateur visé. Par défaut HKCU ; le service (compte SYSTEM) vise celle de l'utilisateur connecté,
+    /// ou null s'il n'y en a pas (rien n'est alors modifié).
+    /// </summary>
+    public Func<RegistryKey?> Hive { get; set; } = () => Registry.CurrentUser;
+
     public static string Label(GpuPreference p) => p switch
     {
         GpuPreference.HighPerformance => Tr("Haute performance", "High performance"),
@@ -152,7 +158,8 @@ public sealed class GpuPreferences
 
     public GpuPreference? Get(string exePath)
     {
-        using var key = Registry.CurrentUser.OpenSubKey(keyPath);
+        using var hive = Hive();
+        using var key = hive?.OpenSubKey(keyPath);
         if (key?.GetValue(exePath) is not string value)
             return null;
         foreach (var part in value.Split(';', StringSplitOptions.RemoveEmptyEntries))
@@ -169,7 +176,10 @@ public sealed class GpuPreferences
     {
         if (Get(exePath) == preference && managed.Contains(exePath))
             return false;
-        using var key = Registry.CurrentUser.CreateSubKey(keyPath);
+        using var hive = Hive();
+        if (hive == null)
+            return false;
+        using var key = hive.CreateSubKey(keyPath);
         key.SetValue(exePath, $"GpuPreference={(int)preference};");
         managed.Add(exePath);
         SaveManaged();
@@ -183,7 +193,8 @@ public sealed class GpuPreferences
         var removed = managed.Where(p => !keep.Contains(p)).ToList();
         if (removed.Count == 0)
             return removed;
-        using (var key = Registry.CurrentUser.OpenSubKey(keyPath, writable: true))
+        using (var hive = Hive())
+        using (var key = hive?.OpenSubKey(keyPath, writable: true))
         {
             foreach (var path in removed)
                 key?.DeleteValue(path, throwOnMissingValue: false);

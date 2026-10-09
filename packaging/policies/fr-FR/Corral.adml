@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                           revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <displayName>Corral</displayName>
+  <description>Stratégies de Corral, gestionnaire de processus</description>
+  <resources>
+    <stringTable>
+      <string id="Corral">Corral</string>
+      <string id="SUPPORTED_Corral21">Corral 2.1 ou version ultérieure</string>
+      <string id="LockSettings">Verrouiller les réglages</string>
+      <string id="LockSettings_Help">Si vous activez ce paramètre, personne ne peut modifier les règles, ProBalance, le Mode Jeu ni les optimisations depuis l'interface de Corral, ni changer la priorité d'un processus. Les pages concernées restent visibles en lecture seule.
+
+Utilisez « Règles imposées » pour fournir les règles.
+
+Prend effet au redémarrage du service Corral ou du PC.</string>
+      <string id="RulesFile">Règles imposées</string>
+      <string id="RulesFile_Help">Chemin d'un fichier de règles exporté depuis Corral (page Règles, menu ⋯ › Exporter). Ses règles remplacent les règles locales sur chaque poste.
+
+Le fichier peut être sur un partage réseau : il est lu par le service Corral (compte de l'ordinateur), qui doit pouvoir y accéder. S'il est illisible, les règles locales sont conservées et un avertissement est inscrit dans l'Observateur d'événements.
+
+Les variables d'environnement sont acceptées (%ProgramData%…).</string>
+      <string id="ProBalance">ProBalance</string>
+      <string id="ProBalance_Help">Activé : ProBalance est toujours actif. Désactivé : ProBalance est toujours arrêté. Non configuré : l'utilisateur choisit.</string>
+      <string id="DisableUpdates">Désactiver les mises à jour automatiques</string>
+      <string id="DisableUpdates_Help">Si vous activez ce paramètre, Corral ne recherche ni n'installe de mise à jour : déployez les nouvelles versions vous-même (Corral.msi, installation silencieuse avec msiexec /i Corral.msi /qn).</string>
+      <string id="DisableProcessTermination">Interdire de terminer des processus</string>
+      <string id="DisableProcessTermination_Help">Si vous activez ce paramètre, la commande « Terminer le processus » de Corral est refusée.</string>
+      <string id="DisableStartupManager">Interdire la gestion des programmes au démarrage</string>
+      <string id="DisableStartupManager_Help">Si vous activez ce paramètre, la page Démarrage de Corral est en lecture seule.</string>
+    </stringTable>
+    <presentationTable>
+      <presentation id="RulesFile">
+        <textBox refId="RulesFilePath">
+          <label>Fichier de règles :</label>
+        </textBox>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>

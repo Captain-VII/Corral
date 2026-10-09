@@ -19,7 +19,7 @@ public sealed record EngineSnapshot(double SystemCpu, bool Paused, IReadOnlyList
 /// applique les règles aux nouveaux, fait tourner ProBalance et publie un instantané pour l'interface.
 /// Toute modification est mémorisée pour être annulée à l'arrêt, en pause ou au changement de règles.
 /// </summary>
-public sealed class Engine : IDisposable
+public sealed class Engine : IEngine, IDisposable
 {
     sealed class Tracked
     {

@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Corral.Core;
 
 public enum LogLevel { Info, Warning, Error }
@@ -14,6 +16,41 @@ public static class Log
     static readonly object sync = new();
     static readonly LinkedList<LogEntry> recent = new();
     static string? path;
+    static bool eventLog;
+
+    const string EventSource = "Corral";
+
+    /// <summary>Chaque nouvelle entrée (le service les relaie à l'interface). Levé hors verrou.</summary>
+    public static event Action<LogEntry>? Written;
+
+    /// <summary>
+    /// Copie aussi les avertissements, les erreurs et les événements généraux dans l'Observateur d'événements
+    /// (journal Application, source « Corral »), lisible par les outils de supervision. Nécessite les droits administrateur.
+    /// </summary>
+    public static void EnableEventLog()
+    {
+        try
+        {
+            if (!EventLog.SourceExists(EventSource))
+                EventLog.CreateEventSource(EventSource, "Application");
+            eventLog = true;
+        }
+        catch (Exception ex)
+        {
+            Warn("Observateur d'événements indisponible : " + ex.Message);
+        }
+    }
+
+    /// <summary>Ajoute une entrée venue du service (mémoire seulement : le service a son propre fichier).</summary>
+    public static void Append(LogEntry entry)
+    {
+        lock (sync)
+        {
+            recent.AddLast(entry);
+            if (recent.Count > MaxRecent)
+                recent.RemoveFirst();
+        }
+    }
 
     public static void Init(string directory)
     {
@@ -56,5 +93,15 @@ public static class Log
             }
             catch { }
         }
+        if (eventLog && (level != LogLevel.Info || category == LogCategory.General))
+        {
+            try
+            {
+                var type = level switch { LogLevel.Warning => EventLogEntryType.Warning, LogLevel.Error => EventLogEntryType.Error, _ => EventLogEntryType.Information };
+                EventLog.WriteEntry(EventSource, message.Length > 30_000 ? message[..30_000] : message, type, 1000 + (int)category);
+            }
+            catch { }
+        }
+        try { Written?.Invoke(entry); } catch { }
     }
 }

@@ -17,9 +17,10 @@
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/Captain-VII/Corral" />
     <Property Id="ARPHELPLINK" Value="https://github.com/Captain-VII/Corral/issues" />
 
-    <!-- Ferme Corral (qui restaure priorités et plan d'alimentation à la fin de session) avant de remplacer ou supprimer l'exe -->
+    <!-- Ferme les interfaces lancées hors du service (exe portable, ancienne version) avant de remplacer l'exe.
+         Pas de TerminateProcess : il viserait aussi le service, que ServiceControl arrête proprement (restauration). -->
     <util:CloseApplication Id="CloseCorral" Target="Corral.exe" CloseMessage="no" EndSessionMessage="yes"
-                           ElevatedEndSessionMessage="yes" TerminateProcess="0" Timeout="5" RebootPrompt="no" />
+                           ElevatedEndSessionMessage="yes" Timeout="10" RebootPrompt="no" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Corral">
@@ -28,7 +29,18 @@
             <Shortcut Id="CorralShortcut" Directory="ProgramMenuFolder" Name="Corral"
                       Description="Corral - gestion des processus" WorkingDirectory="INSTALLFOLDER" />
           </File>
-          <!-- Restes d'une mise à jour automatique (voir Updater) -->
+          <!-- Le moteur tourne dans ce service (compte SYSTEM) ; l'interface s'y connecte sans droits administrateur -->
+          <ServiceInstall Id="CorralService" Name="Corral" DisplayName="Corral"
+                          Description="Applique les règles de Corral (priorités, ProBalance, Mode Jeu…) et restaure tout à l'arrêt."
+                          Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem" Arguments="--service">
+            <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart"
+                                ThirdFailureActionType="none" RestartServiceDelayInSeconds="10" ResetPeriodInDays="1" />
+          </ServiceInstall>
+          <ServiceControl Id="CorralService" Name="Corral" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+          <!-- Interface lancée à l'ouverture de session de chaque utilisateur -->
+          <RegistryValue Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run" Name="Corral" Type="string"
+                         Value="&quot;[INSTALLFOLDER]Corral.exe&quot; --minimized" />
+          <!-- Restes d'une mise à jour automatique de l'exe portable (voir Updater) -->
           <RemoveFile Id="OldExe" Name="Corral.exe.old" On="uninstall" />
           <RemoveFile Id="DownloadedExe" Name="Corral.exe.download" On="uninstall" />
           <!-- Lu par Installation.IsMsi -->
@@ -37,14 +49,17 @@
       </Directory>
     </StandardDirectory>
 
-    <!-- Désinstallation : supprime la tâche planifiée « Corral » (démarrage à l'ouverture de session) -->
+    <!-- Supprime la tâche planifiée « Corral » de l'exe portable : à l'installation (remplacée par la clé Run) et à la désinstallation -->
     <SetProperty Id="RemoveAutoStart" Value="&quot;[System64Folder]schtasks.exe&quot; /delete /tn Corral /f"
                  Before="RemoveAutoStart" Sequence="execute" />
     <CustomAction Id="RemoveAutoStart" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
                   Execute="deferred" Impersonate="no" Return="ignore" />
+    <!-- Installation interactive ou /passive : lance l'interface à la fin (pas en /qn : déploiement silencieux, ou mise à jour par le service qui la relance lui-même) -->
+    <Property Id="WixShellExecTarget" Value="[#CorralExe]" />
+    <CustomAction Id="LaunchCorral" BinaryRef="Wix4UtilCA_X64" DllEntry="WixShellExec" Impersonate="yes" Return="ignore" />
     <InstallExecuteSequence>
-      <Custom Action="RemoveAutoStart" Before="RemoveFiles"
-              Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="RemoveAutoStart" Before="RemoveFiles" Condition="NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="LaunchCorral" After="InstallFinalize" Condition="NOT REMOVE AND UILevel &gt;= 3" />
     </InstallExecuteSequence>
 
     <Feature Id="Main">
