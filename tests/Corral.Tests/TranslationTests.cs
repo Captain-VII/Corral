@@ -43,8 +43,10 @@ public class TranslationTests
             File.WriteAllText(Path.Combine(folder, "en.json"), en + "\n");
             File.WriteAllText(Path.Combine(folder, "fr.json"), fr + "\n");
         }
-        Assert.True(File.Exists(Path.Combine(folder, "en.json")) && File.ReadAllText(Path.Combine(folder, "en.json")).TrimEnd() == en
-                    && File.ReadAllText(Path.Combine(folder, "fr.json")).TrimEnd() == fr,
+        // Fins de ligne ignorées : Git peut les convertir à l'extraction
+        static string Normalize(string s) => s.Replace("\r\n", "\n").TrimEnd();
+        Assert.True(File.Exists(Path.Combine(folder, "en.json")) && Normalize(File.ReadAllText(Path.Combine(folder, "en.json"))) == Normalize(en)
+                    && Normalize(File.ReadAllText(Path.Combine(folder, "fr.json"))) == Normalize(fr),
             "Catalogues à régénérer : CORRAL_UPDATE_TRANSLATIONS=1 dotnet test --filter TranslationTests");
 
         // Toute autre langue fournie doit être un catalogue valide sur les mêmes clés
