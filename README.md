@@ -6,6 +6,7 @@ Gestionnaire de processus libre et gratuit pour Windows 10/11, alternative open 
 
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 [![Licence GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Captain-VII/Corral/badge)](https://scorecard.dev/viewer/?uri=github.com/Captain-VII/Corral)
 
 - **Règles par application** : priorité, affinité CPU (avec choix adaptés au processeur : cœurs P, CCD avec V-Cache, sans SMT), plan d'alimentation, plafonds CPU et RAM (Job Objects), mode efficacité, priorités disque et mémoire, carte graphique préférée. Jokers acceptés (`chrome*`), modèles prêts à l'emploi (Jeu, Streaming, Tâche de fond, Brider), import et export.
 - **Automatisations** : bloquer un programme ou n'en autoriser qu'une instance, empêcher la mise en veille tant qu'il tourne, alerte (ou baisse de priorité, ou fermeture) quand il dépasse un seuil de CPU ou de mémoire.
@@ -16,7 +17,7 @@ Gestionnaire de processus libre et gratuit pour Windows 10/11, alternative open 
 - **Surveillance** : CPU, mémoire, disque (E/S) et GPU par processus, fiche détaillée avec l'historique des 5 dernières minutes, graphiques du CPU et de la mémoire du PC, programmes les plus gourmands, journal filtrable.
 - **Démarrage** : liste des programmes lancés avec Windows, à activer ou désactiver comme dans le Gestionnaire des tâches.
 - **Restauration** : priorités, affinités et plan d'alimentation d'origine sont rétablis à la fermeture ou en pause, et aussi après un plantage (pour le plan d'alimentation).
-- **Interface** : en français ou en anglais (selon Windows), thème clair ou sombre, icône de notification avec la charge du processeur, mini-fenêtre toujours visible, raccourcis clavier globaux (Mode Jeu, pause), démarrage à l'ouverture de session, raccourci dans le menu Démarrer.
+- **Interface** : en français ou en anglais (selon Windows), d'autres langues grâce aux traductions de la communauté, accessible (lecteurs d'écran, clavier, contraste élevé), thème clair ou sombre, icône de notification avec la charge du processeur, mini-fenêtre toujours visible, raccourcis clavier globaux (Mode Jeu, pause), démarrage à l'ouverture de session, raccourci dans le menu Démarrer.
 - **Mises à jour automatiques** via les releases GitHub, vérifiées par somme SHA-256 et signature numérique.
 - **Entreprise** : service Windows (aucune invite UAC, fonctionne pour les utilisateurs standard), modèles de stratégie de groupe (ADMX) pour verrouiller les réglages ou imposer des règles, événements dans l'Observateur d'événements.
 
@@ -25,6 +26,7 @@ Gestionnaire de processus libre et gratuit pour Windows 10/11, alternative open 
 Depuis la page [Releases](../../releases/latest), au choix :
 
 - **`Corral.msi`** (recommandé) : installe Corral dans Program Files avec un **service Windows** qui applique les règles. L'interface se lance à l'ouverture de session, sans invite UAC, y compris pour un utilisateur standard. Désinstallation depuis les Paramètres de Windows.
+- Sur un PC ARM64 (Snapdragon…), prenez **`Corral-arm64.msi`** ou **`Corral-arm64.exe`**.
 - **`Corral.exe`** : version portable, à lancer depuis n'importe quel dossier. Elle demande les droits administrateur à chaque lancement (invite UAC), sauf si elle est lancée par sa tâche de démarrage.
 
 Aucune installation de .NET n'est nécessaire.
@@ -72,6 +74,10 @@ git push origin vX.Y.Z
 ```
 
 Seuls les exe produits par ce workflow se mettent à jour automatiquement : une version compilée localement a les mises à jour désactivées.
+
+## Traduire Corral
+
+Les textes de l'interface sont dans [`translations/`](translations) : `fr.json` (texte d'origine) et `en.json` sont générés depuis le code. Pour une nouvelle langue, créez `translations/xx.json` (`xx` = code de la langue, par exemple `de`) avec les mêmes clés et vos traductions en valeur, puis ouvrez une pull request. Les textes non traduits s'affichent en anglais. Le fichier peut aussi être déposé dans un dossier `lang` à côté de l'exe pour l'essayer sans recompiler.
 
 ## Contribuer
 

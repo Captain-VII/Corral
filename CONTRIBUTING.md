@@ -20,10 +20,21 @@ Une faille de sécurité ne se signale **pas** dans une issue publique : voir [S
 
 4. Ouvrez une pull request qui explique le **pourquoi** de la modification.
 
+## Traduire
+
+Voir la section « Traduire Corral » du [README](README.md#traduire-corral). Les clés sont les textes français du code ; les éléments entre accolades (`{name}`) sont remplacés par Corral et doivent rester tels quels dans la traduction.
+
+Après avoir ajouté ou modifié un texte `Tr("…", "…")` dans le code, régénérez les catalogues :
+
+```bash
+CORRAL_UPDATE_TRANSLATIONS=1 dotnet test --filter TranslationTests
+```
+
 ## Règles du code
 
 - Corral agit sur tous les processus du PC : toute modification doit être **restaurée** à l'arrêt, en pause ou au changement de réglages, et ne jamais toucher aux processus protégés (`Exclusions.IsProtected`).
-- Tout texte visible passe par `Tr("français", "English")`.
+- Tout texte visible passe par `Tr("français", "English")`, avec des littéraux (pas de concaténation) pour qu'il soit traduisible.
+- Tout contrôle sans texte visible a un nom pour les lecteurs d'écran (`AccessibleName`, ou `SettingRow` qui le donne).
 - Suivez le style du code existant (commentaires en français, noms en anglais).
 - Ajoutez un test pour chaque correction ou nouvelle fonction quand c'est possible.
 

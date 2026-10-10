@@ -300,6 +300,12 @@ public sealed class NavBar : Control
             selected = value;
             Invalidate();
             SelectedChanged?.Invoke(value);
+            if (Focused && IsHandleCreated)
+            {
+                // Lecteurs d'écran : annonce la page choisie au clavier
+                AccessibilityNotifyClients(AccessibleEvents.Selection, value);
+                AccessibilityNotifyClients(AccessibleEvents.Focus, value);
+            }
         }
     }
 
@@ -359,8 +365,70 @@ public sealed class NavBar : Control
         base.OnKeyDown(e);
     }
 
-    protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+    protected override void OnGotFocus(EventArgs e)
+    {
+        Invalidate();
+        base.OnGotFocus(e);
+        if (IsHandleCreated && items.Count > 0)
+            AccessibilityNotifyClients(AccessibleEvents.Focus, selected);
+    }
+
     protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+
+    protected override AccessibleObject CreateAccessibilityInstance() => new NavAccessible(this);
+
+    /// <summary>Pour les lecteurs d'écran : une liste d'onglets (les pages), suivie des boutons Pause et Mode Jeu.</summary>
+    sealed class NavAccessible : ControlAccessibleObject
+    {
+        readonly NavBar nav;
+
+        public NavAccessible(NavBar nav) : base(nav) => this.nav = nav;
+
+        public override AccessibleRole Role => AccessibleRole.PageTabList;
+        public override string? Name => Tr("Pages de Corral", "Corral pages");
+        public override int GetChildCount() => nav.items.Count + nav.Controls.Count;
+
+        public override AccessibleObject? GetChild(int index) =>
+            index < 0 ? null
+            : index < nav.items.Count ? new ItemAccessible(nav, this, index)
+            : index - nav.items.Count < nav.Controls.Count ? nav.Controls[index - nav.items.Count].AccessibilityObject
+            : null;
+
+        public override AccessibleObject? GetFocused() => nav.Focused && nav.items.Count > 0 ? GetChild(nav.selected) : base.GetFocused();
+        public override AccessibleObject? GetSelected() => nav.items.Count > 0 ? GetChild(nav.selected) : null;
+    }
+
+    sealed class ItemAccessible : AccessibleObject
+    {
+        readonly NavBar nav;
+        readonly AccessibleObject parent;
+        readonly int index;
+
+        public ItemAccessible(NavBar nav, AccessibleObject parent, int index)
+        {
+            this.nav = nav;
+            this.parent = parent;
+            this.index = index;
+        }
+
+        public override string? Name => nav.items[index].Text;
+        public override AccessibleRole Role => AccessibleRole.PageTab;
+        public override AccessibleObject Parent => parent;
+        public override Rectangle Bounds => nav.RectangleToScreen(nav.ItemBounds(index));
+        public override string? DefaultAction => Tr("Ouvrir", "Open");
+        public override void DoDefaultAction() => nav.Selected = index;
+
+        public override AccessibleStates State
+        {
+            get
+            {
+                var state = AccessibleStates.Selectable | AccessibleStates.Focusable;
+                if (index == nav.selected)
+                    state |= AccessibleStates.Selected | (nav.Focused ? AccessibleStates.Focused : 0);
+                return state;
+            }
+        }
+    }
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -479,6 +547,7 @@ public sealed class TopList : Control
     public TopList()
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        AccessibleRole = AccessibleRole.List;
     }
 
     public string EmptyText { get; set; } = Tr("Collecte des mesures…", "Collecting data…");
@@ -486,6 +555,8 @@ public sealed class TopList : Control
     public void SetItems(IReadOnlyList<(string Name, double Value, string Text)> list)
     {
         items = list;
+        // Lecteurs d'écran : le classement est lu comme une phrase
+        AccessibleDescription = list.Count == 0 ? EmptyText : string.Join(" ; ", list.Select(i => $"{i.Name} {i.Text}"));
         Invalidate();
     }
 
@@ -554,5 +625,43 @@ public static class InputBox
         form.HandleCreated += (_, _) => Theme.ApplyTitleBar(form);
         Theme.Apply(form);
         return form.ShowDialog(owner) == DialogResult.OK ? box.Text : null;
+    }
+}
+
+/// <summary>Noms pour les lecteurs d'écran (Narrateur, NVDA) des contrôles qui n'affichent pas leur propre libellé.</summary>
+public static class A11y
+{
+    /// <summary>Nomme les champs de saisie de <paramref name="control"/> d'après le libellé de leur ligne de réglage.</summary>
+    public static void Label(Control control, string name, string? description = null)
+    {
+        foreach (var input in Inputs(control))
+        {
+            if (string.IsNullOrEmpty(input.AccessibleName))
+                input.AccessibleName = name;
+            if (description != null && string.IsNullOrEmpty(input.AccessibleDescription))
+                input.AccessibleDescription = description;
+        }
+    }
+
+    static IEnumerable<Control> Inputs(Control c) =>
+        c is ComboBox or ToggleSwitch or NumericUpDown or TextBoxBase or TrackBar
+            ? new[] { c }
+            : c.Controls.Cast<Control>().SelectMany(Inputs);
+
+    /// <summary>Boutons qui n'affichent qu'une icône : leur infobulle leur sert de nom (sans le raccourci entre parenthèses).</summary>
+    public static void NameIconButtons(Control root, ToolTip tips)
+    {
+        foreach (Control c in root.Controls)
+        {
+            if (c is ButtonBase b && string.IsNullOrEmpty(b.AccessibleName) && IsIconOnly(b.Text) && tips.GetToolTip(b) is { Length: > 0 } tip)
+                b.AccessibleName = tip.Split(" (")[0].Split('\n')[0].Trim();
+            NameIconButtons(c, tips);
+        }
+    }
+
+    public static bool IsIconOnly(string text)
+    {
+        var t = text.Trim();
+        return t.Length is > 0 and <= 2 && t.All(ch => ch is >= '' and <= '' or '⋯' or '…' or '+' or '×');
     }
 }

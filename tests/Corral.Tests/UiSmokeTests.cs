@@ -45,6 +45,59 @@ public class UiSmokeTests
         try { Directory.Delete(dir, true); } catch { }
     }
 
+    static IEnumerable<Control> All(Control root) => root.Controls.Cast<Control>().SelectMany(c => All(c).Prepend(c));
+
+    [Fact]
+    public void ScreenReadersGetNamesForEveryControl()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "CorralA11y_" + Guid.NewGuid().ToString("N"));
+        RunSta(() =>
+        {
+            var settings = new Settings();
+            var engine = new Engine(RuleStore.Clone(settings), new NoPower(), foregroundPid: () => -1);
+            using var form = new MainForm(engine, new RuleStore(Path.Combine(dir, "config.json")), settings);
+            form.Show();
+            Application.DoEvents();
+
+            var unnamed = All(form)
+                .Where(c => c is ToggleSwitch or ComboBox or NumericUpDown or TextBoxBase or ButtonBase && c.Parent is not NumericUpDown)
+                .Where(c => string.IsNullOrWhiteSpace(c.AccessibleName) && (string.IsNullOrWhiteSpace(c.Text) || A11y.IsIconOnly(c.Text) || c is ComboBox or NumericUpDown or TextBoxBase))
+                .Select(c => $"{c.GetType().Name} « {c.Text} » dans {c.Parent?.GetType().Name}")
+                .ToList();
+            Assert.True(unnamed.Count == 0, "Sans nom : " + string.Join(" | ", unnamed));
+
+            // Barre de navigation : une liste d'onglets, un par page, que l'on peut ouvrir
+            var nav = All(form).OfType<NavBar>().Single().AccessibilityObject;
+            Assert.Equal(AccessibleRole.PageTabList, nav.Role);
+            var tabs = Enumerable.Range(0, nav.GetChildCount()).Select(nav.GetChild).Where(c => c?.Role == AccessibleRole.PageTab).ToList();
+            Assert.Equal(9, tabs.Count);
+            Assert.All(tabs, t => Assert.False(string.IsNullOrEmpty(t!.Name)));
+            tabs[2]!.DoDefaultAction();
+            Assert.True((tabs[2]!.State & AccessibleStates.Selected) != 0);
+
+            form.CloseForReal();
+            engine.Stop();
+        });
+        try { Directory.Delete(dir, true); } catch { }
+    }
+
+    [Fact]
+    public void BugReportLinkIsPrefilled()
+    {
+        var url = MainForm.BugReportUrl();
+        Assert.StartsWith("https://github.com/Captain-VII/Corral/issues/new?template=bug.yml&version=", url);
+        Assert.Contains("&windows=Windows%20", url);
+    }
+
+    [Fact]
+    public void HighContrastPaletteUsesSystemColors()
+    {
+        var p = Theme.HighContrastPalette();
+        Assert.Equal(SystemColors.WindowText, p.Fore);
+        Assert.Equal(SystemColors.Window, p.Back);
+        Assert.Equal(SystemColors.Highlight, p.Accent);
+    }
+
     [Fact]
     public void EmbeddedIconLoads()
     {

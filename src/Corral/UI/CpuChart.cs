@@ -23,6 +23,7 @@ public sealed class CpuChart : Control
         DoubleBuffered = true;
         ResizeRedraw = true;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        AccessibleRole = AccessibleRole.Chart;
     }
 
     public TimeSpan Range { get; set; } = TimeSpan.FromMinutes(5);
@@ -210,9 +211,20 @@ public sealed class MiniChart : Control
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         Size = new Size(290, 92);
+        AccessibleRole = AccessibleRole.Chart;
     }
 
-    public string Title { get; set; } = "";
+    public string Title
+    {
+        get => title;
+        set
+        {
+            title = value;
+            AccessibleName = value;
+        }
+    }
+
+    string title = "";
     public Func<double, string> Format { get; set; } = v => $"{v:0} %";
 
     /// <summary>Haut de l'échelle (100 pour un pourcentage) ; null = adapté au pic.</summary>

@@ -2,6 +2,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -21,11 +22,15 @@ public sealed record UpdateInfo(Version Version, string Notes, string PageUrl, s
 /// </summary>
 public static class Updater
 {
-    public const string ExeAsset = "Corral.exe";
-    public const string ShaAsset = "Corral.exe.sha256";
-    public const string SigAsset = "Corral.exe.sig";
-    public const string MsiAsset = "Corral.msi";
-    public const string MsiSigAsset = "Corral.msi.sig";
+    /// <summary>
+    /// Fichiers d'une release pour une architecture : Corral.exe, Corral.msi… pour x64 (noms d'origine, que les versions
+    /// installées cherchent), Corral-arm64.exe, Corral-arm64.msi… pour ARM64. Chaque PC reste sur son architecture.
+    /// </summary>
+    public static (string Exe, string Sha, string Sig, string Msi, string MsiSig) Assets(Architecture arch)
+    {
+        var name = arch == Architecture.Arm64 ? "Corral-arm64" : "Corral";
+        return ($"{name}.exe", $"{name}.exe.sha256", $"{name}.exe.sig", $"{name}.msi", $"{name}.msi.sig");
+    }
 
     /// <summary>Clé publique ECDSA P-256 (SubjectPublicKeyInfo en base64) ; la clé privée est un secret du dépôt GitHub.</summary>
     public const string PublicKey = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEB9O83LQqIR5OioCbJ26TNrWwn+k1G6uQIaL0J1jPCgagGIQSKKjbxAA54qAWFAxgu3b2oupSGNv10pesWkOHhg==";
@@ -76,8 +81,9 @@ public static class Updater
     }
 
     /// <summary>Lit la réponse de l'API GitHub ; null si pas plus récent ou release incomplète.</summary>
-    public static UpdateInfo? ParseRelease(string json, Version current)
+    public static UpdateInfo? ParseRelease(string json, Version current, Architecture? architecture = null)
     {
+        var (exeAsset, shaAsset, sigAsset, msiAsset, msiSigAsset) = Assets(architecture ?? RuntimeInformation.ProcessArchitecture);
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
         if (root.TryGetProperty("draft", out var draft) && draft.GetBoolean() ||
@@ -94,11 +100,11 @@ public static class Updater
             {
                 var name = a.GetProperty("name").GetString();
                 var link = a.GetProperty("browser_download_url").GetString();
-                if (string.Equals(name, ExeAsset, StringComparison.OrdinalIgnoreCase)) exe = link;
-                else if (string.Equals(name, ShaAsset, StringComparison.OrdinalIgnoreCase)) sha = link;
-                else if (string.Equals(name, SigAsset, StringComparison.OrdinalIgnoreCase)) sig = link;
-                else if (string.Equals(name, MsiAsset, StringComparison.OrdinalIgnoreCase)) msi = link;
-                else if (string.Equals(name, MsiSigAsset, StringComparison.OrdinalIgnoreCase)) msiSig = link;
+                if (string.Equals(name, exeAsset, StringComparison.OrdinalIgnoreCase)) exe = link;
+                else if (string.Equals(name, shaAsset, StringComparison.OrdinalIgnoreCase)) sha = link;
+                else if (string.Equals(name, sigAsset, StringComparison.OrdinalIgnoreCase)) sig = link;
+                else if (string.Equals(name, msiAsset, StringComparison.OrdinalIgnoreCase)) msi = link;
+                else if (string.Equals(name, msiSigAsset, StringComparison.OrdinalIgnoreCase)) msiSig = link;
             }
         }
         if (exe == null || sha == null || sig == null)
@@ -167,7 +173,7 @@ public static class Updater
             throw new InvalidDataException(Tr("Cette version n'a pas d'installeur signé", "This version has no signed installer"));
         var signature = await http.GetStringAsync(info.MsiSigUrl, ct);
         Directory.CreateDirectory(directory);
-        var target = Path.Combine(directory, MsiAsset);
+        var target = Path.Combine(directory, "Corral-update.msi");
         await using (var input = await http.GetStreamAsync(info.MsiUrl, ct))
         await using (var output = File.Create(target))
             await input.CopyToAsync(output, ct);

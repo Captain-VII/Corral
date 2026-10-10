@@ -105,6 +105,8 @@ public sealed class TrayContext : ApplicationContext
         {
             if (e.Category == UserPreferenceCategory.General && settings.Theme == ThemeMode.System)
                 Theme.Set(ThemeMode.System);
+            else if (e.Category is UserPreferenceCategory.Accessibility or UserPreferenceCategory.Color)
+                Theme.Refresh(); // contraste élevé activé ou désactivé
         };
 
         tray = new NotifyIcon

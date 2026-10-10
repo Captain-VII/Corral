@@ -78,7 +78,7 @@ public class ComfortTests
             Profiles.Create(s, "Jeu", copyCurrent: true);
             s.Profiles.Add(new Profile { Name = "jeu" });   // doublon
             s.Profiles.Add(new Profile { Name = " " });     // vide
-            s.Language = "de";                              // inconnue
+            s.Language = "zz";                              // inconnue
             store.Save(s);
             var loaded = store.Load();
             Assert.Equal(new[] { "Principal", "Jeu" }, loaded.Profiles.Select(p => p.Name));

@@ -1,5 +1,13 @@
 # Journal des modifications
 
+## 2.2.0
+
+- **Accessibilité** : noms et rôles pour les lecteurs d'écran (Narrateur, NVDA) sur tous les réglages, la navigation entre pages, les graphiques et les classements ; prise en charge du contraste élevé de Windows.
+- **Traductions** : catalogues `translations/*.json` générés depuis le code ; toute nouvelle langue s'ajoute par un fichier JSON, sans toucher au code.
+- **ARM64** : `Corral-arm64.exe` et `Corral-arm64.msi` pour les PC ARM (Snapdragon…) ; chaque PC se met à jour avec les fichiers de son architecture.
+- Bouton « Signaler un problème » (Options › Aide) : ouvre le formulaire GitHub avec les versions de Corral et de Windows déjà remplies.
+- Analyse de sécurité CodeQL et note OpenSSF Scorecard.
+
 ## 2.1.1
 
 - Corrige l'interface qui ne se connectait pas au service pour un utilisateur sans droits administrateur (« Le service Corral ne répond pas »).

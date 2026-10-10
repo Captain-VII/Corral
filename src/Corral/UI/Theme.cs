@@ -27,7 +27,19 @@ public static class Theme
         Border: Color.FromArgb(60, 60, 60), Accent: Color.FromArgb(46, 170, 144), Warning: Color.FromArgb(240, 180, 70));
 
     public static bool IsDark { get; private set; }
-    public static Palette Current => IsDark ? Dark : Light;
+
+    /// <summary>Contraste élevé de Windows : on reprend ses couleurs système plutôt que les nôtres.</summary>
+    public static bool HighContrast => SystemInformation.HighContrast;
+
+    public static Palette Current => HighContrast ? HighContrastPalette() : IsDark ? Dark : Light;
+
+    public static Palette HighContrastPalette() => new(
+        Back: SystemColors.Window, Surface: SystemColors.Window, Surface2: SystemColors.Control,
+        Hover: SystemColors.Control, Fore: SystemColors.WindowText, Muted: SystemColors.GrayText,
+        Border: SystemColors.WindowText, Accent: SystemColors.Highlight, Warning: SystemColors.HotTrack);
+
+    /// <summary>Repeint tout (réglages d'accessibilité de Windows modifiés).</summary>
+    public static void Refresh() => Changed?.Invoke();
 
     /// <summary>Levé quand le thème effectif change.</summary>
     public static event Action? Changed;

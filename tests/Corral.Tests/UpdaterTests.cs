@@ -36,6 +36,27 @@ public class UpdaterTests : IDisposable
         Assert.Equal(expected, Updater.ParseVersion(tag)?.ToString());
 
     [Fact]
+    public void EachArchitectureGetsItsOwnFiles()
+    {
+        var json = """
+            { "tag_name": "v3.0.0", "draft": false, "prerelease": false, "body": "", "html_url": "",
+              "assets": [
+                { "name": "Corral.exe", "browser_download_url": "x64.exe" },
+                { "name": "Corral.exe.sha256", "browser_download_url": "x64.sha" },
+                { "name": "Corral.exe.sig", "browser_download_url": "x64.sig" },
+                { "name": "Corral-arm64.exe", "browser_download_url": "arm.exe" },
+                { "name": "Corral-arm64.exe.sha256", "browser_download_url": "arm.sha" },
+                { "name": "Corral-arm64.exe.sig", "browser_download_url": "arm.sig" },
+                { "name": "Corral-arm64.msi", "browser_download_url": "arm.msi" },
+                { "name": "Corral-arm64.msi.sig", "browser_download_url": "arm.msi.sig" } ] }
+            """;
+        var x64 = Updater.ParseRelease(json, new Version(2, 0), System.Runtime.InteropServices.Architecture.X64)!;
+        Assert.Equal(("x64.exe", "x64.sig", null), (x64.ExeUrl, x64.SigUrl, x64.MsiUrl));
+        var arm = Updater.ParseRelease(json, new Version(2, 0), System.Runtime.InteropServices.Architecture.Arm64)!;
+        Assert.Equal(("arm.exe", "arm.sha", "arm.msi", "arm.msi.sig"), (arm.ExeUrl, arm.ShaUrl, arm.MsiUrl, arm.MsiSigUrl));
+    }
+
+    [Fact]
     public void NewerReleaseIsOffered()
     {
         var info = Updater.ParseRelease(Release("v1.1.0"), new Version(1, 0, 0, 0));

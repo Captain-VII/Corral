@@ -21,7 +21,7 @@ public sealed class MainForm : Form
     readonly BufferedListView procList = new() { View = View.Details, FullRowSelect = true, HideSelection = false, MultiSelect = false, ShowItemToolTips = true };
     readonly Dictionary<string, ListViewItem> procItems = new();
     readonly ProcessSorter sorter = new();
-    readonly TextBox search = new() { PlaceholderText = Tr("Rechercher un processus", "Search processes"), Width = 240, Margin = new Padding(4, 5, 8, 0) };
+    readonly TextBox search = new() { PlaceholderText = Tr("Rechercher un processus", "Search processes"), Width = 240, Margin = new Padding(4, 5, 8, 0), AccessibleName = Tr("Rechercher un processus", "Search processes") };
     readonly ModernButton createRule = new(Tr("Créer une règle", "Create a rule")) { Enabled = false };
     readonly ModernButton detailsButton = new(Tr("Détails", "Details")) { Enabled = false };
     readonly UndoBanner processBanner = new();
@@ -68,7 +68,7 @@ public sealed class MainForm : Form
     readonly NumericUpDown pbRestore = Num(0, 100);
     readonly NumericUpDown pbTrigger = Num(1, 60);
     readonly NumericUpDown pbRestoreSec = Num(1, 60);
-    readonly TextBox pbExclusions = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, Height = 110, Dock = DockStyle.Fill };
+    readonly TextBox pbExclusions = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, Height = 110, Dock = DockStyle.Fill, AccessibleName = Tr("Programmes jamais abaissés par ProBalance, un par ligne", "Programs ProBalance never lowers, one per line") };
     readonly List<(ModernButton Button, ProBalanceSettings.Preset Preset)> presetButtons = new();
     readonly Label presetState = new() { AutoSize = true, Tag = Theme.HintTag, Margin = new Padding(8, 8, 0, 0) };
 
@@ -163,6 +163,9 @@ public sealed class MainForm : Form
         LoadProBalance();
         RestoreWindow();
         Theme.Apply(this);
+        A11y.NameIconButtons(this, tips);
+        chart.AccessibleName = Tr("Historique du processeur", "CPU history");
+        memChart.AccessibleName = Tr("Historique de la mémoire", "Memory history");
         loading = false;
     }
 
@@ -215,6 +218,22 @@ public sealed class MainForm : Form
             chart.Invalidate();
     }
 
+    /// <summary>Formulaire « Bug » du dépôt (.github/ISSUE_TEMPLATE/bug.yml), champs version et windows pré-remplis.</summary>
+    public static string BugReportUrl()
+    {
+        string windows = Environment.OSVersion.Version.ToString();
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+            int build = Environment.OSVersion.Version.Build;
+            windows = $"Windows {(build >= 22000 ? 11 : 10)} {key?.GetValue("DisplayVersion")} ({build}, {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture})";
+        }
+        catch { }
+        var repo = Updater.Repository ?? "Captain-VII/Corral";
+        return $"https://github.com/{repo}/issues/new?template=bug.yml" +
+               $"&version={Uri.EscapeDataString(Updater.CurrentVersion.ToString(3))}&windows={Uri.EscapeDataString(windows)}";
+    }
+
     /// <summary>Nom affiché d'une page (les titres français servent d'identifiants).</summary>
     static string PageLabel(string id) => !English ? id : id switch
     {
@@ -261,6 +280,7 @@ public sealed class MainForm : Form
         if (description != null)
             text.Controls.Add(new Label { Text = description, AutoSize = true, Tag = Theme.HintTag, MaximumSize = new Size(520, 0), Margin = new Padding(0, 2, 0, 0) });
         control.Anchor = AnchorStyles.Right;
+        A11y.Label(control, label, description);
         row.Controls.Add(text, 0, 0);
         row.Controls.Add(control, 1, 0);
         return row;
@@ -1554,7 +1574,7 @@ public sealed class MainForm : Form
     readonly ToggleSwitch gmLower = new();
     readonly ToggleSwitch gmNotify = new();
     readonly ComboBox gmPlan = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 240 };
-    readonly TextBox gmApps = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, Height = 110, Dock = DockStyle.Fill };
+    readonly TextBox gmApps = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, Height = 110, Dock = DockStyle.Fill, AccessibleName = Tr("Programmes de fond calmés par le Mode Jeu, un par ligne", "Background programs calmed by Game Mode, one per line") };
     readonly List<Guid> gmPlanIds = new();
     (bool, bool, string?, bool)? lastGameState;
 
@@ -1824,6 +1844,12 @@ public sealed class MainForm : Form
         check.Click += (_, _) => CheckUpdatesRequested?.Invoke(this, EventArgs.Empty);
         var openFolder = new ModernButton(Tr("Ouvrir le dossier", "Open folder"));
         openFolder.Click += (_, _) => OpenConfigFolder();
+        var report = new ModernButton(Tr("Signaler un problème", "Report a problem"));
+        report.Click += (_, _) =>
+        {
+            try { Process.Start(new ProcessStartInfo(BugReportUrl()) { UseShellExecute = true }); }
+            catch (Exception ex) { Log.Error("Ouverture de la page de signalement", ex); }
+        };
         var showWelcome = new ModernButton(Tr("Revoir l'accueil", "Show welcome again"));
         showWelcome.Click += (_, _) =>
         {
@@ -1848,9 +1874,11 @@ public sealed class MainForm : Form
         };
 
         // Langue : appliquée au prochain démarrage (proposé tout de suite)
-        var languages = new[] { "auto", "fr", "en" };
+        var available = Lang.Available();
+        var languages = new[] { "auto" }.Concat(available.Select(l => l.Code)).ToArray();
         var language = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
-        language.Items.AddRange(new object[] { Tr("Automatique (Windows)", "Automatic (Windows)"), "Français", "English" });
+        language.Items.Add(Tr("Automatique (Windows)", "Automatic (Windows)"));
+        language.Items.AddRange(available.Select(l => (object)l.Name).ToArray());
         language.SelectedIndex = Math.Max(0, Array.IndexOf(languages, settings.Language));
         var restart = new ModernButton(Tr("Redémarrer Corral", "Restart Corral")) { Visible = false };
         restart.Click += (_, _) => RestartRequested?.Invoke();
@@ -1872,7 +1900,7 @@ public sealed class MainForm : Form
         var stack = new CardStack();
         stack.Controls.Add(new Card(Rows(
             SettingRow(Tr("Thème", "Theme"), Tr("« Système » suit le mode clair ou sombre de Windows.", "“System” follows Windows' light or dark mode."), themeChoice),
-            SettingRow(Tr("Langue", "Language"), Tr("« Automatique » suit la langue de Windows : français, sinon anglais.", "“Automatic” follows the Windows language: French, otherwise English."), languageRow),
+            SettingRow(Tr("Langue", "Language"), Tr("« Automatique » suit la langue de Windows si Corral la connaît, sinon l'anglais.", "“Automatic” follows the Windows language if Corral knows it, otherwise English."), languageRow),
             SettingRow(Tr("Charge du processeur dans l'icône", "CPU load in the tray icon"),
                 Tr("L'icône près de l'horloge affiche le pourcentage du processeur : vert, orange au-delà de 60 %, rouge au-delà de 85 %.", "The icon near the clock shows the CPU percentage: green, orange above 60 %, red above 85 %."), trayCpuSwitch),
             SettingRow(Tr("Mini-fenêtre toujours visible", "Always-on-top mini window"),
@@ -1887,6 +1915,7 @@ public sealed class MainForm : Form
                 Updater.IsSupported ? Tr("Mises à jour publiées sur GitHub.", "Updates published on GitHub.") : Tr($"Mises à jour indisponibles : {Updater.UnsupportedReason}.", $"Updates unavailable: {Updater.UnsupportedReason}."), check)), Tr("Mises à jour", "Updates")));
         stack.Controls.Add(new Card(Rows(
             SettingRow(Tr("Message d'accueil", "Welcome message"), Tr("Les trois choses à savoir pour bien démarrer.", "The three things to know to get started."), showWelcome),
+            SettingRow(Tr("Un bug, une idée ?", "A bug, an idea?"), Tr("Ouvre la page de signalement sur GitHub, avec votre version de Corral et de Windows déjà remplies.", "Opens the report page on GitHub, with your Corral and Windows versions already filled in."), report),
             shortcuts), Tr("Aide", "Help")));
         stack.Controls.Add(new Card(Rows(
             SettingRow(Tr("Mode Jeu", "Game Mode"), Tr("Activer ou désactiver le Mode Jeu.", "Turn Game Mode on or off."), HotkeyField(h => h.GameMode, (h, v) => h.GameMode = v)),

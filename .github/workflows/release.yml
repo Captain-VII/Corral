@@ -3,6 +3,7 @@
 #   git push origin v1.1.0
 # Les installations existantes de Corral la proposeront ensuite automatiquement.
 # Secret requis : CORRAL_SIGNING_KEY (clé privée PEM, voir tools/UpdateSigner) pour signer la mise à jour.
+# Fichiers : Corral.exe / Corral.msi (x64, noms historiques) et Corral-arm64.exe / Corral-arm64.msi (voir Updater.Assets).
 name: Release
 
 on:
@@ -31,71 +32,66 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart('v')
-          dotnet publish src/Corral -c Release -r win-x64 --self-contained `
-            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:EnableCompressionInSingleFile=true -p:DebugType=none `
-            -p:Version=$version -p:UpdateRepository=${{ github.repository }} `
-            -o publish
-          $hash = (Get-FileHash publish/Corral.exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  Corral.exe" | Out-File publish/Corral.exe.sha256 -Encoding ascii -NoNewline
-
-      - name: Signature de la mise à jour
-        shell: pwsh
-        env:
-          CORRAL_SIGNING_KEY: ${{ secrets.CORRAL_SIGNING_KEY }}
-        run: |
-          $out = dotnet run --project tools/UpdateSigner -c Release -- sign publish/Corral.exe publish/Corral.exe.sig
-          if ($LASTEXITCODE -ne 0) { throw "Signature impossible (secret CORRAL_SIGNING_KEY manquant ?)" }
-          $out
-          # La clé du secret doit correspondre à celle que les installations vérifient
-          $public = ($out | Select-String 'PublicKey: (\S+)').Matches[0].Groups[1].Value
-          if (-not (Select-String -Path src/Corral/Core/Updater.cs -SimpleMatch "`"$public`"" -Quiet)) {
-            throw "La clé du secret ne correspond pas à Updater.PublicKey"
+          New-Item -ItemType Directory -Force out | Out-Null
+          foreach ($arch in 'x64', 'arm64') {
+            dotnet publish src/Corral -c Release -r win-$arch --self-contained `
+              -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+              -p:EnableCompressionInSingleFile=true -p:DebugType=none `
+              -p:Version=$version -p:UpdateRepository=${{ github.repository }} `
+              -o publish/$arch
+            if ($LASTEXITCODE -ne 0) { throw "Échec de la publication $arch" }
+            $name = if ($arch -eq 'arm64') { 'Corral-arm64' } else { 'Corral' }
+            Copy-Item publish/$arch/Corral.exe out/$name.exe
           }
 
-      - name: Installeur MSI
+      - name: Installeurs MSI
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart('v')
           dotnet tool install --global wix --version 5.0.2
           wix extension add -g WixToolset.Util.wixext/5.0.2
-          wix build packaging/Corral.wxs -arch x64 -ext WixToolset.Util.wixext `
-            -d Version=$version -d ExePath=publish/Corral.exe -o publish/Corral.msi
-          if ($LASTEXITCODE -ne 0) { throw "Échec de la compilation du MSI" }
-          # ICE43/ICE57 : faux positifs des paquets « par machine » (raccourci du menu Démarrer commun) ;
-          # ICE61 : réinstaller la même version remplace l'installation (AllowSameVersionUpgrades)
-          wix msi validate -sice ICE43 -sice ICE57 -sice ICE61 publish/Corral.msi
-          if ($LASTEXITCODE -ne 0) { throw "MSI invalide" }
-          $hash = (Get-FileHash publish/Corral.msi -Algorithm SHA256).Hash.ToLower()
-          "$hash  Corral.msi" | Out-File publish/Corral.msi.sha256 -Encoding ascii -NoNewline
+          foreach ($arch in 'x64', 'arm64') {
+            $name = if ($arch -eq 'arm64') { 'Corral-arm64' } else { 'Corral' }
+            wix build packaging/Corral.wxs -arch $arch -ext WixToolset.Util.wixext `
+              -d Version=$version -d ExePath=out/$name.exe -o out/$name.msi
+            if ($LASTEXITCODE -ne 0) { throw "Échec de la compilation du MSI $arch" }
+            # ICE43/ICE57 : faux positifs des paquets « par machine » (raccourci du menu Démarrer commun) ;
+            # ICE61 : réinstaller la même version remplace l'installation (AllowSameVersionUpgrades)
+            wix msi validate -sice ICE43 -sice ICE57 -sice ICE61 out/$name.msi
+            if ($LASTEXITCODE -ne 0) { throw "MSI $arch invalide" }
+          }
+          Remove-Item out/*.wixpdb -ErrorAction SilentlyContinue
           # Modèles de stratégie de groupe
-          Compress-Archive -Path packaging/policies/* -DestinationPath publish/Corral-ADMX.zip
+          Compress-Archive -Path packaging/policies/* -DestinationPath out/Corral-ADMX.zip
 
-      - name: Signature de l'installeur
+      - name: Sommes de contrôle et signatures
         shell: pwsh
         env:
           CORRAL_SIGNING_KEY: ${{ secrets.CORRAL_SIGNING_KEY }}
         run: |
-          # Le service n'installe que des MSI signés par cette clé (voir Updater.DownloadMsiAsync)
-          dotnet run --project tools/UpdateSigner -c Release -- sign publish/Corral.msi publish/Corral.msi.sig
-          if ($LASTEXITCODE -ne 0) { throw "Signature du MSI impossible" }
+          dotnet build tools/UpdateSigner -c Release -o signer
+          foreach ($file in Get-ChildItem out -Include *.exe, *.msi -Recurse) {
+            $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($file.Name)" | Out-File "$file.sha256" -Encoding ascii -NoNewline
+            # Les installations n'acceptent que les fichiers signés par cette clé (voir Updater.VerifySignature)
+            $out = dotnet signer/UpdateSigner.dll sign $file "$file.sig"
+            if ($LASTEXITCODE -ne 0) { throw "Signature impossible (secret CORRAL_SIGNING_KEY manquant ?)" }
+            $public = ($out | Select-String 'PublicKey: (\S+)').Matches[0].Groups[1].Value
+            if (-not (Select-String -Path src/Corral/Core/Updater.cs -SimpleMatch "`"$public`"" -Quiet)) {
+              throw "La clé du secret ne correspond pas à Updater.PublicKey"
+            }
+          }
+          Get-ChildItem out | Format-Table Name, Length
 
       - name: Attestation de provenance
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
-            publish/Corral.exe
-            publish/Corral.msi
+            out/*.exe
+            out/*.msi
 
       - name: Release GitHub
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
-          files: |
-            publish/Corral.exe
-            publish/Corral.exe.sha256
-            publish/Corral.exe.sig
-            publish/Corral.msi
-            publish/Corral.msi.sha256
-            publish/Corral.msi.sig
-            publish/Corral-ADMX.zip
+          files: out/*

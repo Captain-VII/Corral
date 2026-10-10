@@ -215,7 +215,7 @@ public sealed class Settings
             r.AlertMinutes = Math.Clamp(r.AlertMinutes, 1, 120);
         GameMode.BackgroundApps ??= new();
         GameMode.BackgroundApps.RemoveAll(string.IsNullOrWhiteSpace);
-        if (Language is not ("fr" or "en"))
+        if (Language != "auto" && !Corral.Core.Lang.IsKnown(Language ?? ""))
             Language = "auto";
         Overlay ??= new();
         ActiveProfile ??= "";

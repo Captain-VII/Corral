@@ -1,9 +1,15 @@
 <!--
   Installeur MSI de Corral (WiX 5) : Program Files\Corral, raccourci du menu Démarrer pour tous les utilisateurs.
-  Compilé par .github/workflows/release.yml :
+  Compilé par .github/workflows/release.yml (x64, et arm64 avec -arch arm64) :
     wix build packaging/Corral.wxs -arch x64 -ext WixToolset.Util.wixext -d Version=X.Y.Z -d ExePath=publish/Corral.exe -o publish/Corral.msi
   Installation silencieuse : msiexec /i Corral.msi /qn
 -->
+<!-- Actions personnalisées de WixToolset.Util compilées pour l'architecture du paquet (x64 ou arm64) -->
+<?if $(sys.BUILDARCH) = arm64 ?>
+<?define UtilCA = Wix4UtilCA_A64 ?>
+<?else?>
+<?define UtilCA = Wix4UtilCA_X64 ?>
+<?endif?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="Corral" Manufacturer="Corral" Version="$(Version)"
@@ -52,11 +58,11 @@
     <!-- Supprime la tâche planifiée « Corral » de l'exe portable : à l'installation (remplacée par la clé Run) et à la désinstallation -->
     <SetProperty Id="RemoveAutoStart" Value="&quot;[System64Folder]schtasks.exe&quot; /delete /tn Corral /f"
                  Before="RemoveAutoStart" Sequence="execute" />
-    <CustomAction Id="RemoveAutoStart" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
+    <CustomAction Id="RemoveAutoStart" BinaryRef="$(var.UtilCA)" DllEntry="WixQuietExec"
                   Execute="deferred" Impersonate="no" Return="ignore" />
     <!-- Installation interactive ou /passive : lance l'interface à la fin (pas en /qn : déploiement silencieux, ou mise à jour par le service qui la relance lui-même) -->
     <Property Id="WixShellExecTarget" Value="[#CorralExe]" />
-    <CustomAction Id="LaunchCorral" BinaryRef="Wix4UtilCA_X64" DllEntry="WixShellExec" Impersonate="yes" Return="ignore" />
+    <CustomAction Id="LaunchCorral" BinaryRef="$(var.UtilCA)" DllEntry="WixShellExec" Impersonate="yes" Return="ignore" />
     <InstallExecuteSequence>
       <Custom Action="RemoveAutoStart" Before="RemoveFiles" Condition="NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="LaunchCorral" After="InstallFinalize" Condition="NOT REMOVE AND UILevel &gt;= 3" />

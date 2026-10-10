@@ -29,6 +29,9 @@
 
   <ItemGroup>
     <EmbeddedResource Include="corral.ico" LogicalName="Corral.corral.ico" />
+    <!-- Langues traduites (translations/xx.json) ; le français et l'anglais sont dans le code -->
+    <EmbeddedResource Include="..\..\translations\*.json" Exclude="..\..\translations\fr.json;..\..\translations\en.json"
+                      LogicalName="Corral.Translations.%(Filename).json" />
     <AssemblyMetadata Include="UpdateRepository" Value="$(UpdateRepository)" />
   </ItemGroup>
 
