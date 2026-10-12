@@ -1,5 +1,9 @@
 # Journal des modifications
 
+## 3.0.0
+
+- **Équité entre les sessions** (serveurs RDS, VDI multi-session) : quand le processeur sature, une session qui prend plus d'une fois et demie sa part voit ses programmes abaissés, jusqu'à ce qu'elle revienne dans sa part. La page ProBalance affiche la charge de chaque session ouverte. Désactivée par défaut ; réglable aussi par la configuration de parc (`"ProBalance": { "SessionFairness": true }`).
+
 ## 2.3.0
 
 - **Ligne de commande** : `Corral status`, `processes`, `rules` (add, remove, enable, disable, import, export), `pause`, `resume`, `game on|off`, `clean`, `priority`, avec sortie `--json` et codes de sortie. Le MSI ajoute Corral au PATH.

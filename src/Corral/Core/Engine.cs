@@ -8,7 +8,8 @@ public sealed record ProcessRow(int Pid, string Name, double Cpu, long MemoryByt
     string? Path = null, string? RuleSummary = null, long IoBytesPerSec = 0, double Gpu = 0);
 
 public sealed record EngineSnapshot(double SystemCpu, bool Paused, IReadOnlyList<ProcessRow> Rows,
-    bool GameMode = false, string? GameTrigger = null, long MemoryUsed = 0, long MemoryTotal = 0)
+    bool GameMode = false, string? GameTrigger = null, long MemoryUsed = 0, long MemoryTotal = 0,
+    IReadOnlyList<SessionUsage>? Sessions = null)
 {
     /// <summary>Mémoire physique utilisée, en % (0 si inconnue).</summary>
     public double MemoryPercent => MemoryTotal > 0 ? MemoryUsed * 100.0 / MemoryTotal : 0;
@@ -29,6 +30,10 @@ public sealed class Engine : IEngine, IDisposable
         public ProcessPriorityClass? OrigPriority;
         public IntPtr? OrigAffinity;
         public ProcessPriorityClass? ProBalanceOrig;
+        /// <summary>Abaissé par l'équité entre sessions (et non par ProBalance) : <see cref="ProBalanceOrig"/> garde la priorité d'origine.</summary>
+        public bool ByFairness;
+        /// <summary>Session Windows du processus (0 = services).</summary>
+        public int Session;
         public TimeSpan? LastCpu;
         public ulong? LastIo;
         public bool IoDenied;
@@ -236,7 +241,7 @@ public sealed class Engine : IEngine, IDisposable
             }
             // ProBalance ne doit pas « restaurer » par-dessus le choix de l'utilisateur.
             if (tracked.TryGetValue(key, out var t))
-                t.ProBalanceOrig = null;
+                (t.ProBalanceOrig, t.ByFairness) = (null, false);
             Log.Info(Tr($"{name} ({pid}) : priorité changée en {PriorityLabel(priority)} (ponctuel)", $"{name} ({pid}): priority changed to {PriorityLabel(priority)} (one-off)"), LogCategory.Rule);
             return null;
         }
@@ -322,6 +327,8 @@ public sealed class Engine : IEngine, IDisposable
         var rows = new List<ProcessRow>(procs.Length);
         var samples = new List<ProBalanceLogic.Sample>();
         var cpuByKey = new Dictionary<ProcKey, double>();
+        var sessionCpu = new Dictionary<int, double>();
+        var fairnessCandidates = new List<(ProcKey Key, double Cpu)>();
         try
         {
             foreach (var p in procs)
@@ -336,6 +343,7 @@ public sealed class Engine : IEngine, IDisposable
                 {
                     t = new Tracked(key.Name);
                     tracked[key] = t;
+                    try { t.Session = p.SessionId; } catch { }
                     // Chemin lu avant la règle : la préférence GPU en a besoin
                     t.Path = Native.GetProcessPath(key.Pid);
                     t.PathLoaded = true;
@@ -356,6 +364,14 @@ public sealed class Engine : IEngine, IDisposable
                     if (eligible && !proBalance.IsRestrained(key) && cpu >= pb.ProcessThreshold)
                         eligible = HasNormalPriority(p);
                     samples.Add(new ProBalanceLogic.Sample(key, cpu, eligible));
+                }
+
+                if (t.Session > 0)
+                {
+                    sessionCpu[t.Session] = sessionCpu.GetValueOrDefault(t.Session) + cpu;
+                    if (cpu >= 1 && key.Pid != fg && t.Rule?.Priority == null && !Exclusions.IsProtected(key.Name, key.Pid, ownPid)
+                        && !userExclusions.Any(x => RuleMatcher.Matches(x, key.Name)))
+                        fairnessCandidates.Add((key, cpu));
                 }
 
                 long mem = 0;
@@ -380,6 +396,7 @@ public sealed class Engine : IEngine, IDisposable
                 RunProBalance(sysCpu, samples, live, pb);
             else
                 proBalance.Reset();
+            RunSessionFairness(pbActive && pb.SessionFairness, sysCpu, sessionCpu, fairnessCandidates, live, pb);
 
             UpdateGameMode(s);
             if (!paused)
@@ -399,7 +416,7 @@ public sealed class Engine : IEngine, IDisposable
         }
 
         var (memUsed, memTotal) = Native.GetMemoryUsage();
-        return new EngineSnapshot(sysCpu, paused, rows, gameActive, gameTrigger, memUsed, memTotal);
+        return new EngineSnapshot(sysCpu, paused, rows, gameActive, gameTrigger, memUsed, memTotal, SessionUsages(sessionCpu));
     }
 
     /// <summary>ProBalance tel qu'appliqué : les seuils « Réactif » remplacent les réglages pendant le Mode Jeu.</summary>
@@ -887,6 +904,67 @@ public sealed class Engine : IEngine, IDisposable
         }
     }
 
+    /// <summary>Sessions utilisateur et leur charge (seulement s'il y en a plusieurs : serveur RDS, changement rapide d'utilisateur).</summary>
+    IReadOnlyList<SessionUsage>? SessionUsages(Dictionary<int, double> sessionCpu)
+    {
+        if (sessionCpu.Count < 2)
+            return null;
+        return sessionCpu.OrderByDescending(kv => kv.Value).Select(kv =>
+        {
+            if (!sessionNames.TryGetValue(kv.Key, out var name))
+            {
+                try { name = Sessions.UserName(kv.Key); }
+                catch { name = $"Session {kv.Key}"; }
+                sessionNames[kv.Key] = name;
+            }
+            return new SessionUsage(kv.Key, name, kv.Value, fairness.IsLimited(kv.Key));
+        }).ToList();
+    }
+
+    readonly SessionFairnessLogic fairness = new();
+    readonly Dictionary<int, string> sessionNames = new();
+
+    /// <summary>Abaisse les programmes actifs des sessions trop gourmandes ; restaure ceux des sessions revenues dans leur part.</summary>
+    void RunSessionFairness(bool enabled, double sysCpu, Dictionary<int, double> sessionCpu, List<(ProcKey Key, double Cpu)> candidates,
+        Dictionary<ProcKey, Process> live, ProBalanceSettings cfg)
+    {
+        if (enabled)
+            fairness.Evaluate(DateTime.UtcNow, sysCpu, sessionCpu, cfg);
+        else
+            fairness.Reset();
+        if (sessionNames.Count > 64)
+            sessionNames.Clear(); // sessions fermées : les numéros sont réutilisés
+
+        foreach (var (key, t) in tracked)
+        {
+            if (!t.ByFairness || fairness.IsLimited(t.Session))
+                continue;
+            var orig = t.ProBalanceOrig;
+            (t.ProBalanceOrig, t.ByFairness) = (null, false);
+            if (orig is { } o && live.TryGetValue(key, out var p) && TryDo(key, Tr("Équité entre sessions", "Session fairness"), () => p.PriorityClass = o))
+                Log.Info(Tr($"Équité entre sessions : {key.Name} ({key.Pid}) restauré en {o}", $"Session fairness: {key.Name} ({key.Pid}) restored to {o}"), LogCategory.ProBalance);
+        }
+        if (!enabled)
+            return;
+        foreach (var (key, cpu) in candidates)
+        {
+            if (!tracked.TryGetValue(key, out var t) || !fairness.IsLimited(t.Session) || t.ProBalanceOrig != null
+                || !live.TryGetValue(key, out var p) || !HasNormalPriority(p))
+                continue;
+            if (TryDo(key, Tr("Équité entre sessions", "Session fairness"), () =>
+                {
+                    var current = p.PriorityClass;
+                    p.PriorityClass = ProcessPriorityClass.BelowNormal;
+                    (t.ProBalanceOrig, t.ByFairness) = (current, true);
+                }))
+            {
+                Log.Info(Tr($"Équité entre sessions : {key.Name} ({key.Pid}, session {t.Session}) abaissé ({cpu:0} % du processeur)",
+                    $"Session fairness: {key.Name} ({key.Pid}, session {t.Session}) lowered ({cpu:0}% of the CPU)"), LogCategory.ProBalance);
+                pendingActed.Add(key.Name);
+            }
+        }
+    }
+
     void RestoreAll()
     {
         foreach (var (key, t) in tracked)
@@ -897,7 +975,7 @@ public sealed class Engine : IEngine, IDisposable
             var io = t.OrigIo;
             var memory = t.OrigMemory;
             bool efficiency = t.EfficiencySet;
-            (t.OrigPriority, t.OrigAffinity, t.ProBalanceOrig, t.OrigIo, t.OrigMemory, t.EfficiencySet) = (null, null, null, null, null, false);
+            (t.OrigPriority, t.OrigAffinity, t.ProBalanceOrig, t.OrigIo, t.OrigMemory, t.EfficiencySet, t.ByFairness) = (null, null, null, null, null, false, false);
             if (priority == null && affinity == null && io == null && memory == null && !efficiency)
                 continue;
             using var p = OpenSame(key);
@@ -919,6 +997,7 @@ public sealed class Engine : IEngine, IDisposable
         boosted = null;
         idleActive = false;
         proBalance.Reset();
+        fairness.Reset();
     }
 
     double SampleCpu(Process p, Tracked t, double elapsedMs)

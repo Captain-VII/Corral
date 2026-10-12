@@ -178,6 +178,8 @@ public sealed class ProBalanceSettings
     public int TriggerSeconds { get; set; } = 3;
     public int RestoreSeconds { get; set; } = 5;
     public List<string> Exclusions { get; set; } = new() { "svchost.exe", "audiodg.exe", "explorer.exe" };
+    /// <summary>Serveur RDS / VDI multi-session : une session qui prend plus que sa part est abaissée (voir Core.SessionFairnessLogic).</summary>
+    public bool SessionFairness { get; set; }
 
     public sealed record Preset(string Name, double System, double Process, double Restore, int Trigger, int RestoreAfter);
 
