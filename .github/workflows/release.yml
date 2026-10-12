@@ -86,6 +86,13 @@ jobs:
           }
           Get-ChildItem out | Format-Table Name, Length
 
+      - name: Manifestes winget
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          ./packaging/winget/make-manifests.ps1 -Version $version -MsiDir out -OutDir winget -Repository ${{ github.repository }}
+          Compress-Archive -Path winget/manifests -DestinationPath out/Corral-winget.zip
+
       - name: Attestation de provenance
         uses: actions/attest-build-provenance@v4
         with:

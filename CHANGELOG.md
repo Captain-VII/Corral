@@ -1,5 +1,9 @@
 # Journal des modifications
 
+## 3.0.0
+
+- **winget** : chaque release fournit les manifestes winget (`Corral-winget.zip`), à soumettre au dépôt `microsoft/winget-pkgs` pour `winget install CaptainVII.Corral`.
+
 ## 2.3.0
 
 - **Ligne de commande** : `Corral status`, `processes`, `rules` (add, remove, enable, disable, import, export), `pause`, `resume`, `game on|off`, `clean`, `priority`, avec sortie `--json` et codes de sortie. Le MSI ajoute Corral au PATH.
