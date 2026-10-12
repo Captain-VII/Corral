@@ -289,12 +289,14 @@ public sealed class Engine : IEngine, IDisposable
         if (r.Block == BlockMode.Always) parts.Add(Tr("bloqué", "blocked"));
         if (r.Block == BlockMode.SingleInstance) parts.Add(Tr("une seule instance", "single instance"));
         if (r.HasAlert) parts.Add(Tr("surveillé", "monitored"));
+        if (r.When?.Describe() is { Length: > 0 } when) parts.Add(Tr("seulement ", "only ") + when);
         return parts.Count == 0 ? Tr("aucun effet", "no effect") : string.Join(" · ", parts);
     }
 
     EngineSnapshot Tick()
     {
         var s = settings;
+        UpdateConditions(s);
         if (reapply)
         {
             reapply = false;
@@ -529,6 +531,16 @@ public sealed class Engine : IEngine, IDisposable
     /// <summary>Temps d'inactivité de l'utilisateur (remplaçable pour les tests).</summary>
     public Func<TimeSpan> IdleTimeSource { get; set; } = Idle.UserIdleTime;
 
+    /// <summary>Heure locale, pour les plages horaires des règles (remplaçable pour les tests).</summary>
+    public Func<DateTime> LocalTime { get; set; } = () => DateTime.Now;
+
+    /// <summary>Le PC fonctionne sur batterie (remplaçable pour les tests).</summary>
+    public Func<bool> OnBattery { get; set; } = Native.OnBattery;
+
+    /// <summary>Règles dont la condition est remplie au dernier passage, et leur empreinte (pour voir un changement).</summary>
+    List<Rule> activeRules = new();
+    string? conditionState;
+
     /// <summary>Une vidéo ou une présentation demande l'écran (remplaçable pour les tests).</summary>
     public Func<bool> DisplayRequiredSource { get; set; } = Idle.DisplayRequired;
 
@@ -723,11 +735,36 @@ public sealed class Engine : IEngine, IDisposable
     static bool IsBackgroundApp(Settings s, string name) =>
         s.GameMode.BackgroundApps.Any(x => RuleMatcher.Matches(x, name));
 
+    /// <summary>
+    /// Évalue les conditions des règles. Si l'une change d'état, tout est restauré puis réappliqué
+    /// (les règles qui ne s'appliquent plus sont ainsi annulées).
+    /// </summary>
+    void UpdateConditions(Settings s)
+    {
+        bool conditional = s.Rules.Any(r => r.When != null);
+        bool battery = false;
+        if (conditional && s.Rules.Any(r => r.When?.Power is PowerSource.AC or PowerSource.Battery))
+        {
+            try { battery = OnBattery(); }
+            catch (Exception ex) { OnBattery = () => false; Log.Error(Tr("État de la batterie", "Battery status"), ex); }
+        }
+        var local = LocalTime();
+        var active = conditional ? s.Rules.Where(r => r.When?.IsMet(local, battery) ?? true).ToList() : s.Rules;
+        var state = conditional ? string.Concat(s.Rules.Select(r => r.When == null ? '-' : r.When.IsMet(local, battery) ? '1' : '0')) : "";
+        if (conditionState != null && state != conditionState && !reapply)
+        {
+            reapply = true;
+            Log.Info(Tr("Conditions des règles modifiées : règles réappliquées", "Rule conditions changed: rules reapplied"), LogCategory.Rule);
+        }
+        conditionState = state;
+        activeRules = active;
+    }
+
     void ApplyRule(Process p, ProcKey key, Tracked t, Settings s)
     {
         if (Exclusions.IsProtected(key.Name, key.Pid, ownPid))
             return;
-        var rule = RuleMatcher.Find(s.Rules, key.Name);
+        var rule = RuleMatcher.Find(activeRules, key.Name);
         // Mode Jeu : les programmes de fond sans règle propre passent en priorité basse + mode efficacité
         if (rule == null && gameActive && s.GameMode.LowerBackground && IsBackgroundApp(s, key.Name))
             rule = new Rule { Pattern = GameModeRuleName, Priority = ProcessPriorityClass.BelowNormal, EfficiencyMode = true };

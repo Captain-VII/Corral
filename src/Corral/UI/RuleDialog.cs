@@ -62,6 +62,14 @@ public sealed class RuleDialog : Form
     readonly ComboBox alertAction = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
     readonly Label blockHelp = Help();
     readonly Label alertHelp = Help();
+    readonly ComboBox whenPower = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+    readonly ToggleSwitch whenTimeOn = new();
+    readonly ComboBox whenFrom = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90 };
+    readonly ComboBox whenTo = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90 };
+    readonly CheckBox[] whenDays = new CheckBox[7];
+    readonly Label whenHelp = Help();
+    /// <summary>Lundi d'abord, dimanche à la fin.</summary>
+    static readonly DayOfWeek[] Week = { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday };
     readonly ToolTip tips = Theme.CreateToolTip();
     readonly IReadOnlyList<string> running;
     readonly int cpuCount = Math.Min(Environment.ProcessorCount, 64);
@@ -193,6 +201,39 @@ public sealed class RuleDialog : Form
             quick.Controls.Add(b);
         }
         AddRow(left, "", quick);
+
+        // Conditions : sur secteur ou batterie, plage horaire, jours
+        whenPower.Items.AddRange(new object[] { Tr("Toujours", "Always"), Tr("Seulement sur secteur", "Only on AC power"), Tr("Seulement sur batterie", "Only on battery") });
+        for (int m = 0; m < 24 * 60; m += 30)
+        {
+            var t = new TimeOnly(m / 60, m % 60).ToString("HH:mm");
+            whenFrom.Items.Add(t);
+            whenTo.Items.Add(t);
+        }
+        var hours = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+        hours.Controls.Add(whenFrom);
+        hours.Controls.Add(new Label { Text = "→", AutoSize = true, Margin = new Padding(6, 6, 6, 0) });
+        hours.Controls.Add(whenTo);
+        var days = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(310, 0), Margin = new Padding(0) };
+        var culture = System.Globalization.CultureInfo.GetCultureInfo(Lang.English ? "en-US" : "fr-FR");
+        for (int i = 0; i < 7; i++)
+        {
+            whenDays[i] = new CheckBox { Text = culture.DateTimeFormat.GetAbbreviatedDayName(Week[i]), AutoSize = true, Checked = true, Margin = new Padding(0, 0, 8, 4) };
+            whenDays[i].CheckedChanged += (_, _) => UpdateHelp();
+            days.Controls.Add(whenDays[i]);
+        }
+        whenTimeOn.CheckedChanged += (_, _) => { whenFrom.Enabled = whenTo.Enabled = whenTimeOn.Checked; UpdateHelp(); };
+        whenPower.SelectedIndexChanged += (_, _) => UpdateHelp();
+        whenFrom.AccessibleName = Tr("Début de la plage horaire", "Start of the time range");
+        whenTo.AccessibleName = Tr("Fin de la plage horaire", "End of the time range");
+        whenFrom.SelectedIndexChanged += (_, _) => UpdateHelp();
+        whenTo.SelectedIndexChanged += (_, _) => UpdateHelp();
+        AddSection(left, "Conditions");
+        AddRow(left, Tr("S'applique", "Applies"), whenPower);
+        AddRow(left, Tr("Seulement entre", "Only between"), whenTimeOn);
+        AddRow(left, "", hours);
+        AddRow(left, Tr("Jours", "Days"), days);
+        AddRow(left, "", whenHelp);
 
         var right = Grid();
         AddSection(right, Tr("Alimentation et limites", "Power and limits"));
@@ -340,6 +381,11 @@ public sealed class RuleDialog : Form
 
     void UpdateHelp()
     {
+        var when = ReadCondition();
+        whenHelp.Text = when == null
+            ? Tr("La règle s'applique tout le temps.", "The rule always applies.")
+            : Tr($"La règle ne s'applique que {when.Describe()} ; en dehors, Corral annule ses effets", $"The rule only applies {when.Describe()}; otherwise, Corral undoes its effects");
+
         var p = ((Choice<ProcessPriorityClass?>?)priority.SelectedItem)?.Value;
         priorityHelp.Text = p is { } v && PriorityHelp.TryGetValue(v, out var help) ? help : Tr("La priorité du programme n'est pas modifiée.", "The program's priority is not changed.");
 
@@ -440,6 +486,8 @@ public sealed class RuleDialog : Form
         int row = grid.RowCount++;
         grid.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 6, 24, 3) }, 0, row);
         grid.Controls.Add(control, 1, row);
+        if (label.Length > 0)
+            A11y.Label(control, label); // nom lu par les lecteurs d'écran
     }
 
     void LoadRule(Rule? rule)
@@ -477,6 +525,32 @@ public sealed class RuleDialog : Form
         alertMinutes.Value = Math.Clamp(rule.AlertMinutes, 1, 120);
         alertAction.SelectedIndex = (int)rule.AlertAction;
         gpu.SelectedIndex = Math.Max(0, Array.IndexOf(GpuChoices, rule.GpuPreference));
+
+        var when = rule.When;
+        whenPower.SelectedIndex = (int)(when?.Power ?? PowerSource.Any);
+        whenTimeOn.Checked = when?.From != null;
+        whenFrom.SelectedIndex = Slot(when?.From ?? new TimeOnly(9, 0));
+        whenTo.SelectedIndex = Slot(when?.To ?? new TimeOnly(18, 0));
+        whenFrom.Enabled = whenTo.Enabled = whenTimeOn.Checked;
+        for (int i = 0; i < 7; i++)
+            whenDays[i].Checked = when?.Days is not { Count: > 0 } d || d.Contains(Week[i]);
+    }
+
+    /// <summary>Créneau de 30 min le plus proche (les heures saisies ailleurs peuvent tomber entre deux).</summary>
+    static int Slot(TimeOnly t) => Math.Clamp((t.Hour * 60 + t.Minute) / 30, 0, 47);
+
+    RuleCondition? ReadCondition()
+    {
+        if (whenPower.SelectedIndex < 0 || whenFrom.SelectedIndex < 0 || whenTo.SelectedIndex < 0)
+            return null; // pendant la construction
+        static TimeOnly At(int slot) => new(slot / 2, slot % 2 * 30);
+        return RuleCondition.Normalize(new RuleCondition
+        {
+            Power = (PowerSource)whenPower.SelectedIndex,
+            From = whenTimeOn.Checked ? At(whenFrom.SelectedIndex) : null,
+            To = whenTimeOn.Checked ? At(whenTo.SelectedIndex) : null,
+            Days = Enumerable.Range(0, 7).Where(i => whenDays[i].Checked).Select(i => Week[i]).ToList(),
+        });
     }
 
     void OnOk()
@@ -485,6 +559,12 @@ public sealed class RuleDialog : Form
         if (name.Length == 0)
         {
             MessageBox.Show(this, Tr("Indiquez un nom de processus.", "Enter a process name."), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        if (whenDays.All(d => !d.Checked))
+        {
+            MessageBox.Show(this, Tr("Cochez au moins un jour.", "Check at least one day."), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -522,6 +602,7 @@ public sealed class RuleDialog : Form
             AlertMinutes = (int)alertMinutes.Value,
             AlertAction = (AlertAction)Math.Max(0, alertAction.SelectedIndex),
             GpuPreference = GpuChoices[Math.Max(0, gpu.SelectedIndex)],
+            When = ReadCondition(),
         };
 
         // Garde-fous du blocage : jamais sur un motif qui viserait tout, confirmation si des programmes tournent

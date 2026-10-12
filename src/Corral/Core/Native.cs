@@ -7,6 +7,19 @@ public readonly record struct ProcKey(int Pid, string Name, long StartTicks);
 
 internal static class Native
 {
+    [StructLayout(LayoutKind.Sequential)]
+    struct SYSTEM_POWER_STATUS
+    {
+        public byte ACLineStatus, BatteryFlag, BatteryLifePercent, SystemStatusFlag;
+        public int BatteryLifeTime, BatteryFullLifeTime;
+    }
+
+    [DllImport("kernel32.dll")]
+    static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS status);
+
+    /// <summary>Sur batterie (secteur débranché). Inconnu ou PC fixe : false.</summary>
+    public static bool OnBattery() => GetSystemPowerStatus(out var s) && s.ACLineStatus == 0;
+
     [DllImport("user32.dll")]
     static extern IntPtr GetForegroundWindow();
 
