@@ -146,7 +146,7 @@ public class ServiceTests : IDisposable
     }
 
     [Fact]
-    public void CommandLineEditsRulesAndOpenInterfacesFollow()
+    public async Task CommandLineEditsRulesAndOpenInterfacesFollow()
     {
         WriteQuietConfig();
         using var host = StartHost();
@@ -156,8 +156,8 @@ public class ServiceTests : IDisposable
         ui.Start();
 
         Assert.Equal(Corral.Cli.Ok, Cli("rules", "add", "outil.exe", "--priority", "belownormal", "--efficiency", "on").Code);
-        Assert.True(changed.Task.Wait(TimeSpan.FromSeconds(30)));
-        Assert.Contains(changed.Task.Result.Rules, r => r.Pattern == "outil.exe" && r.Priority == ProcessPriorityClass.BelowNormal);
+        Assert.Same(changed.Task, await Task.WhenAny(changed.Task, Task.Delay(TimeSpan.FromSeconds(30))));
+        Assert.Contains((await changed.Task).Rules, r => r.Pattern == "outil.exe" && r.Priority == ProcessPriorityClass.BelowNormal);
 
         var (code, json, _) = Cli("rules", "--json");
         Assert.Equal(0, code);
