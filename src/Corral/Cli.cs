@@ -293,6 +293,7 @@ public static class Cli
         if (r.CpuLimitPercent is { } c) parts.Add($"CPU ≤ {c} %");
         if (r.EfficiencyMode is { } e) parts.Add(e ? "Eco" : "No eco");
         if (r.IsGame) parts.Add(Tr("jeu", "game"));
+        if (r.When?.Describe() is { Length: > 0 } when) parts.Add(when);
         return parts.Count > 0 ? "  (" + string.Join(", ", parts) + ")" : "";
     }
 

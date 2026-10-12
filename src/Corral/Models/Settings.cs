@@ -36,6 +36,77 @@ public sealed class Rule
 
     /// <summary>Carte graphique préférée (null = ne pas toucher). Prend effet au prochain lancement.</summary>
     public Corral.Core.GpuPreference? GpuPreference { get; set; }
+
+    /// <summary>Quand la règle s'applique (null = toujours).</summary>
+    public RuleCondition? When { get; set; }
+}
+
+public enum PowerSource { Any, AC, Battery }
+
+/// <summary>
+/// Condition d'une règle : tous les critères renseignés doivent être remplis.
+/// Quand le résultat change (passage sur batterie, début d'une plage horaire…), le moteur restaure et réapplique les règles.
+/// </summary>
+public sealed class RuleCondition
+{
+    public PowerSource Power { get; set; }
+    /// <summary>Plage horaire, début inclus et fin exclue ; elle peut passer minuit (22:00 → 06:00). Null = toute la journée.</summary>
+    public TimeOnly? From { get; set; }
+    public TimeOnly? To { get; set; }
+    /// <summary>Jours où la règle s'applique (null ou vide = tous).</summary>
+    public List<DayOfWeek>? Days { get; set; }
+
+    bool HasTime => From is { } f && To is { } t && f != t;
+    bool HasDays => Days is { Count: > 0 and < 7 };
+
+    /// <summary>La condition ne restreint rien.</summary>
+    public bool IsAlways => Power == PowerSource.Any && !HasTime && !HasDays;
+
+    public bool IsMet(DateTime local, bool onBattery)
+    {
+        if (Power == PowerSource.AC && onBattery || Power == PowerSource.Battery && !onBattery)
+            return false;
+        if (HasDays && !Days!.Contains(local.DayOfWeek))
+            return false;
+        if (HasTime)
+        {
+            var now = TimeOnly.FromDateTime(local);
+            var (from, to) = (From!.Value, To!.Value);
+            if (from < to ? now < from || now >= to : now < from && now >= to)
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>Condition sans effet → null ; jours en double ou hors plage retirés.</summary>
+    public static RuleCondition? Normalize(RuleCondition? c)
+    {
+        if (c == null)
+            return null;
+        if (!Enum.IsDefined(c.Power))
+            c.Power = PowerSource.Any;
+        c.Days = c.Days?.Where(Enum.IsDefined).Distinct().Order().ToList();
+        if (!c.HasDays)
+            c.Days = null;
+        if (!c.HasTime)
+            (c.From, c.To) = (null, null);
+        return c.IsAlways ? null : c;
+    }
+
+    /// <summary>« sur batterie · 09:00-18:00 · lun., mar. »</summary>
+    public string Describe()
+    {
+        var parts = new List<string>();
+        if (Power == PowerSource.AC) parts.Add(Tr("sur secteur", "on AC power"));
+        if (Power == PowerSource.Battery) parts.Add(Tr("sur batterie", "on battery"));
+        if (HasTime) parts.Add($"{From:HH:mm}-{To:HH:mm}");
+        if (HasDays)
+        {
+            var culture = System.Globalization.CultureInfo.GetCultureInfo(Corral.Core.Lang.English ? "en-US" : "fr-FR");
+            parts.Add(string.Join(", ", Days!.Select(d => culture.DateTimeFormat.GetAbbreviatedDayName(d))));
+        }
+        return string.Join(" · ", parts);
+    }
 }
 
 /// <summary>La fenêtre au premier plan passe en priorité supérieure le temps qu'on l'utilise.</summary>
@@ -195,7 +266,10 @@ public sealed class Settings
         Rules ??= new();
         Rules.RemoveAll(r => r is null);
         foreach (var r in Rules)
+        {
             r.Pattern ??= "";
+            r.When = RuleCondition.Normalize(r.When);
+        }
         ProBalance ??= new();
         ProBalance.Exclusions ??= new();
         ProBalance.Exclusions.RemoveAll(string.IsNullOrWhiteSpace);

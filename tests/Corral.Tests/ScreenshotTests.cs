@@ -92,6 +92,7 @@ public class ScreenshotTests
                     }
                 }
 
+                settings.Rules[0].When = new RuleCondition { Power = PowerSource.Battery, From = new TimeOnly(9, 0), To = new TimeOnly(18, 0), Days = new() { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday } };
                 using var dlg = new RuleDialog(settings.Rules[0], PowerCfg.List(), isNew: false, new[] { "chrome", "chrome", "chrome", "code", "System" }) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(1200, 40) };
                 dlg.Show();
                 Pump(500);
