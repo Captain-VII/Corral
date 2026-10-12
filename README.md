@@ -4,6 +4,8 @@
 
 Gestionnaire de processus libre et gratuit pour Windows 10/11, alternative open source à Process Lasso.
 
+📖 **Documentation complète : [captain-vii.github.io/Corral](https://captain-vii.github.io/Corral/)** (guide d'utilisation, déploiement en entreprise, stratégies, configuration de parc, ligne de commande).
+
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 [![Licence GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Captain-VII/Corral/badge)](https://scorecard.dev/viewer/?uri=github.com/Captain-VII/Corral)

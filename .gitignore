@@ -11,3 +11,6 @@ tools/exe-icon-check.png
 
 # Extensions WiX téléchargées par « wix extension add »
 .wix/
+
+# Site de documentation généré (mkdocs build)
+site/
