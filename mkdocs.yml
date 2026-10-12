@@ -1,0 +1,57 @@
+# Site de documentation (GitHub Pages), publié par .github/workflows/docs.yml.
+# Aperçu local : pip install -r docs/requirements.txt && mkdocs serve
+site_name: Corral
+site_description: Gestionnaire de processus libre et gratuit pour Windows, alternative open source à Process Lasso.
+site_url: https://captain-vii.github.io/Corral/
+repo_url: https://github.com/Captain-VII/Corral
+repo_name: Captain-VII/Corral
+edit_uri: edit/main/docs/
+copyright: Corral est distribué sous licence GPL-3.0.
+
+theme:
+  name: material
+  language: fr
+  logo: images/icone.png
+  favicon: images/icone.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle: { icon: material/weather-night, name: Thème sombre }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle: { icon: material/weather-sunny, name: Thème clair }
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.keys
+
+nav:
+  - Accueil: index.md
+  - Installation: installation.md
+  - Utilisation:
+      - Règles: utilisation/regles.md
+      - ProBalance: utilisation/probalance.md
+      - Mode Jeu: utilisation/mode-jeu.md
+      - Autres fonctions: utilisation/autres.md
+  - Administration:
+      - Déploiement: admin/deploiement.md
+      - Stratégies de groupe: admin/strategies.md
+      - Configuration de parc: admin/parc.md
+      - Ligne de commande et PowerShell: admin/ligne-de-commande.md
+      - Serveurs RDS / VDI: admin/rds.md
+      - Sécurité: admin/securite.md
+  - FAQ: faq.md
