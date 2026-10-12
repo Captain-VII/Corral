@@ -42,10 +42,13 @@ public class ServiceTests : IDisposable
         new RuleStore(Path.Combine(dir, "config.json")).Save(s);
     }
 
+    // Large : les machines de GitHub peuvent être lentes, et un succès ne fait pas attendre
+    static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+
     static T Wait<T>(Func<T?> probe, string what) where T : class
     {
         var sw = Stopwatch.StartNew();
-        while (sw.Elapsed < TimeSpan.FromSeconds(10))
+        while (sw.Elapsed < Timeout)
         {
             if (probe() is { } value)
                 return value;
@@ -63,7 +66,7 @@ public class ServiceTests : IDisposable
         var ping = procs.Ping(name);
         using var host = StartHost();
 
-        using var remote = RemoteEngine.Connect(TimeSpan.FromSeconds(5), pipe, requireService: false, mirrorLog: false)!;
+        using var remote = RemoteEngine.Connect(Timeout, pipe, requireService: false, mirrorLog: false)!;
         Assert.NotNull(remote);
         Assert.True(remote.Fresh); // aucune interface ne lui a encore envoyé de configuration
         Assert.False(remote.InitialSettings.ProBalance.Enabled);
@@ -86,7 +89,7 @@ public class ServiceTests : IDisposable
         Wait(() => { ping.Refresh(); return ping.PriorityClass == ProcessPriorityClass.AboveNormal ? "" : null; }, "règle appliquée");
         var saved = new RuleStore(Path.Combine(dir, "config.json")).Load();
         Assert.Contains(saved.Rules, r => r.Pattern == name);
-        using (var second = RemoteEngine.Connect(TimeSpan.FromSeconds(5), pipe, requireService: false, mirrorLog: false)!)
+        using (var second = RemoteEngine.Connect(Timeout, pipe, requireService: false, mirrorLog: false)!)
             Assert.False(second.Fresh); // la configuration de l'exe portable ne sera plus reprise
     }
 
@@ -95,7 +98,7 @@ public class ServiceTests : IDisposable
     {
         WriteQuietConfig();
         var host = StartHost();
-        using var remote = RemoteEngine.Connect(TimeSpan.FromSeconds(5), pipe, requireService: false, mirrorLog: false)!;
+        using var remote = RemoteEngine.Connect(Timeout, pipe, requireService: false, mirrorLog: false)!;
         var states = new List<bool>();
         remote.ConnectionChanged += c => { lock (states) states.Add(c); };
         remote.Start();
@@ -124,7 +127,7 @@ public class ServiceTests : IDisposable
     public void FreshServiceAndLockedSettings()
     {
         using var host = StartHost(new PolicySet(LockSettings: true));
-        using var remote = RemoteEngine.Connect(TimeSpan.FromSeconds(5), pipe, requireService: false, mirrorLog: false)!;
+        using var remote = RemoteEngine.Connect(Timeout, pipe, requireService: false, mirrorLog: false)!;
         Assert.True(remote.Fresh); // aucune configuration : l'interface lui transmettra celle de l'exe portable
         remote.Start();
         var s = remote.InitialSettings;
