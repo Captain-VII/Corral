@@ -869,7 +869,36 @@ public sealed class Engine : IEngine, IDisposable
             done.Add(Tr($"mémoire {memPrio}", $"memory {memPrio}"));
 
         if (done.Count > 0)
-            Log.Info(Tr($"{key.Name} ({key.Pid}) : règle « {rule.Pattern} » → {string.Join(", ", done)}", $"{key.Name} ({key.Pid}): rule “{rule.Pattern}” → {string.Join(", ", done)}"), LogCategory.Rule);
+            LogRule(key, rule, string.Join(", ", done));
+    }
+
+    /// <summary>Fenêtre pendant laquelle une même application de règle n'est notée qu'une fois.</summary>
+    public static readonly TimeSpan RuleLogWindow = TimeSpan.FromMinutes(10);
+    readonly Dictionary<string, (DateTime Since, int Hidden)> ruleLog = new();
+
+    /// <summary>
+    /// Note l'application d'une règle. Un programme qui lance beaucoup de processus (navigateur…) n'est noté qu'une fois
+    /// par <see cref="RuleLogWindow"/> ; la ligne suivante indique combien de fois la règle s'est appliquée entre-temps.
+    /// </summary>
+    void LogRule(ProcKey key, Rule rule, string effects)
+    {
+        var id = $"{key.Name}|{rule.Pattern}|{effects}";
+        var t = now();
+        if (ruleLog.TryGetValue(id, out var entry) && t - entry.Since < RuleLogWindow)
+        {
+            ruleLog[id] = (entry.Since, entry.Hidden + 1);
+            return;
+        }
+        if (ruleLog.Count > 500)
+            ruleLog.Clear();
+        ruleLog[id] = (t, 0);
+        var more = entry.Hidden switch
+        {
+            0 => "",
+            1 => Tr(" (et 1 autre processus depuis)", " (and 1 other process since)"),
+            _ => Tr($" (et {entry.Hidden} autres processus depuis)", $" (and {entry.Hidden} other processes since)"),
+        };
+        Log.Info(Tr($"{key.Name} ({key.Pid}) : règle « {rule.Pattern} » → {effects}{more}", $"{key.Name} ({key.Pid}): rule “{rule.Pattern}” → {effects}{more}"), LogCategory.Rule);
     }
 
     void RunProBalance(double sysCpu, List<ProBalanceLogic.Sample> samples, Dictionary<ProcKey, Process> live, ProBalanceSettings cfg)
@@ -1068,6 +1097,10 @@ public sealed class Engine : IEngine, IDisposable
         {
             action();
             return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false; // le programme s'est fermé entre-temps : rien d'anormal
         }
         catch (Exception ex)
         {
