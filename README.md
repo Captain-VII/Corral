@@ -4,6 +4,8 @@
 
 Gestionnaire de processus libre et gratuit pour Windows 10/11, alternative open source à Process Lasso.
 
+📖 **Documentation complète : [captain-vii.github.io/Corral](https://captain-vii.github.io/Corral/)** (guide d'utilisation, déploiement en entreprise, stratégies, configuration de parc, ligne de commande).
+
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 [![Licence GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Captain-VII/Corral/badge)](https://scorecard.dev/viewer/?uri=github.com/Captain-VII/Corral)
@@ -83,6 +85,7 @@ La configuration et le journal sont dans `%ProgramData%\Corral\` avec le MSI, da
   ```
 
   Les commandes passent par le service et respectent *Verrouiller les réglages* ; l'interface ouverte affiche aussitôt les règles modifiées.
+- **Serveurs RDS / VDI** : activez *Équité entre les sessions* (page ProBalance) pour qu'aucun utilisateur ne monopolise le processeur ; chaque session ouverte lance sa propre interface, toutes reliées au même service.
 - **Supervision** : avertissements, erreurs et événements importants sont inscrits dans l'Observateur d'événements (journal Application, source `Corral`).
 - **Sécurité** : sans stratégie, tout utilisateur connecté peut modifier les règles depuis l'interface. Sur un poste partagé, activez *Verrouiller les réglages*.
 
