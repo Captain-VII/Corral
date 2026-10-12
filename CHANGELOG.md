@@ -1,5 +1,10 @@
 # Journal des modifications
 
+## 2.3.0
+
+- **Ligne de commande** : `Corral status`, `processes`, `rules` (add, remove, enable, disable, import, export), `pause`, `resume`, `game on|off`, `clean`, `priority`, avec sortie `--json` et codes de sortie. Le MSI ajoute Corral au PATH.
+- **Module PowerShell** `Corral` installé avec le MSI : `Get-CorralStatus`, `Get-CorralProcess`, `Get-CorralRule`, `Add-CorralRule`, `Set-CorralPriority`…
+
 ## 2.2.0
 
 - **Accessibilité** : noms et rôles pour les lecteurs d'écran (Narrateur, NVDA) sur tous les réglages, la navigation entre pages, les graphiques et les classements ; prise en charge du contraste élevé de Windows.

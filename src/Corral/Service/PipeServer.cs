@@ -1,4 +1,4 @@
-using System.IO.Pipes;
+﻿using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Threading.Channels;
@@ -179,9 +179,9 @@ public sealed class PipeServer : IDisposable
         }
     }
 
-    public void Broadcast(PipeMessage message)
+    public void Broadcast(PipeMessage message, PipeClient? except = null)
     {
-        var targets = Clients;
+        var targets = Clients.Where(c => c != except).ToList();
         if (targets.Count == 0)
             return;
         var bytes = Protocol.Encode(message);

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using Microsoft.Win32;
 using Corral.Core;
@@ -136,6 +136,70 @@ public class ServiceTests : IDisposable
         Assert.NotNull(remote.SetPriorityOnce(Environment.ProcessId, "x", ProcessPriorityClass.Normal)); // verrouillé
         var saved = new RuleStore(Path.Combine(dir, "config.json")).Load();
         Assert.DoesNotContain(saved.Rules, r => r.Pattern == "interdit.exe");
+    }
+
+    (int Code, string Out, string Err) Cli(params string[] args)
+    {
+        var (o, e) = (new StringWriter(), new StringWriter());
+        int code = Corral.Cli.Run(args, o, e, pipe, requireService: false);
+        return (code, o.ToString(), e.ToString());
+    }
+
+    [Fact]
+    public void CommandLineEditsRulesAndOpenInterfacesFollow()
+    {
+        WriteQuietConfig();
+        using var host = StartHost();
+        using var ui = RemoteEngine.Connect(TimeSpan.FromSeconds(30), pipe, requireService: false, mirrorLog: false)!;
+        var changed = new TaskCompletionSource<Settings>();
+        ui.SettingsChanged += s => changed.TrySetResult(s);
+        ui.Start();
+
+        Assert.Equal(Corral.Cli.Ok, Cli("rules", "add", "outil.exe", "--priority", "belownormal", "--efficiency", "on").Code);
+        Assert.True(changed.Task.Wait(TimeSpan.FromSeconds(30)));
+        Assert.Contains(changed.Task.Result.Rules, r => r.Pattern == "outil.exe" && r.Priority == ProcessPriorityClass.BelowNormal);
+
+        var (code, json, _) = Cli("rules", "--json");
+        Assert.Equal(0, code);
+        var rules = System.Text.Json.JsonSerializer.Deserialize<List<Rule>>(json, RuleStore.Options)!;
+        Assert.True(rules.Single(r => r.Pattern == "outil.exe").EfficiencyMode);
+
+        Assert.Equal(0, Cli("rules", "disable", "OUTIL.EXE").Code);
+        var file = Path.Combine(dir, "export.json");
+        Assert.Equal(0, Cli("rules", "export", file).Code);
+        Assert.False(RuleStore.ImportRules(file).Single(r => r.Pattern == "outil.exe").Enabled);
+        Assert.Equal(0, Cli("rules", "remove", "outil.exe").Code);
+        Assert.DoesNotContain(new RuleStore(Path.Combine(dir, "config.json")).Load().Rules, r => r.Pattern == "outil.exe");
+        Assert.Equal(0, Cli("rules", "import", file, "--replace").Code);
+        Assert.Contains(new RuleStore(Path.Combine(dir, "config.json")).Load().Rules, r => r.Pattern == "outil.exe");
+
+        (code, json, _) = Cli("status", "--json");
+        Assert.Equal(0, code);
+        Assert.Contains("\"Paused\": false", json);
+    }
+
+    [Fact]
+    public void CommandLineReportsErrors()
+    {
+        Assert.Equal(Corral.Cli.NoService, Cli("status").Code); // aucun service sur ce pipe
+        Assert.Equal(Corral.Cli.Ok, Cli("help").Code);
+        using var host = StartHost(new PolicySet(LockSettings: true));
+        Assert.Equal(Corral.Cli.Usage, Cli("rules", "add", "x.exe", "--priority", "RealTime").Code);
+        Assert.Equal(Corral.Cli.Usage, Cli("game", "peut-être").Code);
+        var (code, _, err) = Cli("rules", "add", "x.exe");
+        Assert.Equal(Corral.Cli.Failed, code); // verrouillé : le service refuse et le dit
+        Assert.False(string.IsNullOrWhiteSpace(err));
+        Assert.Equal(Corral.Cli.Failed, Cli("rules", "remove", "absent.exe").Code);
+    }
+
+    [Fact]
+    public void RuleOptionsAreParsed()
+    {
+        var r = Corral.Cli.ParseRule(" jeu.exe ", new[] { "--priority", "High", "--affinity", "0x3", "--cpu-limit", "50", "--game" });
+        Assert.Equal(("jeu.exe", ProcessPriorityClass.High, 3L, 50, true), (r.Pattern, r.Priority, r.AffinityMask, r.CpuLimitPercent, r.IsGame));
+        Assert.True(Corral.Cli.IsCommand(new[] { "status" }));
+        Assert.False(Corral.Cli.IsCommand(new[] { "--minimized" }));
+        Assert.False(Corral.Cli.IsCommand(Array.Empty<string>()));
     }
 
     [Fact]

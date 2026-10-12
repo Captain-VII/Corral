@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Microsoft.Win32;
 using Corral.Core;
 using Corral.Models;
@@ -57,6 +57,8 @@ public sealed class TrayContext : ApplicationContext
         {
             // Le service installe une mise à jour : il relancera l'interface ensuite
             remote.ServiceUpdating += () => ui.Post(_ => Exit(), null);
+            // Règles modifiées en ligne de commande
+            remote.SettingsChanged += incoming => ui.Post(_ => form.ReloadRules(incoming), null);
             remote.ConnectionChanged += connected => ui.Post(_ =>
             {
                 if (!exiting)

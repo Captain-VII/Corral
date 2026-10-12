@@ -1360,6 +1360,15 @@ public sealed class MainForm : Form
         RefreshRules(selectRule);
     }
 
+    /// <summary>Règles et profils modifiés ailleurs (ligne de commande) : déjà appliqués par le service, on les affiche.</summary>
+    public void ReloadRules(Settings incoming)
+    {
+        settings.Rules = incoming.Rules;
+        settings.Profiles = incoming.Profiles;
+        settings.ActiveProfile = incoming.ActiveProfile;
+        RefreshRules();
+    }
+
     /// <summary>Enregistre sans relancer le moteur (réglages purement visuels).</summary>
     void SaveSettings()
     {
