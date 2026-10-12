@@ -81,7 +81,7 @@ public sealed class TrayContext : ApplicationContext
         menu.Items.Add(pauseItem);
         proBalanceItem.ToolTipText = Tr("Activer ou désactiver ProBalance", "Turn ProBalance on or off");
         proBalanceItem.Click += (_, _) => form.SetProBalanceEnabled(!settings.ProBalance.Enabled);
-        proBalanceItem.Enabled = !Policies.Current.Locks("ProBalance");
+        proBalanceItem.Enabled = !Policies.Current.Locks("ProBalance", settings);
         menu.Items.Add(proBalanceItem);
         var gameItem = new ToolStripMenuItem(Tr("Mode Jeu", "Game Mode")) { ToolTipText = Tr("Plan Performances, ProBalance réactif, programmes de fond calmés", "Performance plan, responsive ProBalance, calmed background programs") };
         gameItem.Click += (_, _) => form.ToggleGameMode();

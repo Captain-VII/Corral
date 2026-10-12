@@ -10,10 +10,19 @@ namespace Corral.Core;
 /// <param name="LockSettings">Personne ne peut modifier les réglages depuis l'interface.</param>
 /// <param name="ProBalance">ProBalance forcé (activé ou désactivé), ou null.</param>
 /// <param name="RulesFile">Export de règles imposé : remplace les règles locales.</param>
+/// <param name="ConfigFile">Configuration de parc signée (chemin, partage ou https), voir <see cref="Fleet"/>.</param>
+/// <param name="ConfigPublicKey">Clé publique de l'organisation qui a signé <paramref name="ConfigFile"/>.</param>
 public sealed record PolicySet(bool LockSettings = false, bool DisableUpdates = false, bool? ProBalance = null,
-    string? RulesFile = null, bool DisableProcessTermination = false, bool DisableStartupManager = false)
+    string? RulesFile = null, bool DisableProcessTermination = false, bool DisableStartupManager = false,
+    string? ConfigFile = null, string? ConfigPublicKey = null)
 {
     public bool Any => this != new PolicySet();
+
+    /// <summary>Configuration de parc demandée (source et clé renseignées).</summary>
+    public bool HasFleet => ConfigFile != null && ConfigPublicKey != null;
+
+    /// <summary>Charge la configuration de parc (cache dans <paramref name="cacheDir"/>), ou null.</summary>
+    public FleetConfig? LoadFleet(string cacheDir) => HasFleet ? Fleet.Load(ConfigFile!, ConfigPublicKey!, cacheDir) : null;
 }
 
 public static class Policies
@@ -52,10 +61,9 @@ public static class Policies
             return new PolicySet();
         bool Flag(string name) => key.GetValue(name) is int v && v != 0;
         bool? Tri(string name) => key.GetValue(name) is int v ? v != 0 : null;
-        var file = key.GetValue("RulesFile") as string;
-        return new PolicySet(Flag("LockSettings"), Flag("DisableUpdates"), Tri("ProBalance"),
-            string.IsNullOrWhiteSpace(file) ? null : Environment.ExpandEnvironmentVariables(file.Trim()),
-            Flag("DisableProcessTermination"), Flag("DisableStartupManager"));
+        string? Text(string name) => key.GetValue(name) is string v && !string.IsNullOrWhiteSpace(v) ? Environment.ExpandEnvironmentVariables(v.Trim()) : null;
+        return new PolicySet(Flag("LockSettings"), Flag("DisableUpdates"), Tri("ProBalance"), Text("RulesFile"),
+            Flag("DisableProcessTermination"), Flag("DisableStartupManager"), Text("ConfigFile"), Text("ConfigPublicKey"));
     }
 
     /// <summary>Applique les stratégies à la configuration (en place).</summary>
@@ -79,8 +87,9 @@ public static class Policies
         }
     }
 
-    /// <summary>La page de réglages <paramref name="page"/> est-elle verrouillée ?</summary>
-    public static bool Locks(this PolicySet set, string page) => set.LockSettings && page is "Règles" or "ProBalance" or "Mode Jeu" or "Optimisations"
+    /// <summary>La page de réglages <paramref name="page"/> est-elle verrouillée (stratégie, ou configuration de parc) ?</summary>
+    public static bool Locks(this PolicySet set, string page, Settings? settings = null) => settings?.Managed?.Contains(page) == true
+        || set.LockSettings && page is "Règles" or "ProBalance" or "Mode Jeu" or "Optimisations"
         || page == "Règles" && set.RulesFile != null
         || page == "ProBalance" && set.ProBalance != null
         || page == "Démarrage" && set.DisableStartupManager;

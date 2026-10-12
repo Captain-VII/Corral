@@ -3,6 +3,7 @@
 ## 2.3.0
 
 - **Ligne de commande** : `Corral status`, `processes`, `rules` (add, remove, enable, disable, import, export), `pause`, `resume`, `game on|off`, `clean`, `priority`, avec sortie `--json` et codes de sortie. Le MSI ajoute Corral au PATH.
+- **Configuration de parc signée** (stratégie `ConfigFile` + `ConfigPublicKey`) : fichier JSON sur un partage ou en https, signé avec la clé de l'organisation (`Corral fleet keygen|sign|check`). Ses sections remplacent la configuration locale, en lecture seule ; relu toutes les 15 minutes, avec cache hors réseau et refus des versions plus anciennes.
 - **Module PowerShell** `Corral` installé avec le MSI : `Get-CorralStatus`, `Get-CorralProcess`, `Get-CorralRule`, `Add-CorralRule`, `Set-CorralPriority`…
 
 ## 2.2.0

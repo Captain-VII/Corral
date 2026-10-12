@@ -11,6 +11,7 @@
   <supportedOn>
     <definitions>
       <definition name="SUPPORTED_Corral21" displayName="$(string.SUPPORTED_Corral21)" />
+      <definition name="SUPPORTED_Corral23" displayName="$(string.SUPPORTED_Corral23)" />
     </definitions>
   </supportedOn>
   <categories>
@@ -30,6 +31,15 @@
       <supportedOn ref="SUPPORTED_Corral21" />
       <elements>
         <text id="RulesFilePath" valueName="RulesFile" required="true" expandable="true" />
+      </elements>
+    </policy>
+    <policy name="FleetConfig" class="Machine" displayName="$(string.FleetConfig)" explainText="$(string.FleetConfig_Help)"
+            presentation="$(presentation.FleetConfig)" key="SOFTWARE\Policies\Corral">
+      <parentCategory ref="Corral" />
+      <supportedOn ref="SUPPORTED_Corral23" />
+      <elements>
+        <text id="FleetConfigSource" valueName="ConfigFile" required="true" expandable="true" />
+        <text id="FleetConfigKey" valueName="ConfigPublicKey" required="true" />
       </elements>
     </policy>
     <policy name="ProBalance" class="Machine" displayName="$(string.ProBalance)" explainText="$(string.ProBalance_Help)"

@@ -186,6 +186,8 @@ public sealed class Settings
     /// <summary>Nom du profil dont les règles sont dans <see cref="Rules"/>.</summary>
     public string ActiveProfile { get; set; } = "";
     public List<Profile> Profiles { get; set; } = new();
+    /// <summary>Pages imposées par la configuration de parc (voir Core.Fleet), en lecture seule dans l'interface.</summary>
+    public List<string>? Managed { get; set; }
 
     /// <summary>Corrige les valeurs nulles ou hors bornes après une lecture JSON.</summary>
     public void Normalize()

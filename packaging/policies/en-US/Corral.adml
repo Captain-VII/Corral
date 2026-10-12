@@ -13,6 +13,16 @@
 Use “Enforced rules” to provide the rules.
 
 Takes effect when the Corral service or the PC restarts.</string>
+      <string id="SUPPORTED_Corral23">Corral 2.3 or later</string>
+      <string id="FleetConfig">Signed fleet configuration</string>
+      <string id="FleetConfig_Help">Configuration shared by all computers: a JSON file published on a network share or an https address, signed with your organization's key. The sections it contains (Rules, ProBalance, GameMode) replace the local configuration and can no longer be changed on the computer.
+
+Preparation, with Corral.exe:
+  Corral fleet keygen key.pem  (once; keep the private key safe)
+  Corral fleet sign config.json key.pem  (after each change; increase "Serial")
+Publish config.json and config.json.sig side by side, then enter their location and the public key shown by keygen here.
+
+The service rereads the file every 15 minutes. A badly signed file, or one older than the last received, is refused; off the network, the last valid version stays applied.</string>
       <string id="RulesFile">Enforced rules</string>
       <string id="RulesFile_Help">Path of a rules file exported from Corral (Rules page, ⋯ menu › Export). Its rules replace the local rules on every computer.
 
@@ -29,6 +39,14 @@ Environment variables are accepted (%ProgramData%…).</string>
       <string id="DisableStartupManager_Help">If you enable this setting, Corral's Startup page is read-only.</string>
     </stringTable>
     <presentationTable>
+      <presentation id="FleetConfig">
+        <textBox refId="FleetConfigSource">
+          <label>Location (path, share or https):</label>
+        </textBox>
+        <textBox refId="FleetConfigKey">
+          <label>Public key:</label>
+        </textBox>
+      </presentation>
       <presentation id="RulesFile">
         <textBox refId="RulesFilePath">
           <label>Rules file:</label>

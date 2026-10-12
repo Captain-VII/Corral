@@ -75,7 +75,13 @@ public sealed class RuleStore : ISettingsStore
         }
         if (file?.Rules == null)
             throw new InvalidDataException(Tr("Ce fichier ne contient aucune règle.", "This file contains no rules."));
-        var rules = file.Rules.Where(r => r != null && !string.IsNullOrWhiteSpace(r.Pattern)).ToList();
+        return Sanitize(file.Rules);
+    }
+
+    /// <summary>Règles venues d'un fichier : sans nom écartées, valeurs hors bornes retirées.</summary>
+    public static List<Rule> Sanitize(List<Rule> list)
+    {
+        var rules = list.Where(r => r != null && !string.IsNullOrWhiteSpace(r.Pattern)).ToList();
         foreach (var r in rules)
         {
             r.Pattern = r.Pattern.Trim();

@@ -185,7 +185,7 @@ public sealed class MainForm : Form
     {
         page.Dock = DockStyle.Fill;
         page.Visible = false;
-        if (Policies.Current.Locks(title))
+        if (Policies.Current.Locks(title, settings))
         {
             // Réglages imposés par l'organisation : visibles mais en lecture seule
             foreach (Control c in page.Controls)
