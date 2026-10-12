@@ -119,7 +119,7 @@ static class Program
         var powerStateFile = Path.Combine(store.ConfigDirectory, "powerplan.restore");
         PowerPlanManager.RecoverFromCrash(powerApi, powerStateFile);
 
-        var settings = PrepareSettings(store, Policies.Current);
+        var settings = PrepareSettings(store, Policies.Current, Policies.Current.LoadFleet(store.ConfigDirectory));
         Lang.Set(settings.Language);
         UI.Theme.Set(settings.Theme);
 
@@ -149,12 +149,13 @@ static class Program
         Application.Run(new TrayContext(engine, store, settings, startHidden: (args.Contains("--minimized") || justUpdated) && !restarted, justUpdated));
     }
 
-    /// <summary>Charge la configuration et la complète (profil, stratégies, plan du Mode Jeu). Partagé avec le service.</summary>
-    internal static Settings PrepareSettings(RuleStore store, PolicySet policies)
+    /// <summary>Charge la configuration et la complète (profil, stratégies, parc, plan du Mode Jeu). Partagé avec le service.</summary>
+    internal static Settings PrepareSettings(RuleStore store, PolicySet policies, FleetConfig? fleet = null)
     {
         var settings = store.Load();
         Profiles.Ensure(settings, Tr("Principal", "Main"));
         Policies.Apply(settings, policies);
+        Fleet.Apply(settings, fleet);
         if (settings.GameMode.PowerPlan == null)
         {
             // Premier lancement du Mode Jeu : proposer le plan Performances de Windows s'il existe

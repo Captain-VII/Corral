@@ -203,6 +203,33 @@ public class ServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task FleetConfigurationIsEnforcedAndRefreshed()
+    {
+        WriteQuietConfig();
+        var (source, publicKey) = FleetTests.Publish(dir, serial: 1, "parc1.exe");
+        using var host = StartHost(new PolicySet(ConfigFile: source, ConfigPublicKey: publicKey));
+        using var ui = RemoteEngine.Connect(TimeSpan.FromSeconds(30), pipe, requireService: false, mirrorLog: false)!;
+        Assert.Equal("parc1.exe", Assert.Single(ui.InitialSettings.Rules).Pattern);
+        Assert.Equal(new[] { "Règles" }, ui.InitialSettings.Managed);
+
+        // Modification depuis le poste : les règles du parc restent
+        Assert.Equal(Corral.Cli.Failed, Cli("rules", "add", "local.exe").Code); // refusé par la ligne de commande
+        ui.Listen();
+        var forced = ui.InitialSettings;
+        forced.Rules.Add(new Rule { Pattern = "local.exe" });
+        Assert.Null(await ui.ApplyAsync(forced)); // et par le service, qui réimpose le parc
+        Assert.DoesNotContain(new RuleStore(Path.Combine(dir, "config.json")).Load().Rules, r => r.Pattern == "local.exe");
+
+        // Nouvelle version publiée : appliquée et transmise aux interfaces
+        var changed = new TaskCompletionSource<Settings>();
+        ui.SettingsChanged += s => changed.TrySetResult(s);
+        FleetTests.Publish(dir, serial: 2, "parc2.exe");
+        host.RefreshFleet();
+        Assert.Same(changed.Task, await Task.WhenAny(changed.Task, Task.Delay(TimeSpan.FromSeconds(30))));
+        Assert.Equal("parc2.exe", Assert.Single((await changed.Task).Rules).Pattern);
+    }
+
+    [Fact]
     public void PipeNameCannotBeSquatted()
     {
         using var host = StartHost();
@@ -248,7 +275,7 @@ public class PolicyTests
         var admx = System.Xml.Linq.XDocument.Load(Path.Combine(folder, "Corral.admx"));
         var valueNames = admx.Descendants().Select(e => (string?)e.Attribute("valueName")).Where(v => v != null).ToHashSet();
         // Chaque valeur lue par Policies.Read a sa stratégie
-        foreach (var name in new[] { "LockSettings", "DisableUpdates", "ProBalance", "RulesFile", "DisableProcessTermination", "DisableStartupManager" })
+        foreach (var name in new[] { "LockSettings", "DisableUpdates", "ProBalance", "RulesFile", "DisableProcessTermination", "DisableStartupManager", "ConfigFile", "ConfigPublicKey" })
             Assert.Contains(name, valueNames);
         Assert.All(admx.Descendants().Select(e => (string?)e.Attribute("key")).Where(k => k != null), k => Assert.Equal(Policies.KeyPath, k));
 
@@ -283,9 +310,11 @@ public class PolicyTests
                 key.SetValue("ProBalance", 0, RegistryValueKind.DWord);
                 key.SetValue("RulesFile", rulesFile);
                 key.SetValue("DisableStartupManager", 0, RegistryValueKind.DWord);
+                key.SetValue("ConfigPublicKey", "  ");
                 set = Policies.Read(key);
             }
             Assert.Equal(new PolicySet(LockSettings: true, DisableUpdates: true, ProBalance: false, RulesFile: rulesFile), set);
+            Assert.False(set.HasFleet);
 
             var s = new Settings();
             s.Rules.Add(new Rule { Pattern = "local.exe" });

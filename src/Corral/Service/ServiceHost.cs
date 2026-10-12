@@ -45,6 +45,8 @@ public sealed class ServiceHost : IDisposable
     readonly GpuSampler gpu = new();
     readonly object sync = new();
     Settings settings;
+    FleetConfig? fleet;
+    System.Threading.Timer? fleetTimer;
     bool fresh;
     int updating;
     bool disposed;
@@ -64,7 +66,8 @@ public sealed class ServiceHost : IDisposable
         PowerPlanManager.RecoverFromCrash(powerApi, powerStateFile);
         store = new RuleStore(Path.Combine(dir, "config.json"));
         fresh = !File.Exists(ConfiguredFlag);
-        settings = Program.PrepareSettings(store, policies);
+        fleet = policies.LoadFleet(dir);
+        settings = Program.PrepareSettings(store, policies, fleet);
 
         server = new PipeServer(pipeName, firstInstance);
         engine = new Engine(RuleStore.Clone(settings), powerApi, powerStateFile, () => server.ActiveClient()?.Session?.ForegroundPid ?? 0)
@@ -104,10 +107,35 @@ public sealed class ServiceHost : IDisposable
         return host;
     }
 
+    /// <summary>Intervalle de relecture de la configuration de parc.</summary>
+    public static TimeSpan FleetInterval { get; set; } = TimeSpan.FromMinutes(15);
+
     public void Start()
     {
         server.Start();
         engine.Start();
+        if (policies.HasFleet)
+            fleetTimer = new System.Threading.Timer(_ => RefreshFleet(), null, FleetInterval, FleetInterval);
+    }
+
+    /// <summary>Relit la configuration de parc ; si elle a changé, l'applique et prévient les interfaces.</summary>
+    public void RefreshFleet()
+    {
+        var next = policies.LoadFleet(dir);
+        Settings updated;
+        lock (sync)
+        {
+            if (disposed || JsonSerializer.Serialize(next, RuleStore.Options) == JsonSerializer.Serialize(fleet, RuleStore.Options))
+                return;
+            fleet = next;
+            Fleet.Apply(settings, fleet);
+            try { store.Save(settings); }
+            catch (Exception ex) { Log.Error("Enregistrement de la configuration", ex); }
+            updated = RuleStore.Clone(settings);
+            server.Broadcast(new PipeMessage { Type = "settings", Settings = settings });
+        }
+        engine.UpdateSettings(updated);
+        Log.Info(Tr($"Configuration de parc n° {next?.Serial} appliquée", $"Fleet configuration #{next?.Serial} applied"));
     }
 
     /// <summary>Seuls SYSTEM et les administrateurs écrivent dans le dossier ; les utilisateurs le lisent (journal).</summary>
@@ -200,6 +228,7 @@ public sealed class ServiceHost : IDisposable
         Policies.Apply(incoming, policies);
         lock (sync)
         {
+            Fleet.Apply(incoming, fleet); // les sections imposées par le parc ne se modifient pas depuis le poste
             settings = incoming;
             if (fresh)
             {
@@ -286,6 +315,7 @@ public sealed class ServiceHost : IDisposable
             disposed = true;
         }
         Log.Written -= OnLog;
+        fleetTimer?.Dispose();
         server.Dispose();
         engine.Stop();
         gpu.Dispose();

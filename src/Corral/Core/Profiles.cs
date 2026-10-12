@@ -70,6 +70,6 @@ public static class Profiles
         return true;
     }
 
-    static List<Rule> CloneRules(List<Rule> rules) =>
+    public static List<Rule> CloneRules(List<Rule> rules) =>
         JsonSerializer.Deserialize<List<Rule>>(JsonSerializer.Serialize(rules, RuleStore.Options), RuleStore.Options) ?? new();
 }

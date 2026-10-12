@@ -17,7 +17,7 @@ public static class Cli
 {
     public const int Ok = 0, Failed = 1, Usage = 2, NoService = 3;
 
-    static readonly string[] Commands = { "help", "status", "processes", "rules", "pause", "resume", "game", "clean", "priority" };
+    static readonly string[] Commands = { "help", "status", "processes", "rules", "pause", "resume", "game", "clean", "priority", "fleet" };
 
     /// <summary>Les arguments sont-ils une commande (et non une option de l'interface comme --minimized) ?</summary>
     public static bool IsCommand(string[] args) =>
@@ -65,6 +65,8 @@ public static class Cli
             }
             bool json = args.Contains("--json", StringComparer.OrdinalIgnoreCase);
             var rest = args.Skip(1).Where(a => !a.Equals("--json", StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (command == "fleet")
+                return FleetCommand(rest, output); // outils de l'équipe informatique : pas besoin du service
             if (requireService && !RemoteEngine.ServiceInstalled)
                 throw new CliException(Tr("La ligne de commande nécessite l'installation de Corral (MSI) : son service n'est pas installé.",
                     "The command line requires the Corral installation (MSI): its service is not installed."), NoService);
@@ -116,6 +118,11 @@ public static class Cli
           clean                               Nettoie la mémoire maintenant
           priority <pid> <priorité>           Change la priorité d'un processus une fois
 
+        Configuration de parc (équipe informatique) :
+          fleet keygen <clé.pem>              Crée la clé de signature et affiche la clé publique
+          fleet sign <config.json> <clé.pem>  Signe la configuration (écrit config.json.sig)
+          fleet check <config.json> <clé publique>  Vérifie la signature et résume le contenu
+
         Codes de sortie : 0 succès, 1 erreur, 2 commande invalide, 3 service injoignable.
 
         """, """
@@ -135,6 +142,11 @@ public static class Cli
           game on|off                         Manual Game Mode
           clean                               Cleans memory now
           priority <pid> <priority>           Changes a process priority once
+
+        Fleet configuration (IT team):
+          fleet keygen <key.pem>              Creates the signing key and shows the public key
+          fleet sign <config.json> <key.pem>  Signs the configuration (writes config.json.sig)
+          fleet check <config.json> <public key>  Checks the signature and summarizes the content
 
         Exit codes: 0 success, 1 error, 2 invalid command, 3 service unreachable.
 
@@ -221,6 +233,8 @@ public static class Cli
             : throw new CliException(Tr($"Argument manquant pour « rules {action} ».", $"Missing argument for “rules {action}”."), Usage);
         Rule Find(string pattern) => settings.Rules.FirstOrDefault(r => r.Pattern.Equals(pattern, StringComparison.OrdinalIgnoreCase))
             ?? throw new CliException(Tr($"Aucune règle « {pattern} ».", $"No rule “{pattern}”."));
+        if (action != "export" && settings.Managed?.Contains("Règles") == true)
+            throw new CliException(Tr("Règles imposées par la configuration de parc de votre organisation.", "Rules enforced by your organization's fleet configuration."));
         string done;
         switch (action)
         {
@@ -333,6 +347,39 @@ public static class Cli
             ? p
             : throw new CliException(Tr($"Priorité invalide : {text} (Idle, BelowNormal, Normal, AboveNormal, High)",
                 $"Invalid priority: {text} (Idle, BelowNormal, Normal, AboveNormal, High)"), Usage);
+
+    static int FleetCommand(string[] args, TextWriter output)
+    {
+        switch (args)
+        {
+            case ["keygen", var pem]:
+                var publicKey = Fleet.KeyGen(pem);
+                output.WriteLine(Tr($"Clé privée : {pem} (à garder secrète et sauvegardée)", $"Private key: {pem} (keep it secret and backed up)"));
+                output.WriteLine(Tr("Clé publique (stratégie « Configuration de parc ») :", "Public key (“Fleet configuration” policy):"));
+                output.WriteLine(publicKey);
+                return Ok;
+            case ["sign", var config, var pem]:
+                var key = Fleet.Sign(config, pem);
+                output.WriteLine(Tr($"Signé : {config}.sig", $"Signed: {config}.sig"));
+                output.WriteLine(Tr("Clé publique : ", "Public key: ") + key);
+                return Ok;
+            case ["check", var config, var publicKey2]:
+                var sigFile = config + ".sig";
+                if (!File.Exists(sigFile))
+                    throw new CliException(Tr($"Signature absente : {sigFile}", $"Missing signature: {sigFile}"));
+                var c = Fleet.Verify(File.ReadAllBytes(config), File.ReadAllText(sigFile), publicKey2);
+                output.WriteLine(Tr($"Signature valide. Configuration n° {c.Serial}", $"Valid signature. Configuration #{c.Serial}"));
+                if (c.Rules != null)
+                    output.WriteLine(Tr($"  Règles : {c.Rules.Count}", $"  Rules: {c.Rules.Count}"));
+                if (c.ProBalance != null)
+                    output.WriteLine("  ProBalance");
+                if (c.GameMode != null)
+                    output.WriteLine(Tr("  Mode Jeu", "  Game Mode"));
+                return Ok;
+            default:
+                throw new CliException(Tr("Utilisation : fleet keygen|sign|check …", "Usage: fleet keygen|sign|check …"), Usage);
+        }
+    }
 
     static int Game(RemoteEngine remote, string[] args, TextWriter output)
     {

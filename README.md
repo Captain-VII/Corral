@@ -52,8 +52,25 @@ La configuration et le journal sont dans `%ProgramData%\Corral\` avec le MSI, da
   | Désactiver les mises à jour | `DisableUpdates` = 1 | Les versions sont déployées par l'équipe informatique |
   | Interdire de terminer des processus | `DisableProcessTermination` = 1 | |
   | Interdire la gestion du démarrage | `DisableStartupManager` = 1 | Page Démarrage en lecture seule |
+  | Configuration de parc signée | `ConfigFile` = chemin, partage ou https ; `ConfigPublicKey` = clé publique | Voir ci-dessous |
 
   Les stratégies sont lues au démarrage du service.
+- **Configuration de parc signée** : un seul fichier JSON pour tous les postes, signé avec la clé de votre organisation. Chaque section présente (`Rules`, `ProBalance`, `GameMode`) remplace la configuration locale et passe en lecture seule.
+
+  ```json
+  { "App": "Corral", "Serial": 1,
+    "Rules": [ { "Pattern": "Teams.exe", "Priority": "AboveNormal" },
+               { "Pattern": "backup*.exe", "Priority": "BelowNormal", "When": { "From": "09:00:00", "To": "18:00:00" } } ],
+    "ProBalance": { "Enabled": true } }
+  ```
+
+  ```
+  Corral fleet keygen cle.pem                 (une fois ; gardez cle.pem en lieu sûr)
+  Corral fleet sign config.json cle.pem       (à chaque modification, en augmentant Serial)
+  Corral fleet check config.json <clé publique>
+  ```
+
+  Publiez `config.json` et `config.json.sig` côte à côte (partage réseau ou https), puis renseignez la stratégie *Configuration de parc signée*. Le service relit le fichier toutes les 15 minutes ; un fichier mal signé ou plus ancien que le dernier reçu est refusé, et hors réseau la dernière version valide reste appliquée.
 - **Ligne de commande et PowerShell** (installation MSI) : `Corral status`, `Corral rules add jeu.exe --priority High`, `Corral help` pour la liste. Le module PowerShell est installé avec Corral :
 
   ```powershell
