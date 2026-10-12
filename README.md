@@ -81,6 +81,7 @@ La configuration et le journal sont dans `%ProgramData%\Corral\` avec le MSI, da
   ```
 
   Les commandes passent par le service et respectent *Verrouiller les réglages* ; l'interface ouverte affiche aussitôt les règles modifiées.
+- **Serveurs RDS / VDI** : activez *Équité entre les sessions* (page ProBalance) pour qu'aucun utilisateur ne monopolise le processeur ; chaque session ouverte lance sa propre interface, toutes reliées au même service.
 - **Supervision** : avertissements, erreurs et événements importants sont inscrits dans l'Observateur d'événements (journal Application, source `Corral`).
 - **Sécurité** : sans stratégie, tout utilisateur connecté peut modifier les règles depuis l'interface. Sur un poste partagé, activez *Verrouiller les réglages*.
 

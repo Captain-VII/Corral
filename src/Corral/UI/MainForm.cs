@@ -63,6 +63,8 @@ public sealed class MainForm : Form
     // ProBalance
     readonly ToggleSwitch pbEnabled = new();
     readonly ToggleSwitch pbNotify = new();
+    readonly ToggleSwitch pbFairness = new();
+    readonly Label pbSessions = new() { AutoSize = true, MaximumSize = new Size(520, 0), Tag = Theme.HintTag, Margin = new Padding(0, 4, 0, 0) };
     readonly NumericUpDown pbSystem = Num(10, 100);
     readonly NumericUpDown pbProcess = Num(1, 100);
     readonly NumericUpDown pbRestore = Num(0, 100);
@@ -746,6 +748,11 @@ public sealed class MainForm : Form
         lastSnapshot = snap;
         nav.SetStatus(snap.SystemCpu, snap.Rows.Count, snap.Paused, snap.GameMode, snap.GameTrigger);
         UpdateGameStatus(snap);
+        if (IsPageVisible("ProBalance"))
+            pbSessions.Text = snap.Sessions is { Count: > 1 } sessions
+                ? Tr("Sessions ouvertes : ", "Open sessions: ") + string.Join(" · ", sessions.Select(x =>
+                    $"{x.User} {x.Cpu:0} %" + (x.Limited ? Tr(" (abaissée)", " (lowered)") : "")))
+                : Tr("Une seule session ouverte : l'équité n'a rien à faire.", "Only one session open: fairness has nothing to do.");
         if (IsPageVisible("Optimisations"))
             optMemNow.Text = snap.MemoryTotal > 0
                 ? Tr($"Mémoire utilisée en ce moment : {snap.MemoryPercent:0} % ({FormatBytes(snap.MemoryUsed)} sur {FormatBytes(snap.MemoryTotal)})",
@@ -1422,7 +1429,9 @@ public sealed class MainForm : Form
         var stack = new CardStack();
         stack.Controls.Add(new Card(Rows(
             SettingRow(Tr("Activer ProBalance", "Enable ProBalance"), Tr("Abaisse temporairement la priorité des processus qui saturent le processeur. La fenêtre que vous utilisez n'est jamais touchée.", "Temporarily lowers the priority of processes that saturate the CPU. The window you are using is never touched."), pbEnabled),
-            SettingRow(Tr("Me prévenir quand ProBalance intervient", "Notify me when ProBalance acts"), Tr("Affiche une bulle près de l'horloge (au plus une toutes les 30 secondes).", "Shows a balloon near the clock (at most one every 30 seconds)."), pbNotify)), Tr("Fonctionnement", "Behavior")));
+            SettingRow(Tr("Me prévenir quand ProBalance intervient", "Notify me when ProBalance acts"), Tr("Affiche une bulle près de l'horloge (au plus une toutes les 30 secondes).", "Shows a balloon near the clock (at most one every 30 seconds)."), pbNotify),
+            SettingRow(Tr("Équité entre les sessions", "Fairness between sessions"), Tr("Serveur RDS ou VDI multi-session : quand le processeur sature, une session qui prend plus d'une fois et demie sa part voit ses programmes abaissés. Utilise les seuils ci-dessous.", "RDS or multi-session VDI server: when the CPU is saturated, a session taking more than one and a half times its share has its programs lowered. Uses the thresholds below."), pbFairness),
+            pbSessions), Tr("Fonctionnement", "Behavior")));
 
         var resetStats = new ModernButton(Tr("Remettre à zéro", "Reset")) { Height = 28 };
         resetStats.Click += (_, _) =>
@@ -1519,6 +1528,7 @@ public sealed class MainForm : Form
         var pb = settings.ProBalance;
         pbEnabled.Checked = pb.Enabled;
         pbNotify.Checked = settings.NotifyProBalance;
+        pbFairness.Checked = pb.SessionFairness;
         chart.Threshold = pb.Enabled ? pb.SystemThreshold : null;
         chart.Invalidate();
         SetNum(pbSystem, pb.SystemThreshold);
@@ -1534,6 +1544,7 @@ public sealed class MainForm : Form
     {
         var pb = settings.ProBalance;
         pb.Enabled = pbEnabled.Checked;
+        pb.SessionFairness = pbFairness.Checked;
         pb.SystemThreshold = (double)pbSystem.Value;
         pb.ProcessThreshold = (double)pbProcess.Value;
         pb.RestoreThreshold = (double)pbRestore.Value;
