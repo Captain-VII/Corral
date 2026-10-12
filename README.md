@@ -33,6 +33,8 @@ Depuis la page [Releases](../../releases/latest), au choix :
 
 Aucune installation de .NET n'est nécessaire.
 
+Avec winget (une fois le paquet accepté dans le dépôt winget) : `winget install CaptainVII.Corral`.
+
 Pour vérifier qu'un fichier vient bien du workflow de ce dépôt :
 
 ```bash

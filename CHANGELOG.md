@@ -3,6 +3,8 @@
 ## 3.0.0
 
 - **Équité entre les sessions** (serveurs RDS, VDI multi-session) : quand le processeur sature, une session qui prend plus d'une fois et demie sa part voit ses programmes abaissés, jusqu'à ce qu'elle revienne dans sa part. La page ProBalance affiche la charge de chaque session ouverte. Désactivée par défaut ; réglable aussi par la configuration de parc (`"ProBalance": { "SessionFairness": true }`).
+- **Site de documentation** : [captain-vii.github.io/Corral](https://captain-vii.github.io/Corral/), guide d'utilisation et d'administration en français.
+- **winget** : chaque release fournit les manifestes winget (`Corral-winget.zip`), à soumettre au dépôt `microsoft/winget-pkgs` pour `winget install CaptainVII.Corral`.
 
 ## 2.3.0
 
