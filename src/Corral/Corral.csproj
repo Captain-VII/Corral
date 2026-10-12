@@ -23,6 +23,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Les tests simulent une mise à jour en cours (ServiceHost.Updating) -->
+    <InternalsVisibleTo Include="Corral.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- ServiceBase : mode service Windows (installation MSI) -->
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
   </ItemGroup>

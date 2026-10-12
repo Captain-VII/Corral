@@ -42,6 +42,12 @@ static class Program
                     "Corral", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+            if (remote.UpdateInProgress)
+            {
+                // Mise à jour en cours : cet exe va être remplacé. Le nouveau service relancera l'interface.
+                remote.Dispose();
+                return;
+            }
         }
         else if (!IsAdministrator())
         {

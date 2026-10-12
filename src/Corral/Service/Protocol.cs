@@ -33,6 +33,8 @@ public sealed class PipeMessage
     public int Pid { get; set; }
     public ProcessPriorityClass Priority { get; set; } = ProcessPriorityClass.Normal;
     public SessionState? Session { get; set; }
+    /// <summary>Dans « welcome » : le service installe une mise à jour et va s'arrêter.</summary>
+    public bool Updating { get; set; }
 }
 
 public static class Protocol

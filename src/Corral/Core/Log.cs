@@ -67,6 +67,9 @@ public static class Log
     public static void Error(string message, Exception? ex = null) =>
         Write(LogLevel.Error, LogCategory.General, ex == null ? message : $"{message} : {ex}");
 
+    /// <summary>Message d'une exception, ou son type s'il est vide.</summary>
+    public static string Reason(Exception ex) => string.IsNullOrWhiteSpace(ex.Message) ? ex.GetType().Name : ex.Message;
+
     public static LogEntry[] Recent()
     {
         lock (sync) return recent.ToArray();

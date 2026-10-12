@@ -1104,7 +1104,7 @@ public sealed class Engine : IEngine, IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warn(Tr($"{key.Name} ({key.Pid}) : échec {what} : {ex.Message}", $"{key.Name} ({key.Pid}): {what} failed: {ex.Message}"));
+            Log.Warn(Tr($"{key.Name} ({key.Pid}) : échec {what} : {Log.Reason(ex)}", $"{key.Name} ({key.Pid}): {what} failed: {Log.Reason(ex)}"));
             return false;
         }
     }
