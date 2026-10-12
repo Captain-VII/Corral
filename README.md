@@ -54,6 +54,16 @@ La configuration et le journal sont dans `%ProgramData%\Corral\` avec le MSI, da
   | Interdire la gestion du démarrage | `DisableStartupManager` = 1 | Page Démarrage en lecture seule |
 
   Les stratégies sont lues au démarrage du service.
+- **Ligne de commande et PowerShell** (installation MSI) : `Corral status`, `Corral rules add jeu.exe --priority High`, `Corral help` pour la liste. Le module PowerShell est installé avec Corral :
+
+  ```powershell
+  Get-CorralStatus
+  Get-CorralProcess chrome* | Set-CorralPriority -Priority BelowNormal
+  Add-CorralRule obs64.exe -Priority AboveNormal
+  Get-CorralRule | Export-Csv regles.csv
+  ```
+
+  Les commandes passent par le service et respectent *Verrouiller les réglages* ; l'interface ouverte affiche aussitôt les règles modifiées.
 - **Supervision** : avertissements, erreurs et événements importants sont inscrits dans l'Observateur d'événements (journal Application, source `Corral`).
 - **Sécurité** : sans stratégie, tout utilisateur connecté peut modifier les règles depuis l'interface. Sur un poste partagé, activez *Verrouiller les réglages*.
 

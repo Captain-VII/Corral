@@ -1,4 +1,4 @@
-<!--
+﻿<!--
   Installeur MSI de Corral (WiX 5) : Program Files\Corral, raccourci du menu Démarrer pour tous les utilisateurs.
   Compilé par .github/workflows/release.yml (x64, et arm64 avec -arch arm64) :
     wix build packaging/Corral.wxs -arch x64 -ext WixToolset.Util.wixext -d Version=X.Y.Z -d ExePath=publish/Corral.exe -o publish/Corral.msi
@@ -51,7 +51,22 @@
           <RemoveFile Id="DownloadedExe" Name="Corral.exe.download" On="uninstall" />
           <!-- Lu par Installation.IsMsi -->
           <RegistryValue Root="HKLM" Key="SOFTWARE\Corral" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]" />
+          <!-- Ligne de commande : « Corral status » depuis n'importe quel terminal -->
+          <Environment Id="CorralPath" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="yes" />
         </Component>
+      </Directory>
+      <!-- Module PowerShell (5.1 et 7) : Get-CorralStatus, Add-CorralRule… -->
+      <Directory Id="PsFolder" Name="WindowsPowerShell">
+        <Directory Id="PsModules" Name="Modules">
+          <Directory Id="PsCorral" Name="Corral">
+            <Component Id="PowerShellManifest">
+              <File Id="CorralPsd1" Source="$(sys.SOURCEFILEDIR)powershell/Corral.psd1" />
+            </Component>
+            <Component Id="PowerShellModule">
+              <File Id="CorralPsm1" Source="$(sys.SOURCEFILEDIR)powershell/Corral.psm1" />
+            </Component>
+          </Directory>
+        </Directory>
       </Directory>
     </StandardDirectory>
 
@@ -70,6 +85,8 @@
 
     <Feature Id="Main">
       <ComponentRef Id="CorralExe" />
+      <ComponentRef Id="PowerShellManifest" />
+      <ComponentRef Id="PowerShellModule" />
     </Feature>
   </Package>
 </Wix>

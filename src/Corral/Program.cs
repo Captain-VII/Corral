@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Principal;
 using System.ServiceProcess;
@@ -22,6 +22,11 @@ static class Program
         }
 
         Lang.Set(null); // langue de Windows, en attendant la configuration
+        if (Cli.IsCommand(args))
+        {
+            Environment.Exit(Cli.Execute(args));
+            return;
+        }
         bool justUpdated = args.Contains("--updated");
         bool restarted = args.Contains("--restart"); // changement de langue
 

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.ServiceProcess;
@@ -143,7 +143,7 @@ public sealed class ServiceHost : IDisposable
     void OnConnected(PipeClient client)
     {
         lock (sync)
-            client.Send(new PipeMessage { Type = "welcome", Settings = settings, Flag = fresh, Log = Log.Recent().TakeLast(200).ToArray() });
+            client.Send(new PipeMessage { Type = "welcome", Settings = settings, Flag = fresh, Text = Updater.CurrentVersion.ToString(3), Log = Log.Recent().TakeLast(200).ToArray() });
     }
 
     void OnReceived(PipeClient client, PipeMessage m)
@@ -157,7 +157,14 @@ public sealed class ServiceHost : IDisposable
             case "save":
             case "apply":
                 if (m.Settings != null)
-                    Save(m.Settings, apply: m.Type == "apply");
+                {
+                    var error = Save(m.Settings, apply: m.Type == "apply");
+                    if (m.Id != 0) // ligne de commande : elle attend la réponse
+                        client.Send(new PipeMessage { Type = "result", Id = m.Id, Text = error });
+                    if (error == null) // les autres interfaces affichent les nouvelles règles
+                        lock (sync)
+                            server.Broadcast(new PipeMessage { Type = "settings", Settings = settings }, except: client);
+                }
                 break;
             case "pause":
                 engine.SetPaused(m.Flag);
@@ -184,10 +191,11 @@ public sealed class ServiceHost : IDisposable
         }
     }
 
-    void Save(Settings incoming, bool apply)
+    /// <summary>Enregistre (et applique) la configuration reçue ; renvoie un message d'erreur ou null.</summary>
+    string? Save(Settings incoming, bool apply)
     {
         if (policies.LockSettings)
-            return; // l'interface est en lecture seule : on ignore toute tentative
+            return Tr("Réglage verrouillé par votre organisation.", "Setting locked by your organization."); // l'interface est en lecture seule
         incoming.Normalize();
         Policies.Apply(incoming, policies);
         lock (sync)
@@ -204,6 +212,7 @@ public sealed class ServiceHost : IDisposable
         }
         if (apply)
             engine.UpdateSettings(RuleStore.Clone(incoming));
+        return null;
     }
 
     /// <summary>Télécharge l'installeur signé, prévient les interfaces puis lance msiexec (qui arrête et relance le service).</summary>

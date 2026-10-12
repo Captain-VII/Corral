@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
@@ -15,7 +15,7 @@ public sealed record SessionState(int ForegroundPid, double IdleSeconds, bool Di
 /// <summary>
 /// Message échangé sur le pipe, une ligne JSON par message. Seuls les champs utiles au type sont remplis.
 /// Interface → service : save, apply, pause, game, clean, priority, session, update.
-/// Service → interface : welcome, snapshot, acted, game-changed, notify, log, result, updating.
+/// Service → interface : welcome, snapshot, acted, game-changed, notify, log, result, updating, settings.
 /// </summary>
 public sealed class PipeMessage
 {

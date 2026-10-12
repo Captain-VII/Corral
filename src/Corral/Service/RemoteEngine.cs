@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Security.Principal;
@@ -69,6 +69,7 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
                 remote.InitialSettings = welcome.Settings ?? new Settings();
                 remote.InitialSettings.Normalize();
                 remote.Fresh = welcome.Flag;
+                remote.ServiceVersion = welcome.Text;
                 if (mirrorLog)
                     foreach (var entry in welcome.Log ?? Array.Empty<LogEntry>())
                         Log.Append(entry);
@@ -87,6 +88,8 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
     public bool Fresh { get; private set; }
 
     public bool Connected { get; private set; }
+    /// <summary>Version du service (x.y.z).</summary>
+    public string? ServiceVersion { get; private set; }
 
     public event Action<EngineSnapshot>? SnapshotReady;
     public event Action<IReadOnlyList<string>, double>? ProBalanceActed;
@@ -95,6 +98,8 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
     /// <summary>Le service va installer une mise à jour : l'interface doit se fermer.</summary>
     public event Action? ServiceUpdating;
     public event Action<bool>? ConnectionChanged;
+    /// <summary>Configuration modifiée par un autre client (ligne de commande).</summary>
+    public event Action<Settings>? SettingsChanged;
 
     public string? KeepAwakeReason => keepAwake;
     public bool GameModeManual => gameManual;
@@ -126,7 +131,7 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
                 throw new TimeoutException();
             lock (writeLock)
             {
-                pipe?.Dispose(); // liaison prÃ©cÃ©dente, coupÃ©e
+                pipe?.Dispose(); // liaison précédente, coupée
                 pipe = p;
                 reader = r;
             }
@@ -142,11 +147,17 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
 
     public void Start()
     {
+        Listen();
+        sessionTimer ??= new System.Threading.Timer(_ => SendSession(), null, 0, 1000);
+    }
+
+    /// <summary>Reçoit les messages du service sans lui envoyer l'état de la session (ligne de commande).</summary>
+    public void Listen()
+    {
         if (started)
             return;
         started = true;
         _ = Task.Run(ReadLoop);
-        sessionTimer = new System.Threading.Timer(_ => SendSession(), null, 0, 1000);
     }
 
     async Task ReadLoop()
@@ -216,6 +227,9 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
             case "updating":
                 ServiceUpdating?.Invoke();
                 break;
+            case "settings" when m.Settings != null:
+                SettingsChanged?.Invoke(m.Settings);
+                break;
         }
     }
 
@@ -270,6 +284,15 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
     public void UpdateSettings(Settings settings) => Send(new PipeMessage { Type = "apply", Settings = settings });
 
     public void Save(Settings settings) => Send(new PipeMessage { Type = "save", Settings = settings });
+
+    /// <summary>Applique la configuration et attend la réponse du service ; renvoie un message d'erreur ou null.</summary>
+    public async Task<string?> ApplyAsync(Settings settings)
+    {
+        var task = Request(new PipeMessage { Type = "apply", Settings = settings });
+        return await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(10))) == task
+            ? task.Result
+            : Tr("Le service ne répond pas.", "The service is not responding.");
+    }
 
     public void SetPaused(bool value) => Send(new PipeMessage { Type = "pause", Flag = value });
 

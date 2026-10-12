@@ -50,6 +50,9 @@ jobs:
           $version = "${{ github.ref_name }}".TrimStart('v')
           dotnet tool install --global wix --version 5.0.2
           wix extension add -g WixToolset.Util.wixext/5.0.2
+          # Version du module PowerShell = version de Corral
+          (Get-Content packaging/powershell/Corral.psd1) -replace "ModuleVersion\s*=\s*'[^']*'", "ModuleVersion     = '$version'" |
+            Set-Content packaging/powershell/Corral.psd1 -Encoding utf8BOM  # BOM : PowerShell 5.1
           foreach ($arch in 'x64', 'arm64') {
             $name = if ($arch -eq 'arm64') { 'Corral-arm64' } else { 'Corral' }
             wix build packaging/Corral.wxs -arch $arch -ext WixToolset.Util.wixext `
