@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Corral.Core;
 using Corral.Models;
 
@@ -61,6 +61,28 @@ public class EngineTests : IDisposable
         Assert.Equal(origPriority, ping.PriorityClass);
         Assert.Equal(origAffinity, ping.ProcessorAffinity);
         Assert.Equal(Guid.Empty, power.Active);
+    }
+
+    [Fact]
+    public void RepeatedRuleApplicationsAreLoggedOnce()
+    {
+        // Comme un navigateur : plusieurs processus du même nom, lancés coup sur coup
+        var first = procs.Ping(name);
+        var second = procs.Ping(name);
+        var clock = DateTime.UtcNow;
+        var engine = new Engine(RuleFor(new Rule { Pattern = name, Priority = ProcessPriorityClass.BelowNormal }), new FakePower(),
+            foregroundPid: () => -1, clock: () => clock);
+        engine.TickOnce();
+        int Lines() => Log.Recent().Count(e => e.Message.StartsWith(name + " (") && e.Message.Contains("→"));
+        Assert.Equal(1, Lines());
+
+        // Après la fenêtre, une nouvelle ligne dit combien d'applications ont été tues
+        clock += Engine.RuleLogWindow;
+        var third = procs.Ping(name);
+        engine.TickOnce();
+        Assert.Equal(2, Lines());
+        Assert.Contains(Log.Recent(), e => e.Message.StartsWith(name + " (") && e.Message.Contains("(et 1 autre processus depuis)"));
+        engine.Stop();
     }
 
     [Fact]

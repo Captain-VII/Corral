@@ -1,5 +1,10 @@
 # Journal des modifications
 
+## 3.0.1
+
+- Journal plus lisible : une règle appliquée à un programme qui lance beaucoup de processus (navigateur…) n'est notée qu'une fois toutes les 10 minutes, avec le nombre d'applications entre-temps.
+- Plus d'avertissement quand un programme se ferme pendant que Corral le règle.
+
 ## 3.0.0
 
 - **Équité entre les sessions** (serveurs RDS, VDI multi-session) : quand le processeur sature, une session qui prend plus d'une fois et demie sa part voit ses programmes abaissés, jusqu'à ce qu'elle revienne dans sa part. La page ProBalance affiche la charge de chaque session ouverte. Désactivée par défaut ; réglable aussi par la configuration de parc (`"ProBalance": { "SessionFairness": true }`).
