@@ -1,5 +1,10 @@
 # Journal des modifications
 
+## 3.0.2
+
+- Une interface ouverte pendant une mise à jour par le service se ferme aussitôt, puis est relancée par la nouvelle version (elle continuait sinon sur un exe remplacé, avec des erreurs sans message).
+- Les erreurs sans message indiquent au moins leur type dans le journal.
+
 ## 3.0.1
 
 - Journal plus lisible : une règle appliquée à un programme qui lance beaucoup de processus (navigateur…) n'est notée qu'une fois toutes les 10 minutes, avec le nombre d'applications entre-temps.

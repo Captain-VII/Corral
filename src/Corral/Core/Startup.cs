@@ -117,7 +117,7 @@ public sealed class StartupManager
         }
         catch (Exception ex)
         {
-            Log.Warn($"Lecture des programmes au démarrage ({source}) : {ex.Message}");
+            Log.Warn($"Lecture des programmes au démarrage ({source}) : {Log.Reason(ex)}");
         }
     }
 
@@ -138,7 +138,7 @@ public sealed class StartupManager
         }
         catch (Exception ex)
         {
-            Log.Warn($"Lecture du dossier Démarrage : {ex.Message}");
+            Log.Warn($"Lecture du dossier Démarrage : {Log.Reason(ex)}");
         }
     }
 

@@ -373,7 +373,7 @@ public sealed class TrayContext : ApplicationContext
         catch (Exception ex)
         {
             // Hors ligne, GitHub indisponible, limite d'API… : on réessaiera au prochain passage.
-            Log.Warn(Tr($"Vérification des mises à jour : {ex.Message}", $"Update check: {ex.Message}"), LogCategory.Update);
+            Log.Warn(Tr($"Vérification des mises à jour : {Log.Reason(ex)}", $"Update check: {Log.Reason(ex)}"), LogCategory.Update);
             if (manual)
                 Message(Tr("Impossible de vérifier les mises à jour : ", "Unable to check for updates: ") + ex.Message, MessageBoxIcon.Warning);
         }

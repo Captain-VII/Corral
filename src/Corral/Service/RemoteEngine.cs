@@ -69,6 +69,7 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
                 remote.InitialSettings = welcome.Settings ?? new Settings();
                 remote.InitialSettings.Normalize();
                 remote.Fresh = welcome.Flag;
+                remote.UpdateInProgress = welcome.Updating;
                 remote.ServiceVersion = welcome.Text;
                 if (mirrorLog)
                     foreach (var entry in welcome.Log ?? Array.Empty<LogEntry>())
@@ -88,6 +89,9 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
     public bool Fresh { get; private set; }
 
     public bool Connected { get; private set; }
+    /// <summary>Le service installait une mise à jour au moment de la connexion : il va s'arrêter puis relancer l'interface.</summary>
+    public bool UpdateInProgress { get; private set; }
+
     /// <summary>Version du service (x.y.z).</summary>
     public string? ServiceVersion { get; private set; }
 

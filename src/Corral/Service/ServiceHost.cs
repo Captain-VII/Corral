@@ -168,10 +168,19 @@ public sealed class ServiceHost : IDisposable
 
     void OnLog(LogEntry entry) => server.Broadcast(new PipeMessage { Type = "log", Log = new[] { entry } });
 
+    /// <summary>Le service installe une mise à jour (il va s'arrêter).</summary>
+    public bool Updating
+    {
+        get => Volatile.Read(ref updating) == 1;
+        internal set => Volatile.Write(ref updating, value ? 1 : 0);
+    }
+
     void OnConnected(PipeClient client)
     {
+        if (Updating && client.SessionId > 0)
+            AddToRelaunch(client.SessionId); // interface ouverte pendant la mise à jour : le nouveau service la relancera
         lock (sync)
-            client.Send(new PipeMessage { Type = "welcome", Settings = settings, Flag = fresh, Text = Updater.CurrentVersion.ToString(3), Log = Log.Recent().TakeLast(200).ToArray() });
+            client.Send(new PipeMessage { Type = "welcome", Updating = Updating, Settings = settings, Flag = fresh, Text = Updater.CurrentVersion.ToString(3), Log = Log.Recent().TakeLast(200).ToArray() });
     }
 
     void OnReceived(PipeClient client, PipeMessage m)
@@ -279,6 +288,20 @@ public sealed class ServiceHost : IDisposable
             Log.Error("Mise à jour par le service", ex);
             client.Send(new PipeMessage { Type = "result", Id = id, Text = ex.Message });
             Interlocked.Exchange(ref updating, 0);
+        }
+    }
+
+    void AddToRelaunch(int session)
+    {
+        lock (sync)
+        {
+            try
+            {
+                var sessions = File.Exists(RelaunchFile) ? JsonSerializer.Deserialize<int[]>(File.ReadAllText(RelaunchFile)) ?? Array.Empty<int>() : Array.Empty<int>();
+                if (!sessions.Contains(session))
+                    File.WriteAllText(RelaunchFile, JsonSerializer.Serialize(sessions.Append(session).ToArray()));
+            }
+            catch (Exception ex) { Log.Error("Relance des interfaces", ex); }
         }
     }
 

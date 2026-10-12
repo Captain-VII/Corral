@@ -230,6 +230,24 @@ public class ServiceTests : IDisposable
     }
 
     [Fact]
+    public void InterfaceOpenedDuringUpdateStepsAside()
+    {
+        WriteQuietConfig();
+        using var host = StartHost();
+        host.Updating = true; // le service a lancé msiexec et va s'arrêter
+        using var remote = RemoteEngine.Connect(Timeout, pipe, requireService: false, mirrorLog: false)!;
+        Assert.True(remote.UpdateInProgress); // l'interface se ferme sans rien afficher
+
+        // Sa session sera relancée par le nouveau service
+        var sessions = System.Text.Json.JsonSerializer.Deserialize<int[]>(File.ReadAllText(Path.Combine(dir, "relaunch.json")))!;
+        Assert.Contains(Process.GetCurrentProcess().SessionId, sessions);
+
+        host.Updating = false;
+        using var after = RemoteEngine.Connect(Timeout, pipe, requireService: false, mirrorLog: false)!;
+        Assert.False(after.UpdateInProgress);
+    }
+
+    [Fact]
     public void PipeNameCannotBeSquatted()
     {
         using var host = StartHost();
