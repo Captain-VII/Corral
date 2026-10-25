@@ -14,6 +14,13 @@ Utilisez « Règles imposées » pour fournir les règles.
 
 Prend effet au redémarrage du service Corral ou du PC.</string>
       <string id="SUPPORTED_Corral23">Corral 2.3 ou version ultérieure</string>
+      <string id="SUPPORTED_Corral31">Corral 3.1 ou version ultérieure</string>
+      <string id="AllowStandardUsers">Autoriser les comptes standard à modifier les réglages</string>
+      <string id="AllowStandardUsers_Help">Par défaut, seuls les administrateurs du PC (y compris sans élévation UAC) peuvent modifier les règles, ProBalance, le Mode Jeu et les optimisations, changer la priorité d'un processus ou mettre Corral en pause. Les comptes standard consultent l'interface en lecture seule : le service agit avec les droits du système sur les processus de toutes les sessions, et un compte standard ne doit pas pouvoir s'en servir contre les programmes des autres utilisateurs.
+
+Si vous activez ce paramètre, les comptes standard retrouvent ces droits (comportement des versions antérieures à 3.1). À n'utiliser que sur un poste dont tous les utilisateurs sont de confiance. « Verrouiller les réglages » reste prioritaire.
+
+Prend effet au redémarrage du service Corral ou du PC.</string>
       <string id="FleetConfig">Configuration de parc signée</string>
       <string id="FleetConfig_Help">Configuration commune à tous les postes : fichier JSON publié sur un partage réseau ou une adresse https, signé avec la clé de votre organisation. Les sections qu'il contient (Rules, ProBalance, GameMode) remplacent la configuration locale et ne sont plus modifiables sur le poste.
 

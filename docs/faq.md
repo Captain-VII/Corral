@@ -16,7 +16,7 @@
     Redémarrez le service (`Restart-Service Corral` en administrateur) ou le PC. Si le message persiste, réinstallez le MSI et consultez l'Observateur d'événements (journal *Application*, source `Corral`).
 
 ??? question "Version portable ou MSI ?"
-    Le MSI est recommandé : pas d'invite UAC, fonctionne pour un utilisateur standard, mises à jour par le service. La version portable convient pour essayer Corral ou l'emporter sur une clé USB.
+    Le MSI est recommandé : pas d'invite UAC, utilisable par un compte standard (en lecture seule, les réglages étant réservés aux administrateurs), mises à jour par le service. La version portable convient pour essayer Corral ou l'emporter sur une clé USB.
 
 ??? question "Comment signaler un problème ?"
     **Options › Aide › Signaler un problème** ouvre un formulaire GitHub avec les versions de Corral et de Windows déjà remplies.

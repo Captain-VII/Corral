@@ -116,7 +116,10 @@
   "Collecte des mesures…": "Collecting data…",
   "Commande": "Command",
   "Commande inconnue : {command}": "Unknown command: {command}",
+  "Commande « {command} » refusée : compte standard (session {client.SessionId})": "Command “{command}” refused: standard account (session {client.SessionId})",
   "Compris": "Got it",
+  "Compte standard : réglages en lecture seule (réservés aux administrateurs)": "Standard account: settings are read-only (restricted to administrators)",
+  "Compte standard : réglages réservés aux administrateurs.": "Standard account: settings restricted to administrators.",
   "Conditions des règles modifiées : règles réappliquées": "Rule conditions changed: rules reapplied",
   "Configuration de l'exe portable transmise au service": "Portable exe settings handed over to the service",
   "Configuration de parc ({source}) : {ex.Message}": "Fleet configuration ({source}): {ex.Message}",
@@ -258,6 +261,7 @@
   "Lancé par": "Started by",
   "Langue": "Language",
   "Le Mode Jeu est actif automatiquement parce que « {snap.GameTrigger} » tourne. Il se désactivera tout seul à sa fermeture.": "Game Mode is on automatically because “{snap.GameTrigger}” is running. It will turn off by itself when it closes.",
+  "Le Mode Jeu est réservé aux administrateurs de ce PC.": "Game Mode is restricted to administrators of this PC.",
   "Le PC ne se met pas en veille tant que ce programme tourne (l'écran peut s'éteindre).": "The PC does not go to sleep while this program runs (the screen may turn off).",
   "Le bloc de cœurs avec le plus de cache ({biggest.SizeBytes / (1024 * 1024)} Mo). Idéal pour les jeux.": "The core block with the most cache ({biggest.SizeBytes / (1024 * 1024)} MB). Ideal for games.",
   "Le bloc de cœurs n° {i + 1} ({BitOperations.PopCount((ulong)L3Caches[i].Mask)} threads, {L3Caches[i].SizeBytes / (1024 * 1024)} Mo de cache).": "Core block #{i + 1} ({BitOperations.PopCount((ulong)L3Caches[i].Mask)} threads, {L3Caches[i].SizeBytes / (1024 * 1024)} MB of cache).",
@@ -475,6 +479,7 @@
   "Réglages verrouillés par votre organisation.": "Settings locked by your organization.",
   "Régler durablement le processus sélectionné : priorité, cœurs, plan d'alimentation, limites.": "Set lasting options for the selected process: priority, cores, power plan, limits.",
   "Réserver certains cœurs du processeur à ce programme.": "Reserve some CPU cores for this program.",
+  "Réservé aux administrateurs de ce PC.": "Restricted to administrators of this PC.",
   "S'applique": "Applies",
   "S'applique à {matches.Count - system} processus en cours": "Applies to {matches.Count - system} running process(es)",
   "Sans SMT": "No SMT",
@@ -674,5 +679,6 @@
   "▼ abaissé": "▼ lowered",
   "○ Désactivé": "○ Disabled",
   "● Activé": "● Enabled",
-  "\uD83D\uDD12 Géré par votre organisation : ces réglages sont en lecture seule.": "\uD83D\uDD12 Managed by your organization: these settings are read-only."
+  "\uD83D\uDD12 Géré par votre organisation : ces réglages sont en lecture seule.": "\uD83D\uDD12 Managed by your organization: these settings are read-only.",
+  "\uD83D\uDD12 Réservé aux administrateurs de ce PC : ces réglages sont en lecture seule.": "\uD83D\uDD12 Restricted to administrators of this PC: these settings are read-only."
 }

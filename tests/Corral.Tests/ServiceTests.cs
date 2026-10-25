@@ -25,9 +25,10 @@ public class ServiceTests : IDisposable
         public bool SetActive(Guid plan) => true;
     }
 
-    ServiceHost StartHost(PolicySet? policies = null)
+    /// <param name="admin">Le client est-il administrateur ? Fixé par le test, quel que soit le compte qui le lance.</param>
+    ServiceHost StartHost(PolicySet? policies = null, bool admin = true)
     {
-        var host = new ServiceHost(dir, pipe, policies ?? new PolicySet(), powerApi: new NoPower());
+        var host = new ServiceHost(dir, pipe, policies ?? new PolicySet(), powerApi: new NoPower(), isAdmin: _ => admin);
         host.Start();
         return host;
     }
@@ -136,6 +137,39 @@ public class ServiceTests : IDisposable
         Assert.NotNull(remote.SetPriorityOnce(Environment.ProcessId, "x", ProcessPriorityClass.Normal)); // verrouillé
         var saved = new RuleStore(Path.Combine(dir, "config.json")).Load();
         Assert.DoesNotContain(saved.Rules, r => r.Pattern == "interdit.exe");
+    }
+
+    [Fact]
+    public void StandardAccountIsReadOnly()
+    {
+        WriteQuietConfig();
+        using var host = StartHost(admin: false);
+        using var remote = RemoteEngine.Connect(Timeout, pipe, requireService: false, mirrorLog: false)!;
+        Assert.True(remote.StandardUser);
+        remote.Start();
+        var s = remote.InitialSettings;
+        s.Rules.Add(new Rule { Pattern = "victime.exe", Block = BlockMode.Always });
+        remote.UpdateSettings(s);
+        // La réponse arrive après le traitement de la configuration envoyée juste avant (même pipe, dans l'ordre)
+        Assert.Contains("administr", remote.SetPriorityOnce(Environment.ProcessId, "x", ProcessPriorityClass.Idle) ?? "");
+        Assert.DoesNotContain(new RuleStore(Path.Combine(dir, "config.json")).Load().Rules, r => r.Pattern == "victime.exe");
+
+        var (code, _, err) = Cli("pause");
+        Assert.Equal(Corral.Cli.Failed, code);
+        Assert.Contains("administr", err);
+        Assert.Equal(Corral.Cli.Failed, Cli("rules", "add", "victime.exe", "--priority", "idle").Code);
+        Assert.DoesNotContain(new RuleStore(Path.Combine(dir, "config.json")).Load().Rules, r => r.Pattern == "victime.exe");
+    }
+
+    [Fact]
+    public void AllowStandardUsersPolicyRestoresChanges()
+    {
+        WriteQuietConfig();
+        using var host = StartHost(new PolicySet(AllowStandardUsers: true), admin: false);
+        using var remote = RemoteEngine.Connect(Timeout, pipe, requireService: false, mirrorLog: false)!;
+        Assert.False(remote.StandardUser);
+        Assert.Equal(Corral.Cli.Ok, Cli("rules", "add", "permis.exe", "--priority", "belownormal").Code);
+        Assert.Contains(new RuleStore(Path.Combine(dir, "config.json")).Load().Rules, r => r.Pattern == "permis.exe");
     }
 
     (int Code, string Out, string Err) Cli(params string[] args)
@@ -293,7 +327,7 @@ public class PolicyTests
         var admx = System.Xml.Linq.XDocument.Load(Path.Combine(folder, "Corral.admx"));
         var valueNames = admx.Descendants().Select(e => (string?)e.Attribute("valueName")).Where(v => v != null).ToHashSet();
         // Chaque valeur lue par Policies.Read a sa stratégie
-        foreach (var name in new[] { "LockSettings", "DisableUpdates", "ProBalance", "RulesFile", "DisableProcessTermination", "DisableStartupManager", "ConfigFile", "ConfigPublicKey" })
+        foreach (var name in new[] { "LockSettings", "DisableUpdates", "ProBalance", "RulesFile", "DisableProcessTermination", "DisableStartupManager", "ConfigFile", "ConfigPublicKey", "AllowStandardUsers" })
             Assert.Contains(name, valueNames);
         Assert.All(admx.Descendants().Select(e => (string?)e.Attribute("key")).Where(k => k != null), k => Assert.Equal(Policies.KeyPath, k));
 

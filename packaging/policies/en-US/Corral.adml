@@ -14,6 +14,13 @@ Use “Enforced rules” to provide the rules.
 
 Takes effect when the Corral service or the PC restarts.</string>
       <string id="SUPPORTED_Corral23">Corral 2.3 or later</string>
+      <string id="SUPPORTED_Corral31">Corral 3.1 or later</string>
+      <string id="AllowStandardUsers">Allow standard accounts to change settings</string>
+      <string id="AllowStandardUsers_Help">By default, only administrators of the PC (including without UAC elevation) can change rules, ProBalance, Game Mode and optimizations, change a process priority or pause Corral. Standard accounts see the interface as read-only: the service acts with system rights on the processes of every session, and a standard account must not be able to use it against other users' programs.
+
+If you enable this setting, standard accounts get these rights back (behavior of versions before 3.1). Only use it on a PC whose users are all trusted. “Lock settings” still takes precedence.
+
+Takes effect when the Corral service or the PC restarts.</string>
       <string id="FleetConfig">Signed fleet configuration</string>
       <string id="FleetConfig_Help">Configuration shared by all computers: a JSON file published on a network share or an https address, signed with your organization's key. The sections it contains (Rules, ProBalance, GameMode) replace the local configuration and can no longer be changed on the computer.
 

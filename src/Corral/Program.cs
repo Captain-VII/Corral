@@ -92,6 +92,9 @@ static class Program
     {
         Log.Init(remote.ConfigDirectory);
         Log.Info(Tr("Interface connectée au service Corral", "Interface connected to the Corral service"));
+        Policies.StandardUser = remote.StandardUser;
+        if (remote.StandardUser)
+            Log.Info(Tr("Compte standard : réglages en lecture seule (réservés aux administrateurs)", "Standard account: settings are read-only (restricted to administrators)"));
         var settings = remote.InitialSettings;
         if (remote.Fresh && File.Exists(localStore.FilePath))
         {

@@ -21,13 +21,13 @@ Gestionnaire de processus libre et gratuit pour Windows 10/11, alternative open 
 - **Restauration** : priorités, affinités et plan d'alimentation d'origine sont rétablis à la fermeture ou en pause, et aussi après un plantage (pour le plan d'alimentation).
 - **Interface** : en français ou en anglais (selon Windows), d'autres langues grâce aux traductions de la communauté, accessible (lecteurs d'écran, clavier, contraste élevé), thème clair ou sombre, icône de notification avec la charge du processeur, mini-fenêtre toujours visible, raccourcis clavier globaux (Mode Jeu, pause), démarrage à l'ouverture de session, raccourci dans le menu Démarrer.
 - **Mises à jour automatiques** via les releases GitHub, vérifiées par somme SHA-256 et signature numérique.
-- **Entreprise** : service Windows (aucune invite UAC, fonctionne pour les utilisateurs standard), modèles de stratégie de groupe (ADMX) pour verrouiller les réglages ou imposer des règles, événements dans l'Observateur d'événements.
+- **Entreprise** : service Windows (aucune invite UAC ; les comptes standard consultent, seuls les administrateurs modifient les réglages), modèles de stratégie de groupe (ADMX) pour verrouiller les réglages ou imposer des règles, événements dans l'Observateur d'événements.
 
 ## Installation
 
 Depuis la page [Releases](../../releases/latest), au choix :
 
-- **`Corral.msi`** (recommandé) : installe Corral dans Program Files avec un **service Windows** qui applique les règles. L'interface se lance à l'ouverture de session, sans invite UAC, y compris pour un utilisateur standard. Désinstallation depuis les Paramètres de Windows.
+- **`Corral.msi`** (recommandé) : installe Corral dans Program Files avec un **service Windows** qui applique les règles. L'interface se lance à l'ouverture de session, sans invite UAC, y compris pour un utilisateur standard (en lecture seule : seuls les administrateurs du PC modifient les réglages). Désinstallation depuis les Paramètres de Windows.
 - Sur un PC ARM64 (Snapdragon…), prenez **`Corral-arm64.msi`** ou **`Corral-arm64.exe`**.
 - **`Corral.exe`** : version portable, à lancer depuis n'importe quel dossier. Elle demande les droits administrateur à chaque lancement (invite UAC), sauf si elle est lancée par sa tâche de démarrage.
 
@@ -51,6 +51,7 @@ La configuration et le journal sont dans `%ProgramData%\Corral\` avec le MSI, da
   | Stratégie | Valeur | Effet |
   |---|---|---|
   | Verrouiller les réglages | `LockSettings` = 1 | Règles, ProBalance, Mode Jeu et optimisations en lecture seule |
+  | Autoriser les comptes standard à modifier les réglages | `AllowStandardUsers` = 1 | Rend aux comptes standard le droit de modifier les réglages (désactivé par défaut) |
   | Règles imposées | `RulesFile` = chemin | Les règles d'un export Corral (partage réseau possible) remplacent les règles locales |
   | ProBalance | `ProBalance` = 0 ou 1 | Forcé désactivé ou activé |
   | Désactiver les mises à jour | `DisableUpdates` = 1 | Les versions sont déployées par l'équipe informatique |
@@ -87,7 +88,7 @@ La configuration et le journal sont dans `%ProgramData%\Corral\` avec le MSI, da
   Les commandes passent par le service et respectent *Verrouiller les réglages* ; l'interface ouverte affiche aussitôt les règles modifiées.
 - **Serveurs RDS / VDI** : activez *Équité entre les sessions* (page ProBalance) pour qu'aucun utilisateur ne monopolise le processeur ; chaque session ouverte lance sa propre interface, toutes reliées au même service.
 - **Supervision** : avertissements, erreurs et événements importants sont inscrits dans l'Observateur d'événements (journal Application, source `Corral`).
-- **Sécurité** : sans stratégie, tout utilisateur connecté peut modifier les règles depuis l'interface. Sur un poste partagé, activez *Verrouiller les réglages*.
+- **Sécurité** : le service agit avec les droits du système sur les processus de toutes les sessions. Par défaut, seuls les administrateurs du PC (y compris sans élévation UAC) peuvent modifier les règles, changer une priorité, mettre en pause ou activer le Mode Jeu ; les comptes standard consultent en lecture seule. *Autoriser les comptes standard* lève cette restriction, *Verrouiller les réglages* l'étend aux administrateurs.
 
 ## Développement
 

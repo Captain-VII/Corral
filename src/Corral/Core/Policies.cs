@@ -12,9 +12,10 @@ namespace Corral.Core;
 /// <param name="RulesFile">Export de règles imposé : remplace les règles locales.</param>
 /// <param name="ConfigFile">Configuration de parc signée (chemin, partage ou https), voir <see cref="Fleet"/>.</param>
 /// <param name="ConfigPublicKey">Clé publique de l'organisation qui a signé <paramref name="ConfigFile"/>.</param>
+/// <param name="AllowStandardUsers">Les comptes standard peuvent modifier les réglages via le service (par défaut : administrateurs seulement).</param>
 public sealed record PolicySet(bool LockSettings = false, bool DisableUpdates = false, bool? ProBalance = null,
     string? RulesFile = null, bool DisableProcessTermination = false, bool DisableStartupManager = false,
-    string? ConfigFile = null, string? ConfigPublicKey = null)
+    string? ConfigFile = null, string? ConfigPublicKey = null, bool AllowStandardUsers = false)
 {
     public bool Any => this != new PolicySet();
 
@@ -33,6 +34,12 @@ public static class Policies
 
     /// <summary>Stratégies en vigueur (lues une fois).</summary>
     public static PolicySet Current => current ??= ReadMachine();
+
+    /// <summary>
+    /// Interface reliée au service sous un compte standard : le service refuse ses modifications (voir
+    /// <see cref="PolicySet.AllowStandardUsers"/>), les réglages s'affichent en lecture seule.
+    /// </summary>
+    public static bool StandardUser { get; set; }
 
     /// <summary>Remplace les stratégies (tests).</summary>
     public static void Override(PolicySet? set) => current = set;
@@ -63,7 +70,8 @@ public static class Policies
         bool? Tri(string name) => key.GetValue(name) is int v ? v != 0 : null;
         string? Text(string name) => key.GetValue(name) is string v && !string.IsNullOrWhiteSpace(v) ? Environment.ExpandEnvironmentVariables(v.Trim()) : null;
         return new PolicySet(Flag("LockSettings"), Flag("DisableUpdates"), Tri("ProBalance"), Text("RulesFile"),
-            Flag("DisableProcessTermination"), Flag("DisableStartupManager"), Text("ConfigFile"), Text("ConfigPublicKey"));
+            Flag("DisableProcessTermination"), Flag("DisableStartupManager"), Text("ConfigFile"), Text("ConfigPublicKey"),
+            Flag("AllowStandardUsers"));
     }
 
     /// <summary>Applique les stratégies à la configuration (en place).</summary>
@@ -89,7 +97,7 @@ public static class Policies
 
     /// <summary>La page de réglages <paramref name="page"/> est-elle verrouillée (stratégie, ou configuration de parc) ?</summary>
     public static bool Locks(this PolicySet set, string page, Settings? settings = null) => settings?.Managed?.Contains(page) == true
-        || set.LockSettings && page is "Règles" or "ProBalance" or "Mode Jeu" or "Optimisations"
+        || (set.LockSettings || StandardUser) && page is "Règles" or "ProBalance" or "Mode Jeu" or "Optimisations"
         || page == "Règles" && set.RulesFile != null
         || page == "ProBalance" && set.ProBalance != null
         || page == "Démarrage" && set.DisableStartupManager;

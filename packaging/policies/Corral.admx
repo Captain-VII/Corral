@@ -12,6 +12,7 @@
     <definitions>
       <definition name="SUPPORTED_Corral21" displayName="$(string.SUPPORTED_Corral21)" />
       <definition name="SUPPORTED_Corral23" displayName="$(string.SUPPORTED_Corral23)" />
+      <definition name="SUPPORTED_Corral31" displayName="$(string.SUPPORTED_Corral31)" />
     </definitions>
   </supportedOn>
   <categories>
@@ -67,6 +68,13 @@
             key="SOFTWARE\Policies\Corral" valueName="DisableStartupManager">
       <parentCategory ref="Corral" />
       <supportedOn ref="SUPPORTED_Corral21" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="AllowStandardUsers" class="Machine" displayName="$(string.AllowStandardUsers)" explainText="$(string.AllowStandardUsers_Help)"
+            key="SOFTWARE\Policies\Corral" valueName="AllowStandardUsers">
+      <parentCategory ref="Corral" />
+      <supportedOn ref="SUPPORTED_Corral31" />
       <enabledValue><decimal value="1" /></enabledValue>
       <disabledValue><decimal value="0" /></disabledValue>
     </policy>

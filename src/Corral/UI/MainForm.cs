@@ -194,7 +194,9 @@ public sealed class MainForm : Form
                 c.Enabled = false;
             page.Controls.Add(new Label
             {
-                Text = Tr("🔒 Géré par votre organisation : ces réglages sont en lecture seule.", "🔒 Managed by your organization: these settings are read-only."),
+                Text = Policies.StandardUser && !Policies.Current.LockSettings
+                    ? Tr("🔒 Réservé aux administrateurs de ce PC : ces réglages sont en lecture seule.", "🔒 Restricted to administrators of this PC: these settings are read-only.")
+                    : Tr("🔒 Géré par votre organisation : ces réglages sont en lecture seule.", "🔒 Managed by your organization: these settings are read-only."),
                 Dock = DockStyle.Top,
                 AutoSize = false,
                 Height = 30,
@@ -1692,6 +1694,13 @@ public sealed class MainForm : Form
     /// le message est renvoyé pour être affiché en bulle.</param>
     public string? ToggleGameMode(bool quiet = false)
     {
+        if (Policies.StandardUser)
+        {
+            var refused = Tr("Le Mode Jeu est réservé aux administrateurs de ce PC.", "Game Mode is restricted to administrators of this PC.");
+            if (!quiet)
+                MessageBox.Show(this, refused, Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return refused;
+        }
         var snap = latestSnapshot;
         if (snap?.GameMode == true && !engine.GameModeManual)
         {
@@ -1721,7 +1730,7 @@ public sealed class MainForm : Form
             ? (snap.GameTrigger != null ? Tr($"Déclenché par « {snap.GameTrigger} » : il se désactivera à sa fermeture.", $"Triggered by “{snap.GameTrigger}”: it will turn off when it closes.") : Tr("Activé manuellement.", "Turned on manually."))
             : settings.GameMode.Automatic ? Tr("Il s'activera tout seul au lancement d'un jeu reconnu.", "It will turn on by itself when a known game starts.") : Tr("Activation manuelle uniquement.", "Manual activation only.");
         gameToggle.Text = snap.GameMode && engine.GameModeManual ? Tr("Désactiver", "Turn off") : Tr("Activer maintenant", "Turn on now");
-        gameToggle.Enabled = !(snap.GameMode && !engine.GameModeManual);
+        gameToggle.Enabled = !(snap.GameMode && !engine.GameModeManual) && !Policies.StandardUser;
     }
 
     // ---------- Optimisations ----------
