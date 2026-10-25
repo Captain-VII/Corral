@@ -1,5 +1,10 @@
 # Journal des modifications
 
+## 3.1.0
+
+- **Sécurité : réglages réservés aux administrateurs.** Le service agit avec les droits du système sur les processus de toutes les sessions ; il acceptait jusqu'ici les modifications de n'importe quel utilisateur connecté. Désormais, seuls les administrateurs du PC (y compris sans élévation UAC) peuvent modifier les règles, ProBalance, le Mode Jeu et les optimisations, changer la priorité d'un processus ou mettre Corral en pause. Les comptes standard consultent l'interface en lecture seule (bandeau « Réservé aux administrateurs de ce PC ») ; la ligne de commande leur répond par une erreur explicite.
+- **Nouvelle stratégie « Autoriser les comptes standard à modifier les réglages »** (`AllowStandardUsers`) pour retrouver l'ancien comportement sur un poste dont tous les utilisateurs sont de confiance. « Verrouiller les réglages » reste prioritaire. Pensez à mettre à jour les modèles ADMX (`Corral-ADMX.zip`).
+
 ## 3.0.2
 
 - Une interface ouverte pendant une mise à jour par le service se ferme aussitôt, puis est relancée par la nouvelle version (elle continuait sinon sur un exe remplacé, avec des erreurs sans message).
