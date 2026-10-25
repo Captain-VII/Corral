@@ -116,7 +116,10 @@
   "Collecte des mesures…": "Collecte des mesures…",
   "Commande": "Commande",
   "Commande inconnue : {command}": "Commande inconnue : {command}",
+  "Commande « {command} » refusée : compte standard (session {client.SessionId})": "Commande « {command} » refusée : compte standard (session {client.SessionId})",
   "Compris": "Compris",
+  "Compte standard : réglages en lecture seule (réservés aux administrateurs)": "Compte standard : réglages en lecture seule (réservés aux administrateurs)",
+  "Compte standard : réglages réservés aux administrateurs.": "Compte standard : réglages réservés aux administrateurs.",
   "Conditions des règles modifiées : règles réappliquées": "Conditions des règles modifiées : règles réappliquées",
   "Configuration de l'exe portable transmise au service": "Configuration de l'exe portable transmise au service",
   "Configuration de parc ({source}) : {ex.Message}": "Configuration de parc ({source}) : {ex.Message}",
@@ -258,6 +261,7 @@
   "Lancé par": "Lancé par",
   "Langue": "Langue",
   "Le Mode Jeu est actif automatiquement parce que « {snap.GameTrigger} » tourne. Il se désactivera tout seul à sa fermeture.": "Le Mode Jeu est actif automatiquement parce que « {snap.GameTrigger} » tourne. Il se désactivera tout seul à sa fermeture.",
+  "Le Mode Jeu est réservé aux administrateurs de ce PC.": "Le Mode Jeu est réservé aux administrateurs de ce PC.",
   "Le PC ne se met pas en veille tant que ce programme tourne (l'écran peut s'éteindre).": "Le PC ne se met pas en veille tant que ce programme tourne (l'écran peut s'éteindre).",
   "Le bloc de cœurs avec le plus de cache ({biggest.SizeBytes / (1024 * 1024)} Mo). Idéal pour les jeux.": "Le bloc de cœurs avec le plus de cache ({biggest.SizeBytes / (1024 * 1024)} Mo). Idéal pour les jeux.",
   "Le bloc de cœurs n° {i + 1} ({BitOperations.PopCount((ulong)L3Caches[i].Mask)} threads, {L3Caches[i].SizeBytes / (1024 * 1024)} Mo de cache).": "Le bloc de cœurs n° {i + 1} ({BitOperations.PopCount((ulong)L3Caches[i].Mask)} threads, {L3Caches[i].SizeBytes / (1024 * 1024)} Mo de cache).",
@@ -475,6 +479,7 @@
   "Réglages verrouillés par votre organisation.": "Réglages verrouillés par votre organisation.",
   "Régler durablement le processus sélectionné : priorité, cœurs, plan d'alimentation, limites.": "Régler durablement le processus sélectionné : priorité, cœurs, plan d'alimentation, limites.",
   "Réserver certains cœurs du processeur à ce programme.": "Réserver certains cœurs du processeur à ce programme.",
+  "Réservé aux administrateurs de ce PC.": "Réservé aux administrateurs de ce PC.",
   "S'applique": "S'applique",
   "S'applique à {matches.Count - system} processus en cours": "S'applique à {matches.Count - system} processus en cours",
   "Sans SMT": "Sans SMT",
@@ -674,5 +679,6 @@
   "▼ abaissé": "▼ abaissé",
   "○ Désactivé": "○ Désactivé",
   "● Activé": "● Activé",
-  "\uD83D\uDD12 Géré par votre organisation : ces réglages sont en lecture seule.": "\uD83D\uDD12 Géré par votre organisation : ces réglages sont en lecture seule."
+  "\uD83D\uDD12 Géré par votre organisation : ces réglages sont en lecture seule.": "\uD83D\uDD12 Géré par votre organisation : ces réglages sont en lecture seule.",
+  "\uD83D\uDD12 Réservé aux administrateurs de ce PC : ces réglages sont en lecture seule.": "\uD83D\uDD12 Réservé aux administrateurs de ce PC : ces réglages sont en lecture seule."
 }

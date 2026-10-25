@@ -1,5 +1,6 @@
 ﻿using System.IO.Pipes;
 using System.Security.AccessControl;
+using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading.Channels;
 using Corral.Core;
@@ -17,14 +18,17 @@ public sealed class PipeClient : IDisposable
         SingleReader = true,
     });
 
-    public PipeClient(NamedPipeServerStream pipe, int sessionId, string? sid)
+    public PipeClient(NamedPipeServerStream pipe, int sessionId, string? sid, bool admin)
     {
         this.pipe = pipe;
         SessionId = sessionId;
         Sid = sid;
+        IsAdmin = admin;
     }
 
     public int SessionId { get; }
+    /// <summary>Compte administrateur (y compris non élevé sous UAC) : seul autorisé à modifier les réglages par défaut.</summary>
+    public bool IsAdmin { get; }
     /// <summary>SID de l'utilisateur (pour sa ruche de registre), ou null s'il n'a pas pu être lu.</summary>
     public string? Sid { get; }
     public SessionState? Session { get; set; }
@@ -68,17 +72,31 @@ public sealed class PipeServer : IDisposable
     const int MaxClients = 32;
 
     readonly string name;
+    readonly Func<WindowsIdentity, bool> isAdmin;
     readonly CancellationTokenSource cts = new();
     readonly List<PipeClient> clients = new();
     NamedPipeServerStream? listening;
     bool first;
 
     /// <param name="firstInstance">Échoue si un autre programme a déjà créé le pipe (protection contre l'usurpation).</param>
-    public PipeServer(string name, bool firstInstance = true)
+    /// <param name="isAdmin">Détermine si un client est administrateur (remplaçable par les tests).</param>
+    public PipeServer(string name, bool firstInstance = true, Func<WindowsIdentity, bool>? isAdmin = null)
     {
         this.name = name;
         first = firstInstance;
+        this.isAdmin = isAdmin ?? IsAdministrator;
     }
+
+    const string AdministratorsSid = "S-1-5-32-544";
+
+    /// <summary>
+    /// Membre du groupe Administrateurs. Sous UAC, le jeton non élevé d'un administrateur porte ce groupe en « refus
+    /// seulement » : il compte aussi, puisque ce compte peut s'élever lui-même.
+    /// </summary>
+    public static bool IsAdministrator(WindowsIdentity id) =>
+        id.IsSystem
+        || new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator)
+        || id.Claims.Any(c => c.Type == ClaimTypes.DenyOnlySid && c.Value == AdministratorsSid);
 
     public event Action<PipeClient>? Connected;
     public event Action<PipeClient, PipeMessage>? Received;
@@ -142,9 +160,18 @@ public sealed class PipeServer : IDisposable
     void Accept(NamedPipeServerStream pipe)
     {
         string? sid = null;
-        try { pipe.RunAsClient(() => sid = WindowsIdentity.GetCurrent().User?.Value); }
+        bool admin = false; // identité illisible : traité comme un compte standard
+        try
+        {
+            pipe.RunAsClient(() =>
+            {
+                using var id = WindowsIdentity.GetCurrent();
+                sid = id.User?.Value;
+                admin = isAdmin(id);
+            });
+        }
         catch { }
-        var client = new PipeClient(pipe, Protocol.ClientSession(pipe.SafePipeHandle), sid);
+        var client = new PipeClient(pipe, Protocol.ClientSession(pipe.SafePipeHandle), sid, admin);
         lock (clients)
             clients.Add(client);
         _ = Task.Run(() => client.PumpAsync(cts.Token));

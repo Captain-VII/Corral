@@ -4,7 +4,7 @@ Tous les fichiers sont sur la page [Releases](https://github.com/Captain-VII/Cor
 
 | Fichier | Pour qui |
 |---|---|
-| `Corral.msi` | **Recommandé.** Installe Corral dans Program Files avec un service Windows. Aucune invite UAC, fonctionne pour un utilisateur standard. |
+| `Corral.msi` | **Recommandé.** Installe Corral dans Program Files avec un service Windows. Aucune invite UAC. Un compte standard peut consulter ; seuls les administrateurs du PC modifient les réglages. |
 | `Corral.exe` | Version portable, à lancer depuis n'importe quel dossier. Demande les droits administrateur à chaque lancement. |
 | `Corral-arm64.msi`, `Corral-arm64.exe` | Les mêmes, pour les PC ARM (Snapdragon…). |
 | `Corral-ADMX.zip` | Modèles de stratégie de groupe, pour les administrateurs. |

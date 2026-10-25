@@ -56,7 +56,9 @@ public sealed class ServiceHost : IDisposable
     string ConfiguredFlag => Path.Combine(dir, "configured");
 
     /// <param name="powerApi">Plans d'alimentation (les tests en passent un factice).</param>
-    public ServiceHost(string dataDirectory, string pipeName, PolicySet policies, bool firstInstance = true, IPowerPlanApi? powerApi = null)
+    /// <param name="isAdmin">Détermine si un client est administrateur (les tests simulent un compte standard).</param>
+    public ServiceHost(string dataDirectory, string pipeName, PolicySet policies, bool firstInstance = true, IPowerPlanApi? powerApi = null,
+        Func<WindowsIdentity, bool>? isAdmin = null)
     {
         dir = dataDirectory;
         this.policies = policies;
@@ -69,7 +71,7 @@ public sealed class ServiceHost : IDisposable
         fleet = policies.LoadFleet(dir);
         settings = Program.PrepareSettings(store, policies, fleet);
 
-        server = new PipeServer(pipeName, firstInstance);
+        server = new PipeServer(pipeName, firstInstance, isAdmin);
         engine = new Engine(RuleStore.Clone(settings), powerApi, powerStateFile, () => server.ActiveClient()?.Session?.ForegroundPid ?? 0)
         {
             Gpu = new GpuPreferences(Path.Combine(dir, "gpu-managed.json")) { Hive = OpenUserHive },
@@ -175,12 +177,33 @@ public sealed class ServiceHost : IDisposable
         internal set => Volatile.Write(ref updating, value ? 1 : 0);
     }
 
+    static string Locked => Tr("Réglage verrouillé par votre organisation.", "Setting locked by your organization.");
+
+    static string AdminOnly => Tr("Réservé aux administrateurs de ce PC.", "Restricted to administrators of this PC.");
+
+    /// <summary>
+    /// Compte standard sans la stratégie AllowStandardUsers : il consulte, mais ne modifie rien. Le service agit avec les
+    /// droits de SYSTEM sur les processus de toutes les sessions, un utilisateur standard ne doit pas pouvoir s'en servir
+    /// pour bloquer, brider ou fermer les programmes des autres.
+    /// </summary>
+    bool Restricted(PipeClient client) => !client.IsAdmin && !policies.AllowStandardUsers;
+
+    /// <summary>Refuse une commande d'un compte standard (journalisé une fois par commande refusée).</summary>
+    bool Refuse(PipeClient client, string command)
+    {
+        if (!Restricted(client))
+            return false;
+        Log.Warn(Tr($"Commande « {command} » refusée : compte standard (session {client.SessionId})",
+            $"Command “{command}” refused: standard account (session {client.SessionId})"));
+        return true;
+    }
+
     void OnConnected(PipeClient client)
     {
         if (Updating && client.SessionId > 0)
             AddToRelaunch(client.SessionId); // interface ouverte pendant la mise à jour : le nouveau service la relancera
         lock (sync)
-            client.Send(new PipeMessage { Type = "welcome", Updating = Updating, Settings = settings, Flag = fresh, Text = Updater.CurrentVersion.ToString(3), Log = Log.Recent().TakeLast(200).ToArray() });
+            client.Send(new PipeMessage { Type = "welcome", Updating = Updating, StandardUser = Restricted(client), Settings = settings, Flag = fresh, Text = Updater.CurrentVersion.ToString(3), Log = Log.Recent().TakeLast(200).ToArray() });
     }
 
     void OnReceived(PipeClient client, PipeMessage m)
@@ -195,7 +218,9 @@ public sealed class ServiceHost : IDisposable
             case "apply":
                 if (m.Settings != null)
                 {
-                    var error = Save(m.Settings, apply: m.Type == "apply");
+                    var error = policies.LockSettings ? Locked
+                        : Refuse(client, m.Type) ? AdminOnly
+                        : Save(m.Settings, apply: m.Type == "apply");
                     if (m.Id != 0) // ligne de commande : elle attend la réponse
                         client.Send(new PipeMessage { Type = "result", Id = m.Id, Text = error });
                     if (error == null) // les autres interfaces affichent les nouvelles règles
@@ -204,10 +229,12 @@ public sealed class ServiceHost : IDisposable
                 }
                 break;
             case "pause":
-                engine.SetPaused(m.Flag);
+                if (!Refuse(client, m.Type)) // la pause suspendrait aussi les règles posées par un administrateur
+                    engine.SetPaused(m.Flag);
                 break;
             case "game":
-                engine.SetGameMode(m.Flag);
+                if (!Refuse(client, m.Type))
+                    engine.SetGameMode(m.Flag);
                 break;
             case "clean":
                 engine.CleanMemoryNow();
@@ -217,8 +244,8 @@ public sealed class ServiceHost : IDisposable
                 {
                     Type = "result",
                     Id = m.Id,
-                    Text = policies.LockSettings
-                        ? Tr("Réglage verrouillé par votre organisation.", "Setting locked by your organization.")
+                    Text = policies.LockSettings ? Locked
+                        : Refuse(client, m.Type) ? AdminOnly
                         : engine.SetPriorityOnce(m.Pid, m.Text ?? "", m.Priority),
                 });
                 break;
@@ -231,8 +258,6 @@ public sealed class ServiceHost : IDisposable
     /// <summary>Enregistre (et applique) la configuration reçue ; renvoie un message d'erreur ou null.</summary>
     string? Save(Settings incoming, bool apply)
     {
-        if (policies.LockSettings)
-            return Tr("Réglage verrouillé par votre organisation.", "Setting locked by your organization."); // l'interface est en lecture seule
         incoming.Normalize();
         Policies.Apply(incoming, policies);
         lock (sync)

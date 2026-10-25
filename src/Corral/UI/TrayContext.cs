@@ -48,7 +48,11 @@ public sealed class TrayContext : ApplicationContext
         this.settings = settings;
         form = new MainForm(engine, store, settings);
         form.CheckUpdatesRequested += (_, _) => CheckForUpdates(manual: true);
-        form.PauseRequested += paused => pauseItem!.Checked = paused; // l'élément de menu applique la pause au moteur
+        form.PauseRequested += paused =>
+        {
+            if (!Policies.StandardUser) // compte standard : le service refuserait la pause
+                pauseItem!.Checked = paused; // l'élément de menu applique la pause au moteur
+        };
         form.DisplayChanged += ApplyDisplay;
         form.RestartRequested += Restart;
         // La fenêtre (créée ci-dessus) a installé le contexte de synchronisation de l'interface.
@@ -78,6 +82,7 @@ public sealed class TrayContext : ApplicationContext
         menu.Items.Add(updateItem);
         pauseItem = new ToolStripMenuItem("Pause") { CheckOnClick = true, ToolTipText = Tr("Suspend toutes les règles et ProBalance", "Suspends all rules and ProBalance") };
         pauseItem.CheckedChanged += (_, _) => engine.SetPaused(pauseItem.Checked);
+        pauseItem.Enabled = !Policies.StandardUser;
         menu.Items.Add(pauseItem);
         proBalanceItem.ToolTipText = Tr("Activer ou désactiver ProBalance", "Turn ProBalance on or off");
         proBalanceItem.Click += (_, _) => form.SetProBalanceEnabled(!settings.ProBalance.Enabled);
@@ -85,6 +90,7 @@ public sealed class TrayContext : ApplicationContext
         menu.Items.Add(proBalanceItem);
         var gameItem = new ToolStripMenuItem(Tr("Mode Jeu", "Game Mode")) { ToolTipText = Tr("Plan Performances, ProBalance réactif, programmes de fond calmés", "Performance plan, responsive ProBalance, calmed background programs") };
         gameItem.Click += (_, _) => form.ToggleGameMode();
+        gameItem.Enabled = !Policies.StandardUser;
         menu.Items.Add(gameItem);
         profileItem.DropDownItems.Add("-"); // rempli à l'ouverture ; un élément pour afficher la flèche
         menu.Items.Add(profileItem);

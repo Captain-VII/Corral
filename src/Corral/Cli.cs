@@ -73,6 +73,8 @@ public static class Cli
             using var remote = RemoteEngine.Connect(TimeSpan.FromSeconds(10), pipeName, requireService, mirrorLog: false)
                 ?? throw new CliException(Tr("Le service Corral ne répond pas.", "The Corral service is not responding."), NoService);
             remote.Listen();
+            if (remote.StandardUser && command is "pause" or "resume" or "game") // le service les ignorerait sans réponse
+                throw new CliException(Tr("Réservé aux administrateurs de ce PC.", "Restricted to administrators of this PC."));
             return command switch
             {
                 "status" => Status(remote, output, json),
@@ -182,7 +184,7 @@ public static class Cli
             ProBalance = s.ProBalance.Enabled,
             Profile = s.ActiveProfile,
             Rules = s.Rules.Count,
-            Locked = Policies.Current.LockSettings,
+            Locked = Policies.Current.LockSettings || remote.StandardUser,
         };
         if (json)
         {
@@ -197,8 +199,10 @@ public static class Cli
         output.WriteLine($"  {"CPU",-14}: {status.Cpu:0.0} %");
         output.WriteLine($"  {Tr("Mémoire", "Memory"),-14}: {status.Memory:0.0} %");
         output.WriteLine($"  {Tr("Profil", "Profile"),-14}: {status.Profile} ({status.Rules} {Tr("règles", "rules")})");
-        if (status.Locked)
+        if (Policies.Current.LockSettings)
             output.WriteLine("  " + Tr("Réglages verrouillés par votre organisation.", "Settings locked by your organization."));
+        else if (remote.StandardUser)
+            output.WriteLine("  " + Tr("Compte standard : réglages réservés aux administrateurs.", "Standard account: settings restricted to administrators."));
         return Ok;
     }
 

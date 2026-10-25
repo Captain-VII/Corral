@@ -35,6 +35,8 @@ public sealed class PipeMessage
     public SessionState? Session { get; set; }
     /// <summary>Dans « welcome » : le service installe une mise à jour et va s'arrêter.</summary>
     public bool Updating { get; set; }
+    /// <summary>Dans « welcome » : client sous un compte standard, ses modifications seront refusées.</summary>
+    public bool StandardUser { get; set; }
 }
 
 public static class Protocol
