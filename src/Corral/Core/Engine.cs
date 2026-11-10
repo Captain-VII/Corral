@@ -66,6 +66,8 @@ public sealed class Engine : IEngine, IDisposable
     readonly Func<DateTime> now;
     readonly Stopwatch clock = new();
     readonly int ownPid = Environment.ProcessId;
+    /// <summary>Nom de l'exe de Corral (service et interface sont le même exe).</summary>
+    static readonly string OwnName = Process.GetCurrentProcess().ProcessName;
     readonly int cores = Environment.ProcessorCount;
     Settings settings;
     bool reapply;
@@ -305,7 +307,7 @@ public sealed class Engine : IEngine, IDisposable
         if (reapply)
         {
             reapply = false;
-            RestoreAll();
+            RestoreAll(keepPowerPlan: true);
             tracked.Clear();
             CleanUpGpuPreferences(s);
         }
@@ -318,11 +320,13 @@ public sealed class Engine : IEngine, IDisposable
         bool pbActive = pb.Enabled && !paused;
         var userExclusions = pb.Exclusions;
 
+        var procs = Process.GetProcesses();
+
+        // Compteurs GPU lus seulement quand Corral est au premier plan : les interroger chaque seconde fait saccader les jeux.
         IReadOnlyDictionary<int, double> gpu = NoGpu;
-        try { if (GpuUsage != null) gpu = GpuUsage(); }
+        try { if (GpuUsage != null && Array.Exists(procs, p => p.Id == fg && p.ProcessName == OwnName)) gpu = GpuUsage(); }
         catch (Exception ex) { GpuUsage = null; Log.Error(Tr("Usage GPU", "GPU usage"), ex); }
 
-        var procs = Process.GetProcesses();
         var live = new Dictionary<ProcKey, Process>(procs.Length);
         var rows = new List<ProcessRow>(procs.Length);
         var samples = new List<ProBalanceLogic.Sample>();
@@ -407,6 +411,7 @@ public sealed class Engine : IEngine, IDisposable
             UpdateKeepAwake();
             UpdateForegroundBoost(s, live, fg);
             UpdateIdleSaver(s);
+            power.Settle();
             RunMemoryCleanup(s, live, rows);
         }
         finally
@@ -994,7 +999,8 @@ public sealed class Engine : IEngine, IDisposable
         }
     }
 
-    void RestoreAll()
+    /// <param name="keepPowerPlan">Réapplication : le plan reste en place jusqu'à <see cref="PowerPlanManager.Settle"/>.</param>
+    void RestoreAll(bool keepPowerPlan = false)
     {
         foreach (var (key, t) in tracked)
         {
@@ -1021,7 +1027,10 @@ public sealed class Engine : IEngine, IDisposable
             if (efficiency)
                 TryDo(key, Tr("restauration mode efficacité", "efficiency mode restore"), () => ProcessTweaks.SetEfficiencyMode(p.Handle, null));
         }
-        power.RestoreAll();
+        if (keepPowerPlan)
+            power.Release();
+        else
+            power.RestoreAll();
         gamePlanApplied = false;
         boosted = null;
         idleActive = false;

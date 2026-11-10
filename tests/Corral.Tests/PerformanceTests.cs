@@ -52,8 +52,9 @@ public class PerformanceEngineTests : IDisposable
     sealed class FakePower : IPowerPlanApi
     {
         public Guid Active = Guid.Empty;
+        public readonly List<Guid> Calls = new();
         public Guid? GetActive() => Active;
-        public bool SetActive(Guid plan) { Active = plan; return true; }
+        public bool SetActive(Guid plan) { Active = plan; Calls.Add(plan); return true; }
     }
 
     readonly string dir = Path.Combine(Path.GetTempPath(), "CorralPerf_" + Guid.NewGuid().ToString("N"));
@@ -138,6 +139,29 @@ public class PerformanceEngineTests : IDisposable
         bg.Refresh();
         Assert.Equal(origPriority, bg.PriorityClass);
         Assert.Equal(Guid.Empty, power.Active);
+        engine.Stop();
+    }
+
+    [Fact]
+    public void GameStartSwitchesPowerPlanWithoutGoingBack()
+    {
+        Guid rulePlan = Guid.NewGuid(), gamePlan = Guid.NewGuid();
+        var s = Base();
+        s.Rules.Add(new Rule { Pattern = "corral_plan_game", IsGame = true, PowerPlan = rulePlan });
+        s.GameMode.PowerPlan = gamePlan;
+        var power = new FakePower();
+        var engine = new Engine(s, power, foregroundPid: () => -1);
+
+        var game = Start("corral_plan_game");
+        Assert.True(engine.TickOnce().GameMode);
+        engine.TickOnce(); // réapplication : le plan d'origine n'est pas remis entre-temps
+        Assert.Equal(new[] { rulePlan, gamePlan }, power.Calls);
+
+        game.Kill();
+        game.WaitForExit();
+        engine.TickOnce();
+        engine.TickOnce();
+        Assert.Equal(Guid.Empty, power.Active); // jeu fermé : plan d'origine rendu
         engine.Stop();
     }
 
