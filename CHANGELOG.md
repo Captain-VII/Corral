@@ -1,5 +1,9 @@
 # Journal des modifications
 
+## 3.1.2
+
+- **Journal allégé avec les jeux protégés.** Les programmes protégés par un anti-triche (lanceurs, Rocket League…) refusent toute modification : Corral réessayait à chaque seconde et remplissait le journal d'avertissements « Accès refusé » (des centaines par jour). Le refus n'est désormais noté qu'une fois, et Corral laisse ce programme tranquille jusqu'à sa fermeture.
+
 ## 3.1.1
 
 - **Plus de saccades en jeu dues à Corral.** L'usage du GPU par processus n'est plus mesuré chaque seconde en permanence, mais seulement quand la fenêtre de Corral est au premier plan : interroger ces compteurs pendant une partie provoquait des micro-freezes réguliers.
