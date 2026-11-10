@@ -1,5 +1,10 @@
 # Journal des modifications
 
+## 3.1.3
+
+- **L'interface retrouve toujours le service.** Si une interface se fermait au moment précis où elle se connectait (pendant une mise à jour, par exemple), le service n'acceptait plus aucune connexion jusqu'au redémarrage du PC : l'icône disparaissait et l'interface affichait « Le service Corral ne répond pas ». La connexion perdue est désormais remplacée aussitôt.
+- **Journal du service fiable.** Depuis la 3.1.0, après la vérification des droits d'un utilisateur, le service pouvait ne plus réussir à écrire dans son journal ; les erreurs passaient alors inaperçues.
+
 ## 3.1.2
 
 - **Journal allégé avec les jeux protégés.** Les programmes protégés par un anti-triche (lanceurs, Rocket League…) refusent toute modification : Corral réessayait à chaque seconde et remplissait le journal d'avertissements « Accès refusé » (des centaines par jour). Le refus n'est désormais noté qu'une fois, et Corral laisse ce programme tranquille jusqu'à sa fermeture.

@@ -114,6 +114,16 @@ public class ServiceTests : IDisposable
     }
 
     [Fact]
+    public void ClientsLeavingAtOnceDoNotBreakThePipe()
+    {
+        using var host = StartHost();
+        // Un client qui se ferme avant que le service se remette à l'écoute cassait l'instance du pipe pour de bon
+        Parallel.For(0, 300, _ => Protocol.OpenClient(pipe, RemoteEngine.ClientRights, 100)?.Dispose());
+        using var remote = RemoteEngine.Connect(Timeout, pipe, requireService: false, mirrorLog: false);
+        Assert.NotNull(remote);
+    }
+
+    [Fact]
     public void ServerSessionIsReadFromThePipe()
     {
         using var host = StartHost();
