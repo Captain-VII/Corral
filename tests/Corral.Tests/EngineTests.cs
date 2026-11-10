@@ -144,4 +144,17 @@ public class EngineTests : IDisposable
         Assert.True(JobLimiter.IsInJob(ping));
         Assert.False(ping.HasExited); // le handle du job est fermé sans tuer le processus
     }
+
+    [Fact]
+    public void AccessDeniedIsTriedOnceThenIgnored()
+    {
+        using var engine = new Engine(new Settings(), new FakePower(), foregroundPid: () => -1);
+        var key = new ProcKey(int.MaxValue, name, 0);
+        int calls = 0;
+        void Denied() { calls++; throw new System.ComponentModel.Win32Exception(5); }
+        Assert.False(engine.TryDo(key, "test", Denied));
+        Assert.False(engine.TryDo(key, "test", Denied));
+        Assert.Equal(1, calls);
+        Assert.True(engine.TryDo(key with { Pid = int.MaxValue - 1 }, "test", () => { }));
+    }
 }

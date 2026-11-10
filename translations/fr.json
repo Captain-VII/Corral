@@ -631,6 +631,7 @@
   "{imported.Count} règles importées.": "{imported.Count} règles importées.",
   "{key.Name} ({key.Pid}) : règle « {rule.Pattern} » → {effects}{more}": "{key.Name} ({key.Pid}) : règle « {rule.Pattern} » → {effects}{more}",
   "{key.Name} ({key.Pid}) : échec {what} : {Log.Reason(ex)}": "{key.Name} ({key.Pid}) : échec {what} : {Log.Reason(ex)}",
+  "{key.Name} ({key.Pid}) : échec {what} : {Log.Reason(ex)} Processus protégé, ignoré jusqu'à sa fermeture.": "{key.Name} ({key.Pid}) : échec {what} : {Log.Reason(ex)} Processus protégé, ignoré jusqu'à sa fermeture.",
   "{key.Name} ({key.Pid}) bloqué par la règle « {rule.Pattern} »": "{key.Name} ({key.Pid}) bloqué par la règle « {rule.Pattern} »",
   "{key.Name} ({key.Pid}) fermé : une seule instance autorisée": "{key.Name} ({key.Pid}) fermé : une seule instance autorisée",
   "{names.Count} programmes abaissés pour garder le PC réactif : {list}.": "{names.Count} programmes abaissés pour garder le PC réactif : {list}.",

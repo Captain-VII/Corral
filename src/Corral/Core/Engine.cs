@@ -60,6 +60,8 @@ public sealed class Engine : IEngine, IDisposable
     readonly Func<int> foregroundPid;
     readonly Dictionary<ProcKey, Tracked> tracked = new();
     readonly HashSet<ProcKey> jobLimited = new();
+    /// <summary>Processus protégés (anti-triche, PPL) qui ont refusé l'accès : plus aucune tentative ni avertissement.</summary>
+    readonly HashSet<ProcKey> denied = new();
     readonly List<string> pendingActed = new();
     readonly List<(string Title, string Message)> pendingNotifications = new();
     readonly KeepAwake keepAwake = new();
@@ -394,6 +396,7 @@ public sealed class Engine : IEngine, IDisposable
                 power.OnExit(gone);
                 tracked.Remove(gone);
                 jobLimited.Remove(gone);
+                denied.Remove(gone);
             }
 
             if (pbActive)
@@ -1100,8 +1103,10 @@ public sealed class Engine : IEngine, IDisposable
         return null;
     }
 
-    static bool TryDo(ProcKey key, string what, Action action)
+    internal bool TryDo(ProcKey key, string what, Action action)
     {
+        if (denied.Contains(key))
+            return false;
         try
         {
             action();
@@ -1110,6 +1115,12 @@ public sealed class Engine : IEngine, IDisposable
         catch (InvalidOperationException)
         {
             return false; // le programme s'est fermé entre-temps : rien d'anormal
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 5)
+        {
+            denied.Add(key);
+            Log.Warn(Tr($"{key.Name} ({key.Pid}) : échec {what} : {Log.Reason(ex)} Processus protégé, ignoré jusqu'à sa fermeture.", $"{key.Name} ({key.Pid}): {what} failed: {Log.Reason(ex)} Protected process, ignored until it exits."));
+            return false;
         }
         catch (Exception ex)
         {
