@@ -69,12 +69,9 @@ public sealed class TrayContext : ApplicationContext
                     tray!.Text = connected ? "Corral" : Tr("Corral — service indisponible", "Corral — service unavailable");
             }, null);
         }
-        // Fermeture de session ou installeur (MSI) qui demande la fermeture : on part sans attendre
-        SystemEvents.SessionEnded += (_, _) =>
-        {
-            engine.Stop();
-            Environment.Exit(0);
-        };
+        // Fermeture de session ou installeur (MSI) qui demande la fermeture. Pas d'Environment.Exit ici : il attend le thread
+        // de SystemEvents, lui-même bloqué jusqu'à la fin de ce gestionnaire (interface figée sans icône après chaque MSI).
+        SystemEvents.SessionEnded += (_, _) => Exit();
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(Tr("Ouvrir", "Open"), null, (_, _) => ShowForm());
