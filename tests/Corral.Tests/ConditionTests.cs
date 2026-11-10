@@ -118,7 +118,7 @@ public class ConditionTests : IDisposable
         engine.TickOnce();
         ping.Refresh();
         Assert.Equal(orig, ping.PriorityClass);
-        Assert.Contains("09:00-18:00", Engine.Summary(s.Rules[0]));
+        Assert.Contains("09:00-18:00", RuleText.Summary(s.Rules[0]));
         engine.Stop();
     }
 }

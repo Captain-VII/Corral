@@ -147,9 +147,9 @@ public class SettingsQolTests
     [Fact]
     public void RuleSummaryIsReadable()
     {
-        Assert.Null(Engine.Summary(null));
+        Assert.Null(RuleText.Summary(null));
         Assert.Equal("priorité haute · 2 cœurs · CPU max 25 %",
-            Engine.Summary(new Rule { Priority = ProcessPriorityClass.High, AffinityMask = 0b101, CpuLimitPercent = 25 }));
+            RuleText.Summary(new Rule { Priority = ProcessPriorityClass.High, AffinityMask = 0b101, CpuLimitPercent = 25 }));
     }
 }
 

@@ -216,7 +216,7 @@ public sealed record ProcessDetails(
         return new ProcessDetails(pid, name, path, ReadCommandLine(pid), parent, parentName,
             Try(() => p.StartTime), Try(() => p.Threads.Count), Try(() => p.HandleCount),
             Try(() => p.WorkingSet64), Try(() => p.PrivateMemorySize64), Try(() => p.TotalProcessorTime),
-            TryS(() => Engine.PriorityLabel(p.PriorityClass)),
+            TryS(() => RuleText.PriorityLabel(p.PriorityClass)),
             NullIfEmpty(info?.CompanyName), NullIfEmpty(info?.FileDescription), NullIfEmpty(info?.ProductVersion ?? info?.FileVersion));
     }
 
