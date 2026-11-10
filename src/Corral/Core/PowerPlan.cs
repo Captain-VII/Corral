@@ -116,7 +116,7 @@ public sealed class PowerPlanManager
 
     public void OnStart(ProcKey key, Guid plan)
     {
-        if (requests.Count == 0)
+        if (requests.Count == 0 && original == null) // après Release, le plan d'origine est déjà connu
         {
             original = api.GetActive();
             if (original == null)
@@ -142,6 +142,19 @@ public sealed class PowerPlanManager
 
     /// <summary>Un autre demandeur (règle, Mode Jeu) impose déjà un plan.</summary>
     public bool HasRequestsOtherThan(ProcKey key) => requests.Any(r => r.Key != key);
+
+    /// <summary>
+    /// Oublie les demandes sans changer de plan : elles vont être refaites (réapplication des règles).
+    /// <see cref="Settle"/> restaure ensuite si plus personne n'en demande. Évite un aller-retour de plan, qui fait saccader les jeux.
+    /// </summary>
+    public void Release() => requests.Clear();
+
+    /// <summary>Restaure le plan d'origine si plus aucune demande ne tient après <see cref="Release"/>.</summary>
+    public void Settle()
+    {
+        if (requests.Count == 0 && original != null)
+            RestoreAll();
+    }
 
     public void RestoreAll()
     {

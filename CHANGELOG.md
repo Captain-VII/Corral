@@ -1,5 +1,10 @@
 # Journal des modifications
 
+## 3.1.1
+
+- **Plus de saccades en jeu dues à Corral.** L'usage du GPU par processus n'est plus mesuré chaque seconde en permanence, mais seulement quand la fenêtre de Corral est au premier plan : interroger ces compteurs pendant une partie provoquait des micro-freezes réguliers.
+- **Plan d'alimentation stable au lancement d'un jeu.** Quand le Mode Jeu s'active, Corral ne remet plus le plan habituel entre deux changements (jusqu'à 4 bascules en une seconde) : le plan du jeu puis celui du Mode Jeu, c'est tout. Le plan habituel revient toujours à la fermeture du jeu.
+
 ## 3.1.0
 
 - **Sécurité : réglages réservés aux administrateurs.** Le service agit avec les droits du système sur les processus de toutes les sessions ; il acceptait jusqu'ici les modifications de n'importe quel utilisateur connecté. Désormais, seuls les administrateurs du PC (y compris sans élévation UAC) peuvent modifier les règles, ProBalance, le Mode Jeu et les optimisations, changer la priorité d'un processus ou mettre Corral en pause. Les comptes standard consultent l'interface en lecture seule (bandeau « Réservé aux administrateurs de ce PC ») ; la ligne de commande leur répond par une erreur explicite.

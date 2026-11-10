@@ -73,11 +73,14 @@ public class MetricsTests : IDisposable
         var p = procs.Ping(procs.Name("io"));
         var s = new Settings();
         s.ProBalance.Enabled = false;
-        var engine = new Engine(s, new FakePower(), foregroundPid: () => -1)
+        int fg = -1, gpuReads = 0;
+        var engine = new Engine(s, new FakePower(), foregroundPid: () => fg)
         {
-            GpuUsage = () => new Dictionary<int, double> { [p.Id] = 42 },
+            GpuUsage = () => { gpuReads++; return new Dictionary<int, double> { [p.Id] = 42 }; },
         };
         engine.TickOnce();
+        Assert.Equal(0, gpuReads); // Corral pas au premier plan (un jeu, par exemple) : compteurs GPU non lus
+        fg = Environment.ProcessId;
         var snap = engine.TickOnce();
         var row = snap.Rows.Single(r => r.Pid == p.Id);
         Assert.Equal(42, row.Gpu);
