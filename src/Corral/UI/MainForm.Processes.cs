@@ -162,7 +162,7 @@ public sealed partial class MainForm
         if (error != null)
             MessageBox.Show(this, error, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
         else
-            processBanner.Show(Tr($"Priorité de « {row.Name} » passée à « {Engine.PriorityLabel(priority)} » jusqu'à sa fermeture.", $"“{row.Name}” priority set to “{Engine.PriorityLabel(priority)}” until it closes."));
+            processBanner.Show(Tr($"Priorité de « {row.Name} » passée à « {RuleText.PriorityLabel(priority)} » jusqu'à sa fermeture.", $"“{row.Name}” priority set to “{RuleText.PriorityLabel(priority)}” until it closes."));
     }
 
     void ExcludeFromProBalance()

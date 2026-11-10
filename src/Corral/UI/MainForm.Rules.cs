@@ -217,7 +217,7 @@ public sealed partial class MainForm
             {
                 r.Pattern,
                 r.Enabled ? "Active" : "Inactive",
-                r.Priority is { } prio ? Engine.PriorityLabel(prio) : "—",
+                r.Priority is { } prio ? RuleText.PriorityLabel(prio) : "—",
                 r.AffinityMask is { } m ? $"{System.Numerics.BitOperations.PopCount((ulong)m)}" : Tr("Tous", "All"),
                 RuleOptions(r),
             }));
@@ -393,8 +393,8 @@ public sealed partial class MainForm
         if (r.MemoryLimitMB is { } mem) parts.Add($"RAM max {mem} {Units.MB}");
         if (r.EfficiencyMode == true) parts.Add(Tr("Efficacité", "Efficiency"));
         if (r.EfficiencyMode == false) parts.Add(Tr("Jamais efficacité", "Never efficiency"));
-        if (r.IoPriority is { } io) parts.Add(Tr("Disque ", "Disk ") + Engine.IoLabel(io).ToLowerInvariant());
-        if (r.MemoryPriority is { } m) parts.Add(Tr("Mémoire ", "Memory ") + Engine.MemoryLabel(m).ToLowerInvariant());
+        if (r.IoPriority is { } io) parts.Add(Tr("Disque ", "Disk ") + RuleText.IoLabel(io).ToLowerInvariant());
+        if (r.MemoryPriority is { } m) parts.Add(Tr("Mémoire ", "Memory ") + RuleText.MemoryLabel(m).ToLowerInvariant());
         return parts.Count == 0 ? "—" : string.Join(" · ", parts);
     }
 }
