@@ -1,5 +1,9 @@
 # Journal des modifications
 
+## 3.1.4
+
+- **Plus d'interface fantôme après une mise à jour.** Quand l'installeur (ou la fermeture de session) demandait à l'interface de se fermer, elle restait bloquée en mémoire sans icône, et il fallait la fermer à la main. Elle se ferme désormais normalement.
+
 ## 3.1.3
 
 - **L'interface retrouve toujours le service.** Si une interface se fermait au moment précis où elle se connectait (pendant une mise à jour, par exemple), le service n'acceptait plus aucune connexion jusqu'au redémarrage du PC : l'icône disparaissait et l'interface affichait « Le service Corral ne répond pas ». La connexion perdue est désormais remplacée aussitôt.
