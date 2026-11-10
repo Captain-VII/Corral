@@ -39,7 +39,6 @@ public sealed class Engine : IEngine, IDisposable
         public bool IoDenied;
         public bool CpuDenied;
         public string? Path;
-        public bool PathLoaded;
         public IoPriorityLevel? OrigIo;
         public MemoryPriorityLevel? OrigMemory;
         public bool EfficiencySet;
@@ -81,6 +80,24 @@ public sealed class Engine : IEngine, IDisposable
     bool gamePlanApplied;
     (bool Active, string? Trigger)? pendingGameEvent;
     System.Threading.Timer? timer;
+
+    static readonly ProcKey IdleKey = new(-2, "__economie_au_repos", 0);
+    ProcKey? boosted;
+    bool idleActive;
+    DateTime lastCleanup = DateTime.MinValue;
+    bool cleanupRequested;
+    static readonly TimeSpan CleanupCooldown = TimeSpan.FromMinutes(5);
+
+    /// <summary>Règles dont la condition est remplie au dernier passage, et leur empreinte (pour voir un changement).</summary>
+    List<Rule> activeRules = new();
+    string? conditionState;
+
+    static readonly IReadOnlyDictionary<int, double> NoGpu = new Dictionary<int, double>();
+
+    readonly Dictionary<string, (DateTime Since, int Hidden)> ruleLog = new();
+
+    readonly SessionFairnessLogic fairness = new();
+    readonly Dictionary<int, string> sessionNames = new();
 
     /// <param name="clock">Horloge (les tests de surveillance l'avancent à la main).</param>
     public Engine(Settings settings, IPowerPlanApi powerApi, string? powerStateFile = null, Func<int>? foregroundPid = null, Func<DateTime>? clock = null)
@@ -301,7 +318,6 @@ public sealed class Engine : IEngine, IDisposable
                     try { t.Session = p.SessionId; } catch { }
                     // Chemin lu avant la règle : la préférence GPU en a besoin
                     t.Path = Native.GetProcessPath(key.Pid);
-                    t.PathLoaded = true;
                     if (!paused)
                         ApplyRule(p, key, t, s);
                 }
@@ -311,10 +327,7 @@ public sealed class Engine : IEngine, IDisposable
                     cpuByKey[key] = cpu;
                 if (pbActive)
                 {
-                    bool eligible = !Exclusions.IsProtected(key.Name, key.Pid, ownPid)
-                                    && key.Pid != fg
-                                    && t.Rule?.Priority == null
-                                    && !userExclusions.Any(x => RuleMatcher.Matches(x, key.Name)); // jokers acceptés
+                    bool eligible = CanLower(key, t, fg, userExclusions);
                     // On ne lit la priorité (appel système) que pour les candidats.
                     if (eligible && !proBalance.IsRestrained(key) && cpu >= pb.ProcessThreshold)
                         eligible = HasNormalPriority(p);
@@ -324,18 +337,12 @@ public sealed class Engine : IEngine, IDisposable
                 if (t.Session > 0)
                 {
                     sessionCpu[t.Session] = sessionCpu.GetValueOrDefault(t.Session) + cpu;
-                    if (cpu >= 1 && key.Pid != fg && t.Rule?.Priority == null && !Exclusions.IsProtected(key.Name, key.Pid, ownPid)
-                        && !userExclusions.Any(x => RuleMatcher.Matches(x, key.Name)))
+                    if (cpu >= 1 && CanLower(key, t, fg, userExclusions))
                         fairnessCandidates.Add((key, cpu));
                 }
 
                 long mem = 0;
                 try { mem = p.WorkingSet64; } catch { }
-                if (!t.PathLoaded)
-                {
-                    t.Path = Native.GetProcessPath(key.Pid);
-                    t.PathLoaded = true;
-                }
                 rows.Add(new ProcessRow(key.Pid, key.Name, cpu, mem, t.Rule?.Pattern, t.ProBalanceOrig != null, t.Path, RuleText.Summary(t.Rule),
                     SampleIo(key.Pid, t, elapsedMs), gpu.GetValueOrDefault(key.Pid)));
             }
@@ -468,13 +475,11 @@ public sealed class Engine : IEngine, IDisposable
             switch (rule.AlertAction)
             {
                 case AlertAction.Lower:
-                    if (TryDo(key, Tr("surveillance : abaissement", "monitoring: lowering"), () =>
-                        {
-                            var current = p.PriorityClass;
-                            p.PriorityClass = ProcessPriorityClass.Idle;
-                            t.OrigPriority ??= current;
-                        }))
+                    if (SetPriority(key, p, ProcessPriorityClass.Idle, Tr("surveillance : abaissement", "monitoring: lowering")) is { } before)
+                    {
+                        t.OrigPriority ??= before;
                         Notify(key, Tr($"« {key.Name} » utilise {reason} {duration} : sa priorité a été baissée.", $"“{key.Name}” has been using {reason} {duration}: its priority was lowered."));
+                    }
                     break;
                 case AlertAction.Close:
                     if (TryDo(key, Tr("surveillance : fermeture", "monitoring: close"), () => p.Kill()))
@@ -495,13 +500,6 @@ public sealed class Engine : IEngine, IDisposable
 
     // ---------- Optimisations (v1.6) ----------
 
-    static readonly ProcKey IdleKey = new(-2, "__economie_au_repos", 0);
-    ProcKey? boosted;
-    bool idleActive;
-    DateTime lastCleanup = DateTime.MinValue;
-    bool cleanupRequested;
-    static readonly TimeSpan CleanupCooldown = TimeSpan.FromMinutes(5);
-
     /// <summary>Temps d'inactivité de l'utilisateur (remplaçable pour les tests).</summary>
     public Func<TimeSpan> IdleTimeSource { get; set; } = Idle.UserIdleTime;
 
@@ -511,10 +509,6 @@ public sealed class Engine : IEngine, IDisposable
     /// <summary>Le PC fonctionne sur batterie (remplaçable pour les tests).</summary>
     public Func<bool> OnBattery { get; set; } = Native.OnBattery;
 
-    /// <summary>Règles dont la condition est remplie au dernier passage, et leur empreinte (pour voir un changement).</summary>
-    List<Rule> activeRules = new();
-    string? conditionState;
-
     /// <summary>Une vidéo ou une présentation demande l'écran (remplaçable pour les tests).</summary>
     public Func<bool> DisplayRequiredSource { get; set; } = Idle.DisplayRequired;
 
@@ -523,8 +517,6 @@ public sealed class Engine : IEngine, IDisposable
 
     /// <summary>Usage du GPU par PID, appelé à chaque passage sur le thread du moteur (null = colonne GPU à 0).</summary>
     public Func<IReadOnlyDictionary<int, double>>? GpuUsage { get; set; }
-
-    static readonly IReadOnlyDictionary<int, double> NoGpu = new Dictionary<int, double>();
 
     public bool IdleSaverActive
     {
@@ -761,13 +753,11 @@ public sealed class Engine : IEngine, IDisposable
         {
             if (priority == ProcessPriorityClass.RealTime)
                 priority = ProcessPriorityClass.High; // temps réel peut bloquer le système
-            if (TryDo(key, Tr("priorité", "priority"), () =>
-                {
-                    var current = p.PriorityClass;
-                    p.PriorityClass = priority;
-                    t.OrigPriority ??= current;
-                }))
+            if (SetPriority(key, p, priority, Tr("priorité", "priority")) is { } before)
+            {
+                t.OrigPriority ??= before;
                 done.Add(Tr($"priorité {priority}", $"priority {priority}"));
+            }
         }
 
         if (rule.AffinityMask is { } mask)
@@ -831,7 +821,6 @@ public sealed class Engine : IEngine, IDisposable
 
     /// <summary>Fenêtre pendant laquelle une même application de règle n'est notée qu'une fois.</summary>
     public static readonly TimeSpan RuleLogWindow = TimeSpan.FromMinutes(10);
-    readonly Dictionary<string, (DateTime Since, int Hidden)> ruleLog = new();
 
     /// <summary>
     /// Note l'application d'une règle. Un programme qui lance beaucoup de processus (navigateur…) n'est noté qu'une fois
@@ -868,13 +857,9 @@ public sealed class Engine : IEngine, IDisposable
         {
             if (!live.TryGetValue(key, out var p) || !tracked.TryGetValue(key, out var t) || t.ProBalanceOrig != null)
                 continue;
-            if (TryDo(key, "ProBalance", () =>
-                {
-                    var current = p.PriorityClass;
-                    p.PriorityClass = ProcessPriorityClass.BelowNormal;
-                    t.ProBalanceOrig = current;
-                }))
+            if (SetPriority(key, p, ProcessPriorityClass.BelowNormal, "ProBalance") is { } before)
             {
+                t.ProBalanceOrig = before;
                 Log.Info(Tr($"ProBalance : {key.Name} ({key.Pid}) abaissé (CPU système {sysCpu:0}%)", $"ProBalance: {key.Name} ({key.Pid}) lowered (system CPU {sysCpu:0}%)"), LogCategory.ProBalance);
                 pendingActed.Add(key.Name);
             }
@@ -907,9 +892,6 @@ public sealed class Engine : IEngine, IDisposable
         }).ToList();
     }
 
-    readonly SessionFairnessLogic fairness = new();
-    readonly Dictionary<int, string> sessionNames = new();
-
     /// <summary>Abaisse les programmes actifs des sessions trop gourmandes ; restaure ceux des sessions revenues dans leur part.</summary>
     void RunSessionFairness(bool enabled, double sysCpu, Dictionary<int, double> sessionCpu, List<(ProcKey Key, double Cpu)> candidates,
         Dictionary<ProcKey, Process> live, ProBalanceSettings cfg)
@@ -937,13 +919,9 @@ public sealed class Engine : IEngine, IDisposable
             if (!tracked.TryGetValue(key, out var t) || !fairness.IsLimited(t.Session) || t.ProBalanceOrig != null
                 || !live.TryGetValue(key, out var p) || !HasNormalPriority(p))
                 continue;
-            if (TryDo(key, Tr("Équité entre sessions", "Session fairness"), () =>
-                {
-                    var current = p.PriorityClass;
-                    p.PriorityClass = ProcessPriorityClass.BelowNormal;
-                    (t.ProBalanceOrig, t.ByFairness) = (current, true);
-                }))
+            if (SetPriority(key, p, ProcessPriorityClass.BelowNormal, Tr("Équité entre sessions", "Session fairness")) is { } before)
             {
+                (t.ProBalanceOrig, t.ByFairness) = (before, true);
                 Log.Info(Tr($"Équité entre sessions : {key.Name} ({key.Pid}, session {t.Session}) abaissé ({cpu:0} % du processeur)",
                     $"Session fairness: {key.Name} ({key.Pid}, session {t.Session}) lowered ({cpu:0}% of the CPU)"), LogCategory.ProBalance);
                 pendingActed.Add(key.Name);
@@ -1050,6 +1028,27 @@ public sealed class Engine : IEngine, IDisposable
         catch { }
         p?.Dispose();
         return null;
+    }
+
+    /// <summary>
+    /// ProBalance et l'équité entre sessions peuvent-ils abaisser ce processus ? Jamais le premier plan, un processus
+    /// dont une règle fixe la priorité, un processus protégé ou exclu par l'utilisateur (jokers acceptés).
+    /// </summary>
+    bool CanLower(ProcKey key, Tracked t, int fg, IEnumerable<string> exclusions) =>
+        key.Pid != fg && t.Rule?.Priority == null && !Exclusions.IsProtected(key.Name, key.Pid, ownPid)
+        && !exclusions.Any(x => RuleMatcher.Matches(x, key.Name));
+
+    /// <summary>Change la priorité d'un processus ; renvoie celle d'avant (à restaurer), ou null en cas d'échec.</summary>
+    ProcessPriorityClass? SetPriority(ProcKey key, Process p, ProcessPriorityClass priority, string what)
+    {
+        ProcessPriorityClass? before = null;
+        TryDo(key, what, () =>
+        {
+            var current = p.PriorityClass;
+            p.PriorityClass = priority;
+            before = current;
+        });
+        return before;
     }
 
     internal bool TryDo(ProcKey key, string what, Action action)
