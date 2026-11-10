@@ -135,7 +135,7 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
             }
             var r = new LineReader(p);
             var read = r.ReadAsync(cts.Token);
-            if (!read.Wait(TimeSpan.FromSeconds(5)) || read.Result is not { } line || Protocol.Decode(line) is not { Type: "welcome" } welcome)
+            if (!read.Wait(TimeSpan.FromSeconds(5)) || read.Result is not { } line || Protocol.Decode(line) is not { Type: MessageType.Welcome } welcome)
                 throw new TimeoutException();
             lock (writeLock)
             {
@@ -195,7 +195,7 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
             ConnectionChanged?.Invoke(false);
             foreach (var id in pending.Keys)
                 if (pending.TryRemove(id, out var tcs))
-                    tcs.TrySetResult(Tr("Le service ne répond pas.", "The service is not responding."));
+                    tcs.TrySetResult(NoResponse);
             // Le service redémarre (mise à jour, arrêt manuel…) : on attend son retour
             while (!cts.IsCancellationRequested && TryOpen() == null)
             {
@@ -210,32 +210,32 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
     {
         switch (m.Type)
         {
-            case "snapshot" when m.Snapshot != null:
+            case MessageType.Snapshot when m.Snapshot != null:
                 gameManual = m.Flag;
                 keepAwake = m.Text;
                 SnapshotReady?.Invoke(m.Snapshot);
                 break;
-            case "acted":
+            case MessageType.Acted:
                 ProBalanceActed?.Invoke(m.Names ?? Array.Empty<string>(), m.Value);
                 break;
-            case "game-changed":
+            case MessageType.GameChanged:
                 GameModeChanged?.Invoke(m.Flag, m.Text);
                 break;
-            case "notify":
+            case MessageType.Notify:
                 Notification?.Invoke(m.Text ?? "", m.Text2 ?? "");
                 break;
-            case "log" when mirrorLog:
+            case MessageType.Log when mirrorLog:
                 foreach (var entry in m.Log ?? Array.Empty<LogEntry>())
                     Log.Append(entry);
                 break;
-            case "result":
+            case MessageType.Result:
                 if (pending.TryRemove(m.Id, out var tcs))
                     tcs.TrySetResult(m.Text);
                 break;
-            case "updating":
+            case MessageType.Updating:
                 ServiceUpdating?.Invoke();
                 break;
-            case "settings" when m.Settings != null:
+            case MessageType.Settings when m.Settings != null:
                 SettingsChanged?.Invoke(m.Settings);
                 break;
         }
@@ -261,7 +261,10 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
         }
     }
 
-    Task<string?> Request(PipeMessage message)
+    static string NoResponse => Tr("Le service ne répond pas.", "The service is not responding.");
+
+    /// <summary>Envoie une requête et attend sa réponse « result » ; renvoie un message d'erreur, ou null si c'est fait.</summary>
+    async Task<string?> Request(PipeMessage message, TimeSpan timeout)
     {
         message.Id = Interlocked.Increment(ref nextId);
         var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -269,9 +272,10 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
         if (!Send(message))
         {
             pending.TryRemove(message.Id, out _);
-            tcs.TrySetResult(Tr("Le service ne répond pas.", "The service is not responding."));
+            return NoResponse;
         }
-        return tcs.Task;
+        // ConfigureAwait(false) : SetPriorityOnce attend la réponse en bloquant le thread de l'interface
+        return await Task.WhenAny(tcs.Task, Task.Delay(timeout)).ConfigureAwait(false) == tcs.Task ? tcs.Task.Result : NoResponse;
     }
 
     void SendSession()
@@ -280,7 +284,7 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
         {
             Send(new PipeMessage
             {
-                Type = "session",
+                Type = MessageType.Session,
                 Session = new SessionState(Native.GetForegroundPid(), Idle.UserIdleTime().TotalSeconds, Idle.DisplayRequired()),
             });
         }
@@ -289,43 +293,31 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
 
     public void Stop() => Dispose();
 
-    public void UpdateSettings(Settings settings) => Send(new PipeMessage { Type = "apply", Settings = settings });
+    public void UpdateSettings(Settings settings) => Send(new PipeMessage { Type = MessageType.Apply, Settings = settings });
 
-    public void Save(Settings settings) => Send(new PipeMessage { Type = "save", Settings = settings });
+    public void Save(Settings settings) => Send(new PipeMessage { Type = MessageType.Save, Settings = settings });
 
     /// <summary>Applique la configuration et attend la réponse du service ; renvoie un message d'erreur ou null.</summary>
-    public async Task<string?> ApplyAsync(Settings settings)
-    {
-        var task = Request(new PipeMessage { Type = "apply", Settings = settings });
-        return await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(10))) == task
-            ? task.Result
-            : Tr("Le service ne répond pas.", "The service is not responding.");
-    }
+    public Task<string?> ApplyAsync(Settings settings) =>
+        Request(new PipeMessage { Type = MessageType.Apply, Settings = settings }, TimeSpan.FromSeconds(10));
 
-    public void SetPaused(bool value) => Send(new PipeMessage { Type = "pause", Flag = value });
+    public void SetPaused(bool value) => Send(new PipeMessage { Type = MessageType.Pause, Flag = value });
 
     public void SetGameMode(bool enabled)
     {
         gameManual = enabled; // en attendant le prochain instantané
-        Send(new PipeMessage { Type = "game", Flag = enabled });
+        Send(new PipeMessage { Type = MessageType.Game, Flag = enabled });
     }
 
-    public string? SetPriorityOnce(int pid, string name, ProcessPriorityClass priority)
-    {
-        var task = Request(new PipeMessage { Type = "priority", Pid = pid, Text = name, Priority = priority });
-        return task.Wait(TimeSpan.FromSeconds(5)) ? task.Result : Tr("Le service ne répond pas.", "The service is not responding.");
-    }
+    public string? SetPriorityOnce(int pid, string name, ProcessPriorityClass priority) =>
+        Request(new PipeMessage { Type = MessageType.Priority, Pid = pid, Text = name, Priority = priority }, TimeSpan.FromSeconds(5))
+            .GetAwaiter().GetResult();
 
-    public void CleanMemoryNow() => Send(new PipeMessage { Type = "clean" });
+    public void CleanMemoryNow() => Send(new PipeMessage { Type = MessageType.Clean });
 
     /// <summary>Demande au service d'installer la dernière version ; renvoie un message d'erreur ou null.</summary>
-    public async Task<string?> InstallUpdateAsync()
-    {
-        var task = Request(new PipeMessage { Type = "update" });
-        return await Task.WhenAny(task, Task.Delay(TimeSpan.FromMinutes(10))) == task
-            ? task.Result
-            : Tr("Le service ne répond pas.", "The service is not responding.");
-    }
+    public Task<string?> InstallUpdateAsync() =>
+        Request(new PipeMessage { Type = MessageType.Update }, TimeSpan.FromMinutes(10));
 
     public void Dispose()
     {

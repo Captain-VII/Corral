@@ -83,11 +83,11 @@ public sealed class ServiceHost : IDisposable
         engine.SnapshotReady += snap =>
         {
             if (server.Clients.Count > 0)
-                server.Broadcast(new PipeMessage { Type = "snapshot", Snapshot = snap, Flag = engine.GameModeManual, Text = engine.KeepAwakeReason });
+                server.Broadcast(new PipeMessage { Type = MessageType.Snapshot, Snapshot = snap, Flag = engine.GameModeManual, Text = engine.KeepAwakeReason });
         };
-        engine.ProBalanceActed += (names, cpu) => server.Broadcast(new PipeMessage { Type = "acted", Names = names.ToArray(), Value = cpu });
-        engine.GameModeChanged += (active, trigger) => server.Broadcast(new PipeMessage { Type = "game-changed", Flag = active, Text = trigger });
-        engine.Notification += (title, message) => server.Broadcast(new PipeMessage { Type = "notify", Text = title, Text2 = message });
+        engine.ProBalanceActed += (names, cpu) => server.Broadcast(new PipeMessage { Type = MessageType.Acted, Names = names.ToArray(), Value = cpu });
+        engine.GameModeChanged += (active, trigger) => server.Broadcast(new PipeMessage { Type = MessageType.GameChanged, Flag = active, Text = trigger });
+        engine.Notification += (title, message) => server.Broadcast(new PipeMessage { Type = MessageType.Notify, Text = title, Text2 = message });
         Log.Written += OnLog;
         server.Connected += OnConnected;
         server.Received += OnReceived;
@@ -134,7 +134,7 @@ public sealed class ServiceHost : IDisposable
             try { store.Save(settings); }
             catch (Exception ex) { Log.Error("Enregistrement de la configuration", ex); }
             updated = RuleStore.Clone(settings);
-            server.Broadcast(new PipeMessage { Type = "settings", Settings = settings });
+            server.Broadcast(new PipeMessage { Type = MessageType.Settings, Settings = settings });
         }
         engine.UpdateSettings(updated);
         Log.Info(Tr($"Configuration de parc n° {next?.Serial} appliquée", $"Fleet configuration #{next?.Serial} applied"));
@@ -168,7 +168,7 @@ public sealed class ServiceHost : IDisposable
         catch { return null; }
     }
 
-    void OnLog(LogEntry entry) => server.Broadcast(new PipeMessage { Type = "log", Log = new[] { entry } });
+    void OnLog(LogEntry entry) => server.Broadcast(new PipeMessage { Type = MessageType.Log, Log = new[] { entry } });
 
     /// <summary>Le service installe une mise à jour (il va s'arrêter).</summary>
     public bool Updating
@@ -203,53 +203,53 @@ public sealed class ServiceHost : IDisposable
         if (Updating && client.SessionId > 0)
             AddToRelaunch(client.SessionId); // interface ouverte pendant la mise à jour : le nouveau service la relancera
         lock (sync)
-            client.Send(new PipeMessage { Type = "welcome", Updating = Updating, StandardUser = Restricted(client), Settings = settings, Flag = fresh, Text = Updater.CurrentVersion.ToString(3), Log = Log.Recent().TakeLast(200).ToArray() });
+            client.Send(new PipeMessage { Type = MessageType.Welcome, Updating = Updating, StandardUser = Restricted(client), Settings = settings, Flag = fresh, Text = Updater.CurrentVersion.ToString(3), Log = Log.Recent().TakeLast(200).ToArray() });
     }
 
     void OnReceived(PipeClient client, PipeMessage m)
     {
         switch (m.Type)
         {
-            case "session":
+            case MessageType.Session:
                 client.Session = m.Session;
                 client.SessionTime = DateTime.UtcNow;
                 break;
-            case "save":
-            case "apply":
+            case MessageType.Save:
+            case MessageType.Apply:
                 if (m.Settings != null)
                 {
                     var error = policies.LockSettings ? Locked
                         : Refuse(client, m.Type) ? AdminOnly
-                        : Save(m.Settings, apply: m.Type == "apply");
+                        : Save(m.Settings, apply: m.Type == MessageType.Apply);
                     if (m.Id != 0) // ligne de commande : elle attend la réponse
-                        client.Send(new PipeMessage { Type = "result", Id = m.Id, Text = error });
+                        client.Send(new PipeMessage { Type = MessageType.Result, Id = m.Id, Text = error });
                     if (error == null) // les autres interfaces affichent les nouvelles règles
                         lock (sync)
-                            server.Broadcast(new PipeMessage { Type = "settings", Settings = settings }, except: client);
+                            server.Broadcast(new PipeMessage { Type = MessageType.Settings, Settings = settings }, except: client);
                 }
                 break;
-            case "pause":
+            case MessageType.Pause:
                 if (!Refuse(client, m.Type)) // la pause suspendrait aussi les règles posées par un administrateur
                     engine.SetPaused(m.Flag);
                 break;
-            case "game":
+            case MessageType.Game:
                 if (!Refuse(client, m.Type))
                     engine.SetGameMode(m.Flag);
                 break;
-            case "clean":
+            case MessageType.Clean:
                 engine.CleanMemoryNow();
                 break;
-            case "priority":
+            case MessageType.Priority:
                 client.Send(new PipeMessage
                 {
-                    Type = "result",
+                    Type = MessageType.Result,
                     Id = m.Id,
                     Text = policies.LockSettings ? Locked
                         : Refuse(client, m.Type) ? AdminOnly
                         : engine.SetPriorityOnce(m.Pid, m.Text ?? "", m.Priority),
                 });
                 break;
-            case "update":
+            case MessageType.Update:
                 _ = UpdateAsync(client, m.Id);
                 break;
         }
@@ -288,7 +288,7 @@ public sealed class ServiceHost : IDisposable
             error = Tr("Une mise à jour est déjà en cours.", "An update is already in progress.");
         if (error != null)
         {
-            client.Send(new PipeMessage { Type = "result", Id = id, Text = error });
+            client.Send(new PipeMessage { Type = MessageType.Result, Id = id, Text = error });
             return;
         }
         try
@@ -299,8 +299,8 @@ public sealed class ServiceHost : IDisposable
             // Les interfaces vont se fermer : le nouveau service les relancera dans leurs sessions
             var sessions = server.Clients.Select(c => c.SessionId).Where(s => s > 0).Distinct().ToArray();
             File.WriteAllText(RelaunchFile, JsonSerializer.Serialize(sessions));
-            client.Send(new PipeMessage { Type = "result", Id = id });
-            server.Broadcast(new PipeMessage { Type = "updating" });
+            client.Send(new PipeMessage { Type = MessageType.Result, Id = id });
+            server.Broadcast(new PipeMessage { Type = MessageType.Updating });
             Log.Info(Tr($"Installation de la version {info.Version.ToString(3)}", $"Installing version {info.Version.ToString(3)}"), LogCategory.Update);
             await Task.Delay(2000); // laisse les interfaces se fermer (fichier en cours d'utilisation sinon)
             Process.Start(new ProcessStartInfo("msiexec.exe", $"/i \"{msi}\" /qn /norestart /l*v \"{Path.Combine(folder, "install.log")}\"")
@@ -311,7 +311,7 @@ public sealed class ServiceHost : IDisposable
         catch (Exception ex)
         {
             Log.Error("Mise à jour par le service", ex);
-            client.Send(new PipeMessage { Type = "result", Id = id, Text = ex.Message });
+            client.Send(new PipeMessage { Type = MessageType.Result, Id = id, Text = ex.Message });
             Interlocked.Exchange(ref updating, 0);
         }
     }
