@@ -151,6 +151,24 @@ public sealed class PipeServer : IDisposable
             }
             catch (Exception ex)
             {
+                // Client parti avant l'acceptation (erreur 232) : cette instance est morte, on la remplace
+                // (la nouvelle d'abord, pour ne jamais libérer le nom du pipe)
+                bool replaced = false;
+                lock (clients)
+                {
+                    if (cts.IsCancellationRequested)
+                        break;
+                    try
+                    {
+                        var dead = listening;
+                        listening = Create();
+                        dead?.Dispose();
+                        replaced = true;
+                    }
+                    catch (Exception create) { Log.Error("Pipe du service", create); }
+                }
+                if (replaced && ex is IOException)
+                    continue;
                 Log.Error("Pipe du service", ex);
                 try { await Task.Delay(1000, cts.Token); } catch { break; }
             }
@@ -161,16 +179,22 @@ public sealed class PipeServer : IDisposable
     {
         string? sid = null;
         bool admin = false; // identité illisible : traité comme un compte standard
-        try
+        // Thread jetable : un emprunt d'identité resté actif ne doit pas atteindre le pool (journal et moteur en échec sinon)
+        var identify = new Thread(() =>
         {
-            pipe.RunAsClient(() =>
+            try
             {
-                using var id = WindowsIdentity.GetCurrent();
-                sid = id.User?.Value;
-                admin = isAdmin(id);
-            });
-        }
-        catch { }
+                pipe.RunAsClient(() =>
+                {
+                    using var id = WindowsIdentity.GetCurrent();
+                    sid = id.User?.Value;
+                    admin = isAdmin(id);
+                });
+            }
+            catch { }
+        });
+        identify.Start();
+        identify.Join();
         var client = new PipeClient(pipe, Protocol.ClientSession(pipe.SafePipeHandle), sid, admin);
         lock (clients)
             clients.Add(client);
