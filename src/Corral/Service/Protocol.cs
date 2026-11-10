@@ -12,10 +12,34 @@ namespace Corral.Service;
 /// <summary>État de la session de l'utilisateur, envoyé chaque seconde par l'interface (le service, en session 0, ne le voit pas).</summary>
 public sealed record SessionState(int ForegroundPid, double IdleSeconds, bool DisplayRequired);
 
+/// <summary>Valeurs de <see cref="PipeMessage.Type"/>, partagées par le service et l'interface.</summary>
+public static class MessageType
+{
+    // Interface → service
+    public const string Save = "save";
+    public const string Apply = "apply";
+    public const string Pause = "pause";
+    public const string Game = "game";
+    public const string Clean = "clean";
+    public const string Priority = "priority";
+    public const string Session = "session";
+    public const string Update = "update";
+
+    // Service → interface
+    public const string Welcome = "welcome";
+    public const string Snapshot = "snapshot";
+    public const string Acted = "acted";
+    public const string GameChanged = "game-changed";
+    public const string Notify = "notify";
+    public const string Log = "log";
+    public const string Result = "result";
+    public const string Updating = "updating";
+    public const string Settings = "settings";
+}
+
 /// <summary>
-/// Message échangé sur le pipe, une ligne JSON par message. Seuls les champs utiles au type sont remplis.
-/// Interface → service : save, apply, pause, game, clean, priority, session, update.
-/// Service → interface : welcome, snapshot, acted, game-changed, notify, log, result, updating, settings.
+/// Message échangé sur le pipe, une ligne JSON par message. Seuls les champs utiles au type
+/// (<see cref="MessageType"/>) sont remplis.
 /// </summary>
 public sealed class PipeMessage
 {
