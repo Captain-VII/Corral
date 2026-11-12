@@ -66,6 +66,39 @@ jobs:
           if ((Get-Process -Id $ping.Id).PriorityClass -ne 'Normal') { throw "Priorité non restaurée à l'arrêt" }
           Start-Service Corral
           Invoke-Corral status
+
+          # Fin de session ou installeur (Restart Manager) : l'interface doit se fermer. En 3.1.4, un interblocage la laissait
+          # en mémoire sans icône après chaque MSI.
+          $ui = Start-Process $exe -PassThru
+          Start-Sleep 5
+          if ($ui.HasExited) { throw "Interface fermée avant le test (code $($ui.ExitCode))" }
+          Add-Type -TypeDefinition @'
+          using System; using System.Runtime.InteropServices;
+          public static class EndSession {
+            delegate bool EnumProc(IntPtr hwnd, IntPtr lParam);
+            [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc proc, IntPtr lParam);
+            [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+            [DllImport("user32.dll")] static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
+            // WM_QUERYENDSESSION puis WM_ENDSESSION avec ENDSESSION_CLOSEAPP, comme le Restart Manager d'un MSI
+            public static int Send(int pid) {
+              int windows = 0;
+              EnumWindows((hwnd, _) => {
+                uint owner; GetWindowThreadProcessId(hwnd, out owner);
+                if (owner == pid) {
+                  IntPtr r;
+                  SendMessageTimeout(hwnd, 0x11, IntPtr.Zero, (IntPtr)1, 2, 5000, out r);
+                  SendMessageTimeout(hwnd, 0x16, (IntPtr)1, (IntPtr)1, 2, 5000, out r);
+                  windows++;
+                }
+                return true;
+              }, IntPtr.Zero);
+              return windows;
+            }
+          }
+          '@
+          $windows = [EndSession]::Send($ui.Id)
+          if ($windows -eq 0) { throw "Aucune fenêtre trouvée pour l'interface" }
+          if (-not $ui.WaitForExit(20000)) { Stop-Process -Id $ui.Id -Force; throw "L'interface ne se ferme pas à la fin de session ($windows fenêtres)" }
           $p = Start-Process msiexec -ArgumentList '/x', 'Corral.msi', '/qn' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Désinstallation : code $($p.ExitCode)" }
 
