@@ -51,11 +51,11 @@ jobs:
           if ((Get-Service Corral).Status -ne 'Running') { throw "Service non démarré" }
           $exe = "$env:ProgramFiles\Corral\Corral.exe"
           # Corral.exe est une application fenêtrée : Start-Process -Wait pour attendre la ligne de commande
-          function Cli { $c = Start-Process $exe -ArgumentList $args -Wait -PassThru -NoNewWindow -RedirectStandardOutput out.txt -RedirectStandardError err.txt
+          function Invoke-Corral { $c = Start-Process $exe -ArgumentList $args -Wait -PassThru -NoNewWindow -RedirectStandardOutput out.txt -RedirectStandardError err.txt
             Get-Content out.txt, err.txt; if ($c.ExitCode -ne 0) { throw "Corral.exe $args : code $($c.ExitCode)" } }
-          Cli status
+          Invoke-Corral status
           $ping = Start-Process ping -ArgumentList '-n', '600', '127.0.0.1' -PassThru -WindowStyle Hidden
-          Cli rules add ping.exe --priority belownormal
+          Invoke-Corral rules add ping.exe --priority belownormal
           if (-not (Select-String -Quiet 'ping.exe' "$env:ProgramData\Corral\config.json")) { throw "Règle absente de config.json" }
           $deadline = (Get-Date).AddSeconds(30)
           while ((Get-Process -Id $ping.Id).PriorityClass -ne 'BelowNormal') {
@@ -64,15 +64,20 @@ jobs:
           if ((Get-Service Corral).Status -ne 'Stopped') { throw "Service non arrêté" }
           if ((Get-Process -Id $ping.Id).PriorityClass -ne 'Normal') { throw "Priorité non restaurée à l'arrêt" }
           Start-Service Corral
-          Cli status
+          Invoke-Corral status
           $p = Start-Process msiexec -ArgumentList '/x', 'Corral.msi', '/qn' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Désinstallation : code $($p.ExitCode)" }
+
+      - name: Copie des journaux
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force journaux | Out-Null
+          Copy-Item install.log, "$env:ProgramData\Corral\corral.log*" journaux -ErrorAction SilentlyContinue
 
       - name: Journaux
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: journaux-msi
-          path: |
-            install.log
-            C:\ProgramData\Corral\corral.log*
+          path: journaux
