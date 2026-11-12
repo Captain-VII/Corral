@@ -84,8 +84,40 @@ internal static class Native
         if (hwnd == IntPtr.Zero)
             return -1;
         GetWindowThreadProcessId(hwnd, out var pid);
-        return (int)pid;
+        return (int)(IsFrameHost(hwnd) ? HostedPid(hwnd, pid) ?? pid : pid);
     }
+
+    /// <summary>
+    /// Application UWP (jeux du Microsoft Store, Minecraft Bedrock…) : la fenêtre au premier plan est le cadre
+    /// d'ApplicationFrameHost, le vrai programme en possède une fenêtre enfant.
+    /// </summary>
+    static bool IsFrameHost(IntPtr hwnd)
+    {
+        var cls = new System.Text.StringBuilder(32);
+        return GetClassName(hwnd, cls, cls.Capacity) > 0 && cls.ToString() == "ApplicationFrameWindow";
+    }
+
+    static uint? HostedPid(IntPtr frame, uint framePid)
+    {
+        uint? hosted = null;
+        EnumChildWindows(frame, (child, _) =>
+        {
+            GetWindowThreadProcessId(child, out var pid);
+            if (pid == framePid)
+                return true;
+            hosted = pid;
+            return false;
+        }, IntPtr.Zero);
+        return hosted;
+    }
+
+    delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    static extern bool EnumChildWindows(IntPtr parent, EnumWindowsProc callback, IntPtr lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int maxCount);
 }
 
 /// <summary>CPU système global en %, calculé entre deux appels.</summary>

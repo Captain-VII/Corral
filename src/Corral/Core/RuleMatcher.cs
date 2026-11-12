@@ -21,8 +21,21 @@ public static class RuleMatcher
         var n = Normalize(processName);
         if (!p.Contains('*') && !p.Contains('?'))
             return string.Equals(p, n, StringComparison.OrdinalIgnoreCase);
-        var regex = "^" + Regex.Escape(p).Replace(@"\*", ".*").Replace(@"\?", ".") + "$";
-        return Regex.IsMatch(n, regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return Wildcards.GetOrAdd(p, Compile).IsMatch(n);
+    }
+
+    /// <summary>
+    /// Motifs à jokers déjà convertis. Appelé pour chaque processus à chaque passage (exclusions ProBalance) : le cache de
+    /// Regex (15 entrées) ne suffit plus dès quelques motifs, et chaque appel reconstruisait alors l'expression.
+    /// </summary>
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Regex> Wildcards = new(StringComparer.OrdinalIgnoreCase);
+
+    static Regex Compile(string pattern)
+    {
+        if (Wildcards.Count > 1000)
+            Wildcards.Clear(); // motifs venus des réglages : ne grossit que si on en change sans arrêt
+        return new Regex("^" + Regex.Escape(pattern).Replace(@"\*", ".*").Replace(@"\?", ".") + "$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
     /// <summary>Première règle active qui correspond (l'ordre de la liste compte).</summary>
