@@ -454,6 +454,16 @@ public class PolicyTests
             keep.Rules.Add(new Rule { Pattern = "local.exe" });
             Policies.Apply(keep, new PolicySet(RulesFile: rulesFile + ".absent"));
             Assert.Equal("local.exe", Assert.Single(keep.Rules).Pattern);
+
+            // Fichier qui ne répond jamais (partage réseau au démarrage du PC) : pas d'attente au-delà du délai
+            var slow = "CorralSlowRules_" + Guid.NewGuid().ToString("N");
+            using var never = new System.IO.Pipes.NamedPipeServerStream(slow, System.IO.Pipes.PipeDirection.InOut, 1,
+                System.IO.Pipes.PipeTransmissionMode.Byte, System.IO.Pipes.PipeOptions.Asynchronous);
+            _ = never.WaitForConnectionAsync();
+            var sw = Stopwatch.StartNew();
+            Policies.Apply(keep, new PolicySet(RulesFile: @"\\.\pipe\" + slow));
+            Assert.True(sw.Elapsed < Policies.RulesFileTimeout + TimeSpan.FromSeconds(5), $"{sw.Elapsed}");
+            Assert.Equal("local.exe", Assert.Single(keep.Rules).Pattern);
         }
         finally
         {

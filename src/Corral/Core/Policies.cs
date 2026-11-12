@@ -77,6 +77,9 @@ public static class Policies
             Flag("AllowStandardUsers"));
     }
 
+    /// <summary>Attente maximale du fichier de règles imposées (<see cref="PolicySet.RulesFile"/>).</summary>
+    public static TimeSpan RulesFileTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
     /// <summary>Applique les stratégies à la configuration (en place).</summary>
     public static void Apply(Settings settings, PolicySet set)
     {
@@ -86,14 +89,21 @@ public static class Policies
             settings.CheckUpdates = false;
         if (set.RulesFile != null)
         {
+            // Lu au démarrage du service et à chaque enregistrement : un partage réseau qui ne répond pas ne doit bloquer
+            // ni l'un ni l'autre (le gestionnaire de services n'attend que 30 s au démarrage)
+            var file = set.RulesFile;
+            var read = Task.Run(() => RuleStore.ImportRules(file));
             try
             {
-                settings.Rules = RuleStore.ImportRules(set.RulesFile);
+                if (read.Wait(RulesFileTimeout))
+                    settings.Rules = read.Result;
+                else
+                    Log.Warn(Tr($"Règles imposées ({file}) : pas de réponse, règles locales conservées", $"Enforced rules ({file}): no response, local rules kept"));
             }
-            catch (Exception ex)
+            catch (AggregateException ex)
             {
                 // Fichier inaccessible (partage réseau absent…) : on garde les règles locales plutôt que de tout perdre
-                Log.Warn(Tr($"Règles imposées illisibles ({set.RulesFile}) : {ex.Message}", $"Enforced rules unreadable ({set.RulesFile}): {ex.Message}"));
+                Log.Warn(Tr($"Règles imposées illisibles ({file}) : {Log.Reason(ex.InnerException ?? ex)}", $"Enforced rules unreadable ({file}): {Log.Reason(ex.InnerException ?? ex)}"));
             }
         }
     }
