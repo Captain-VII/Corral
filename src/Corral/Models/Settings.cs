@@ -156,6 +156,8 @@ public sealed class GameModeSettings
 {
     /// <summary>S'active tout seul quand un programme marqué « jeu » tourne.</summary>
     public bool Automatic { get; set; } = true;
+    /// <summary>Reconnaît aussi les jeux sans règle (bibliothèques Steam, Epic…, Game Bar), voir Core.GameDetector.</summary>
+    public bool DetectGames { get; set; } = true;
     /// <summary>Plan à activer ; Guid.Empty = ne pas changer ; null = pas encore choisi (Corral propose un plan performant).</summary>
     public Guid? PowerPlan { get; set; }
     public bool ReactiveProBalance { get; set; } = true;

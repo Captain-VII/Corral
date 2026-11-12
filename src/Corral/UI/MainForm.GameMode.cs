@@ -11,6 +11,7 @@ public sealed partial class MainForm
     readonly Label gameList = new() { AutoSize = true, Tag = Theme.HintTag, MaximumSize = new Size(520, 0), Margin = new Padding(0, 2, 0, 0) };
     readonly ModernButton gameToggle = new(Tr("Activer maintenant", "Turn on now"));
     readonly ToggleSwitch gmAuto = new();
+    readonly ToggleSwitch gmDetect = new();
     readonly ToggleSwitch gmReactive = new();
     readonly ToggleSwitch gmLower = new();
     readonly ToggleSwitch gmNotify = new();
@@ -46,8 +47,11 @@ public sealed partial class MainForm
         stack.Controls.Add(new Card(status, Tr("État", "Status")));
         stack.Controls.Add(new Card(Rows(
             SettingRow(Tr("Activer automatiquement quand un jeu tourne", "Turn on automatically when a game runs"),
-                Tr("Un programme est un jeu si sa règle est marquée « C'est un jeu » (le modèle Jeu le fait).", "A program is a game if its rule is marked “This is a game” (the Game template does it)."), gmAuto),
-            SettingRow(Tr("Jeux reconnus", "Known games"), null, addGame),
+                Tr("Pour un jeu reconnu (ci-dessous) ou un programme dont la règle est marquée « C'est un jeu » (le modèle Jeu le fait).", "For a recognized game (below) or a program whose rule is marked “This is a game” (the Game template does it)."), gmAuto),
+            SettingRow(Tr("Reconnaître les jeux installés", "Recognize installed games"),
+                Tr("Jeux de Steam, Epic, GOG, EA, Ubisoft, Xbox, Riot… et ceux que Windows reconnaît, dès qu'ils passent au premier plan. Un programme qui a sa propre règle n'est un jeu que si elle est marquée « C'est un jeu ».",
+                    "Steam, Epic, GOG, EA, Ubisoft, Xbox, Riot… games and those Windows recognizes, once they come to the foreground. A program with its own rule is a game only if that rule is marked “This is a game”."), gmDetect),
+            SettingRow(Tr("Jeux ajoutés", "Added games"), null, addGame),
             gameList), Tr("Déclenchement", "Trigger")));
         stack.Controls.Add(new Card(Rows(
             SettingRow(Tr("Plan d'alimentation", "Power plan"), Tr("Activé pendant le Mode Jeu, puis le plan d'origine revient.", "Active during Game Mode, then the original plan comes back."), gmPlan),
@@ -69,6 +73,7 @@ public sealed partial class MainForm
     {
         var gm = settings.GameMode;
         gmAuto.Checked = gm.Automatic;
+        gmDetect.Checked = gm.DetectGames;
         gmReactive.Checked = gm.ReactiveProBalance;
         gmLower.Checked = gm.LowerBackground;
         gmNotify.Checked = gm.Notify;
@@ -91,7 +96,7 @@ public sealed partial class MainForm
     {
         var games = settings.Rules.Where(r => r.IsGame).Select(r => r.Pattern + (r.Enabled ? "" : Tr(" (règle inactive)", " (rule disabled)"))).ToList();
         gameList.Text = games.Count == 0
-            ? Tr("Aucun jeu pour l'instant. Utilisez « Ajouter un jeu… » ou le modèle Jeu d'une règle.", "No games yet. Use “Add a game…” or the Game template of a rule.")
+            ? Tr("Aucun jeu ajouté. Les jeux installés sont reconnus tout seuls ; « Ajouter un jeu… » sert pour les autres.", "No games added. Installed games are recognized on their own; use “Add a game…” for the others.")
             : string.Join(", ", games);
     }
 
@@ -99,6 +104,7 @@ public sealed partial class MainForm
     {
         var gm = settings.GameMode;
         gm.Automatic = gmAuto.Checked;
+        gm.DetectGames = gmDetect.Checked;
         gm.ReactiveProBalance = gmReactive.Checked;
         gm.LowerBackground = gmLower.Checked;
         gm.Notify = gmNotify.Checked;

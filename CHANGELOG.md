@@ -1,5 +1,9 @@
 # Journal des modifications
 
+## 3.2.0
+
+- **Les jeux sont reconnus sans règle.** Le Mode Jeu s'active tout seul pour les jeux des bibliothèques Steam (sur tous les disques), Epic, GOG, EA, Ubisoft, Xbox, Riot, Rockstar, Amazon et itch.io, pour les jeux qu'Epic, GOG Galaxy, Ubisoft Connect et EA ont installés ailleurs, et pour ceux que Windows a reconnus (Game Bar). Les lanceurs, rapports de plantage, installeurs et anti-triche rangés dans ces dossiers sont écartés. Un jeu reconnu déclenche le Mode Jeu quand il passe au premier plan, et le garde tant qu'il tourne et qu'il a été au premier plan dans les 10 dernières minutes. Une règle a toujours le dernier mot : un programme qui a sa propre règle n'est un jeu que si elle est marquée « C'est un jeu ». Option « Reconnaître les jeux installés » sur la page Mode Jeu.
+- **ProBalance n'abaisse plus un jeu**, même quand il passe en arrière-plan : il saccadait au retour.
 ## 3.1.5
 
 - **Plus de réglage perdu sans prévenir.** Si le service n'arrivait pas à enregistrer la configuration (disque plein, fichier verrouillé…), le changement s'appliquait mais disparaissait au redémarrage suivant, sans autre trace qu'une ligne dans le journal. La ligne de commande renvoie maintenant l'erreur, et les interfaces ouvertes affichent « Configuration appliquée mais non enregistrée ».

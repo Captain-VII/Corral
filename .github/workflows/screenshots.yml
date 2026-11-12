@@ -1,0 +1,36 @@
+# Captures de l'interface (thèmes clair et sombre, toutes les pages) jointes au run, pour relire une PR qui touche
+# l'interface sans PC Windows, et pour mettre à jour les images de docs/images.
+name: Captures
+
+on:
+  pull_request:
+    paths: ["src/Corral/UI/**", "tests/Corral.Tests/ScreenshotTests.cs", ".github/workflows/screenshots.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  captures:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Captures
+        env:
+          CORRAL_SCREENSHOTS: "1"
+          CORRAL_SCREENSHOTS_DIR: ${{ github.workspace }}\captures
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force captures | Out-Null
+          dotnet test -c Release --filter "FullyQualifiedName~ScreenshotTests"
+          if ($LASTEXITCODE -ne 0) { throw "Échec des captures" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: captures
+          path: captures

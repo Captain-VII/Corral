@@ -68,10 +68,12 @@ public class PerformanceEngineTests : IDisposable
     }
 
     /// <summary>Lance une copie de ping.exe sous un nom unique, pour ne viser que nos processus de test.</summary>
-    Process Start(string name)
+    /// <param name="folder">Sous-dossier où copier l'exe (par exemple une fausse bibliothèque Steam).</param>
+    Process Start(string name, string folder = "")
     {
-        Directory.CreateDirectory(dir);
-        var exe = Path.Combine(dir, name + ".exe");
+        var target = Path.Combine(dir, folder);
+        Directory.CreateDirectory(target);
+        var exe = Path.Combine(target, name + ".exe");
         if (!File.Exists(exe))
             File.Copy(Path.Combine(Environment.SystemDirectory, "PING.EXE"), exe);
         var p = Process.Start(new ProcessStartInfo(exe, "-n 60 127.0.0.1") { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true })!;
@@ -162,6 +164,50 @@ public class PerformanceEngineTests : IDisposable
         engine.TickOnce();
         engine.TickOnce();
         Assert.Equal(Guid.Empty, power.Active); // jeu fermé : plan d'origine rendu
+        engine.Stop();
+    }
+
+    [Fact]
+    public void InstalledGameTurnsGameModeOnOnceInTheForeground()
+    {
+        var s = Base();
+        s.GameMode.BackgroundApps = new();
+        var time = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        int fg = -1;
+        var game = Start("corral_autogame", @"steamapps\common\Corral Test Game");
+        var engine = new Engine(s, new FakePower(), foregroundPid: () => fg, clock: () => time) { Games = new GameDetector { Hive = () => null, LauncherFolders = Array.Empty<string> } };
+
+        Assert.False(engine.TickOnce().GameMode); // jamais au premier plan : peut-être un logiciel de fond
+
+        fg = game.Id;
+        var snap = engine.TickOnce();
+        Assert.True(snap.GameMode);
+        Assert.Equal("corral_autogame", snap.GameTrigger);
+
+        fg = -1; // le joueur passe sur une autre fenêtre
+        time += TimeSpan.FromMinutes(9);
+        Assert.True(engine.TickOnce().GameMode); // réapplication comprise : le dernier passage au premier plan est gardé
+        time += TimeSpan.FromMinutes(2);
+        Assert.False(engine.TickOnce().GameMode);
+        engine.Stop();
+    }
+
+    [Theory]
+    [InlineData(true)]  // le programme a sa propre règle, sans « C'est un jeu »
+    [InlineData(false)] // détection désactivée
+    public void GameDetectionGivesWayToRulesAndSetting(bool ownRule)
+    {
+        var s = Base();
+        s.GameMode.BackgroundApps = new();
+        var name = ownRule ? "corral_ruled_tool" : "corral_nodetect";
+        if (ownRule)
+            s.Rules.Add(new Rule { Pattern = name + ".exe" });
+        else
+            s.GameMode.DetectGames = false;
+        var p = Start(name, @"steamapps\common\Corral Tool");
+        var engine = new Engine(s, new FakePower(), foregroundPid: () => p.Id) { Games = new GameDetector { Hive = () => null, LauncherFolders = Array.Empty<string> } };
+        Assert.False(engine.TickOnce().GameMode);
+        Assert.False(engine.TickOnce().GameMode);
         engine.Stop();
     }
 
