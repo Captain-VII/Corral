@@ -73,7 +73,7 @@ public static class Cli
             using var remote = RemoteEngine.Connect(TimeSpan.FromSeconds(10), pipeName, requireService, mirrorLog: false)
                 ?? throw new CliException(Tr("Le service Corral ne répond pas.", "The Corral service is not responding."), NoService);
             remote.Listen();
-            if (remote.StandardUser && command is "pause" or "resume" or "game") // le service les ignorerait sans réponse
+            if (remote.StandardUser && command is "pause" or "resume" or "game" or "clean") // le service les ignorerait sans réponse
                 throw new CliException(Tr("Réservé aux administrateurs de ce PC.", "Restricted to administrators of this PC."));
             return command switch
             {

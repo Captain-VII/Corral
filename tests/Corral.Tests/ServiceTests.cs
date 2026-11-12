@@ -167,6 +167,7 @@ public class ServiceTests : IDisposable
         var (code, _, err) = Cli("pause");
         Assert.Equal(Corral.Cli.Failed, code);
         Assert.Contains("administr", err);
+        Assert.Equal(Corral.Cli.Failed, Cli("clean").Code); // nettoyage de la mémoire de toutes les sessions
         Assert.Equal(Corral.Cli.Failed, Cli("rules", "add", "victime.exe", "--priority", "idle").Code);
         Assert.DoesNotContain(new RuleStore(Path.Combine(dir, "config.json")).Load().Rules, r => r.Pattern == "victime.exe");
     }

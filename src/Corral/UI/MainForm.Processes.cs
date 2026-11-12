@@ -17,6 +17,7 @@ public sealed partial class MainForm
     readonly ModernButton detailsButton = new(Tr("Détails", "Details")) { Enabled = false };
     readonly UndoBanner processBanner = new();
     readonly Dictionary<string, Image> iconCache = new(StringComparer.OrdinalIgnoreCase);
+    const int MaxCachedIcons = 500;
     readonly Image genericIcon = ScaleIcon(SystemIcons.Application);
     Panel? welcome;
     EngineSnapshot? lastSnapshot;        // dernier affiché (thread de l'interface)
@@ -253,6 +254,14 @@ public sealed partial class MainForm
             return genericIcon;
         if (iconCache.TryGetValue(path, out var img))
             return img;
+        if (iconCache.Count >= MaxCachedIcons)
+        {
+            // Installeurs temporaires, dossiers versionnés… : un objet GDI par chemin, sans limite les jours de marche.
+            // Les icônes ne servent que le temps d'un dessin de cellule : on peut tout jeter et réextraire à la demande.
+            foreach (var old in iconCache.Values.Where(i => i != genericIcon).Distinct())
+                old.Dispose();
+            iconCache.Clear();
+        }
         try
         {
             using var icon = Icon.ExtractAssociatedIcon(path);

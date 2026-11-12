@@ -237,7 +237,9 @@ public sealed class ServiceHost : IDisposable
                     engine.SetGameMode(m.Flag);
                 break;
             case MessageType.Clean:
-                engine.CleanMemoryNow();
+                // Vide le cache et allège les programmes de toutes les sessions, sans délai entre deux demandes
+                if (!Refuse(client, m.Type))
+                    engine.CleanMemoryNow();
                 break;
             case MessageType.Priority:
                 client.Send(new PipeMessage

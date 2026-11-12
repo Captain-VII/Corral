@@ -5,8 +5,9 @@ using System.Runtime.InteropServices;
 namespace Corral.Core;
 
 /// <summary>
-/// Limites CPU / mémoire via un Job Object. Le handle du job est fermé tout de suite :
-/// le job reste en vie tant que le processus y est, et sans KILL_ON_JOB_CLOSE rien n'est tué.
+/// Limites CPU / mémoire via un Job Object. Le moteur garde le handle du job pour lever les limites à la restauration
+/// (Windows ne permet pas de sortir un processus d'un job, mais un job sans limite ne change rien).
+/// Sans KILL_ON_JOB_CLOSE, fermer le handle ne tue rien.
 /// </summary>
 public static class JobLimiter
 {
@@ -16,7 +17,8 @@ public static class JobLimiter
     const uint JOB_OBJECT_CPU_RATE_CONTROL_ENABLE = 0x1;
     const uint JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP = 0x4;
 
-    public static void Apply(Process process, int? cpuPercent, int? memoryMb)
+    /// <summary>Place le processus dans un job limité ; renvoie le handle du job, à passer à <see cref="Lift"/> puis <see cref="Close"/>.</summary>
+    public static IntPtr Apply(Process process, int? cpuPercent, int? memoryMb)
     {
         var job = CreateJobObject(IntPtr.Zero, null);
         if (job == IntPtr.Zero)
@@ -41,11 +43,31 @@ public static class JobLimiter
             }
             if (!AssignProcessToJobObject(job, process.Handle))
                 throw new Win32Exception();
+            return job;
         }
-        finally
+        catch
         {
             CloseHandle(job);
+            throw;
         }
+    }
+
+    /// <summary>Retire les limites CPU et mémoire du job (le processus y reste, sans limite).</summary>
+    public static void Lift(IntPtr job)
+    {
+        Set(job, JobObjectCpuRateControlInformation, new JOBOBJECT_CPU_RATE_CONTROL_INFORMATION());
+        Set(job, JobObjectExtendedLimitInformation, new JOBOBJECT_EXTENDED_LIMIT_INFORMATION());
+    }
+
+    public static void Close(IntPtr job) => CloseHandle(job);
+
+    /// <summary>Limites en place : CPU plafonné, mémoire maximale par processus en octets (0 = aucune).</summary>
+    public static (bool CpuCapped, ulong MemoryLimit) Limits(IntPtr job)
+    {
+        var cpu = Get<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>(job, JobObjectCpuRateControlInformation);
+        var ext = Get<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>(job, JobObjectExtendedLimitInformation);
+        return ((cpu.ControlFlags & JOB_OBJECT_CPU_RATE_CONTROL_ENABLE) != 0,
+            (ext.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_PROCESS_MEMORY) != 0 ? (ulong)ext.ProcessMemoryLimit : 0);
     }
 
     public static bool IsInJob(Process process) =>
@@ -60,6 +82,22 @@ public static class JobLimiter
             Marshal.StructureToPtr(info, buffer, false);
             if (!SetInformationJobObject(job, infoClass, buffer, (uint)size))
                 throw new Win32Exception();
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    static T Get<T>(IntPtr job, int infoClass) where T : struct
+    {
+        int size = Marshal.SizeOf<T>();
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            if (!QueryInformationJobObject(job, infoClass, buffer, (uint)size, IntPtr.Zero))
+                throw new Win32Exception();
+            return Marshal.PtrToStructure<T>(buffer);
         }
         finally
         {
@@ -111,6 +149,9 @@ public static class JobLimiter
 
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool SetInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool QueryInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length, IntPtr returnLength);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
