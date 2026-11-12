@@ -22,6 +22,8 @@ et la [configuration de parc](parc.md) ; l'interface ouverte affiche aussitôt l
 
 Codes de sortie : **0** succès, **1** erreur, **2** commande invalide, **3** service injoignable.
 
+Avec un compte standard, les commandes qui changent quelque chose (règles, pause, Mode Jeu, nettoyage de la mémoire, priorité) répondent par une erreur, sauf si la stratégie [AllowStandardUsers](strategies.md) l'autorise. `status`, `processes`, `rules` et `rules export` restent disponibles.
+
 !!! note "Invite de commandes"
     `Corral.exe` est une application fenêtrée : dans `cmd`, sa réponse s'affiche après le retour de l'invite. PowerShell et le module ci-dessous n'ont pas ce défaut.
 
