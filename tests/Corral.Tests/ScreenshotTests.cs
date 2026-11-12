@@ -158,13 +158,28 @@ public class ScreenshotTests
                 g.ReleaseHdc(hdc);
             }
         }
-        bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        // Sans les bordures invisibles de redimensionnement (rendues en noir) : seulement le cadre visible
+        var visible = new Rectangle(Point.Empty, bmp.Size);
+        if (DwmGetWindowAttribute(f.Handle, DWMWA_EXTENDED_FRAME_BOUNDS, out var frame, System.Runtime.InteropServices.Marshal.SizeOf<RECT>()) == 0)
+            visible = Rectangle.Intersect(visible, new Rectangle(frame.Left - f.Left, frame.Top - f.Top, frame.Right - frame.Left, frame.Bottom - frame.Top));
+        using var cropped = bmp.Clone(visible, bmp.PixelFormat);
+        cropped.Save(path, System.Drawing.Imaging.ImageFormat.Png);
     }
 
     const uint PW_RENDERFULLCONTENT = 2;
+    const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct RECT
+    {
+        public int Left, Top, Right, Bottom;
+    }
 
     [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
     static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out RECT value, int size);
 
     sealed class NoPower : IPowerPlanApi
     {
