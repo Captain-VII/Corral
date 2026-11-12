@@ -58,7 +58,8 @@ public sealed class Engine : IEngine, IDisposable
     readonly SystemCpuSampler systemCpu = new();
     readonly Func<int> foregroundPid;
     readonly Dictionary<ProcKey, Tracked> tracked = new();
-    readonly HashSet<ProcKey> jobLimited = new();
+    /// <summary>Processus placés dans un job limité (règle CPU / mémoire), avec le handle du job pour lever les limites.</summary>
+    readonly Dictionary<ProcKey, IntPtr> jobLimited = new();
     /// <summary>Processus protégés (anti-triche, PPL) qui ont refusé l'accès : plus aucune tentative ni avertissement.</summary>
     readonly HashSet<ProcKey> denied = new();
     /// <summary>Processus dont l'heure de démarrage est inaccessible (voir <see cref="KeyOf"/>), oubliés à leur fermeture.</summary>
@@ -66,6 +67,7 @@ public sealed class Engine : IEngine, IDisposable
     readonly List<string> pendingActed = new();
     readonly List<(string Title, string Message)> pendingNotifications = new();
     readonly KeepAwake keepAwake = new();
+    string? keepAwakeFailed;
     readonly Func<DateTime> now;
     readonly Stopwatch clock = new();
     readonly int ownPid = Environment.ProcessId;
@@ -192,6 +194,12 @@ public sealed class Engine : IEngine, IDisposable
     }
 
     public void Dispose() => Stop();
+
+    /// <summary>Nombre de processus bridés par une limite CPU / mémoire (tests).</summary>
+    internal int LimitedCount
+    {
+        get { lock (sync) return jobLimited.Count; }
+    }
 
     /// <summary>Un passage synchrone (utilisé par les tests).</summary>
     public EngineSnapshot TickOnce()
@@ -353,7 +361,8 @@ public sealed class Engine : IEngine, IDisposable
             {
                 power.OnExit(gone);
                 tracked.Remove(gone);
-                jobLimited.Remove(gone);
+                if (jobLimited.Remove(gone, out var job))
+                    JobLimiter.Close(job);
                 denied.Remove(gone);
             }
             startTimeDenied.RemoveWhere(d => !live.ContainsKey(new ProcKey(d.Pid, d.Name, 0)));
@@ -682,17 +691,19 @@ public sealed class Engine : IEngine, IDisposable
             if (names.Count > 0)
                 reason = Tr($"Corral : {string.Join(", ", names.Take(3))} en cours", $"Corral: {string.Join(", ", names.Take(3))} running");
         }
-        if (reason == KeepAwakeReason)
-            return;
+        if (reason == KeepAwakeReason || (keepAwakeFailed != null && reason == keepAwakeFailed))
+            return; // échec déjà noté pour cette raison : pas une nouvelle tentative (et une erreur) chaque seconde
         try
         {
             keepAwake.Set(reason);
             if ((reason == null) != (KeepAwakeReason == null))
                 Log.Info(reason == null ? Tr("Mise en veille de nouveau autorisée", "Sleep allowed again") : Tr($"Mise en veille empêchée ({reason})", $"Sleep prevented ({reason})"), LogCategory.Power);
             KeepAwakeReason = reason;
+            keepAwakeFailed = null;
         }
         catch (Exception ex)
         {
+            keepAwakeFailed = reason;
             Log.Error(Tr("Empêcher la mise en veille", "Prevent sleep"), ex);
         }
     }
@@ -776,11 +787,12 @@ public sealed class Engine : IEngine, IDisposable
                 done.Add(Tr($"affinité 0x{mask:X}", $"affinity 0x{mask:X}"));
         }
 
-        if ((rule.CpuLimitPercent is > 0 || rule.MemoryLimitMB is > 0) && !jobLimited.Contains(key))
+        if ((rule.CpuLimitPercent is > 0 || rule.MemoryLimitMB is > 0) && !jobLimited.ContainsKey(key))
         {
-            if (TryDo(key, "limites", () => JobLimiter.Apply(p, rule.CpuLimitPercent, rule.MemoryLimitMB)))
+            var job = IntPtr.Zero;
+            if (TryDo(key, "limites", () => job = JobLimiter.Apply(p, rule.CpuLimitPercent, rule.MemoryLimitMB)))
             {
-                jobLimited.Add(key);
+                jobLimited[key] = job;
                 done.Add(Tr("limites", "limits") + $" CPU {rule.CpuLimitPercent?.ToString() ?? "-"}% / RAM {rule.MemoryLimitMB?.ToString() ?? "-"} {Tr("Mo", "MB")}");
             }
         }
@@ -960,6 +972,18 @@ public sealed class Engine : IEngine, IDisposable
             if (efficiency)
                 TryDo(key, Tr("restauration mode efficacité", "efficiency mode restore"), () => ProcessTweaks.SetEfficiencyMode(p.Handle, null));
         }
+        // Les limites CPU / mémoire aussi : sans cela un programme restait bridé après la suppression de sa règle,
+        // la pause ou l'arrêt du service, jusqu'à sa fermeture
+        foreach (var (key, job) in jobLimited)
+        {
+            try { JobLimiter.Lift(job); }
+            catch (Exception ex)
+            {
+                Log.Warn(Tr($"{key.Name} ({key.Pid}) : échec levée des limites : {Log.Reason(ex)}", $"{key.Name} ({key.Pid}): lifting limits failed: {Log.Reason(ex)}"));
+            }
+            finally { JobLimiter.Close(job); }
+        }
+        jobLimited.Clear();
         if (keepPowerPlan)
             power.Release();
         else

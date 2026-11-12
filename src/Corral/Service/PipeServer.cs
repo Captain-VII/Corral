@@ -70,6 +70,8 @@ public sealed class PipeClient : IDisposable
 public sealed class PipeServer : IDisposable
 {
     const int MaxClients = 32;
+    /// <summary>Connexions simultanées d'un même compte standard (les administrateurs ne sont pas limités).</summary>
+    public const int MaxPerStandardUser = 8;
 
     readonly string name;
     readonly Func<WindowsIdentity, bool> isAdmin;
@@ -202,7 +204,16 @@ public sealed class PipeServer : IDisposable
             Log.Warn($"Pipe du service : identité du client illisible, traité comme un compte standard ({failure.GetType().Name} : {Log.Reason(failure)})");
         var client = new PipeClient(pipe, Protocol.ClientSession(pipe.SafePipeHandle), sid, admin);
         lock (clients)
+        {
+            // Un compte standard ne doit pas pouvoir occuper toutes les instances du pipe : plus aucune interface
+            // ne pourrait se connecter. Une interface et quelques scripts restent largement possibles.
+            if (!admin && clients.Count(c => c.Sid == sid) >= MaxPerStandardUser)
+            {
+                client.Dispose();
+                return;
+            }
             clients.Add(client);
+        }
         _ = Task.Run(() => client.PumpAsync(cts.Token));
         try { Connected?.Invoke(client); }
         catch (Exception ex) { Log.Error("Connexion d'un client", ex); }

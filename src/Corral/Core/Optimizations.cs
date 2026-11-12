@@ -222,7 +222,12 @@ public sealed class GpuPreferences
     {
         if (managedFile == null)
             return;
-        try { File.WriteAllText(managedFile, JsonSerializer.Serialize(managed.ToList())); }
+        // Fichier temporaire puis remplacement : un fichier abîmé ferait oublier les préférences à retirer
+        try
+        {
+            File.WriteAllText(managedFile + ".tmp", JsonSerializer.Serialize(managed.ToList()));
+            File.Move(managedFile + ".tmp", managedFile, overwrite: true);
+        }
         catch (Exception ex) { Log.Error("Enregistrement des préférences GPU gérées", ex); }
     }
 }

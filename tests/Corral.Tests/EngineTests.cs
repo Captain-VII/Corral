@@ -137,12 +137,42 @@ public class EngineTests : IDisposable
     }
 
     [Fact]
-    public void JobLimitsCanBeApplied()
+    public void JobLimitsCanBeAppliedThenLifted()
     {
         var ping = procs.Ping(name);
-        JobLimiter.Apply(ping, 20, 512);
-        Assert.True(JobLimiter.IsInJob(ping));
+        var job = JobLimiter.Apply(ping, 20, 512);
+        try
+        {
+            Assert.True(JobLimiter.IsInJob(ping));
+            Assert.Equal((true, 512UL << 20), JobLimiter.Limits(job));
+            JobLimiter.Lift(job);
+            Assert.Equal((false, 0UL), JobLimiter.Limits(job));
+        }
+        finally
+        {
+            JobLimiter.Close(job);
+        }
         Assert.False(ping.HasExited); // le handle du job est fermé sans tuer le processus
+    }
+
+    [Fact]
+    public void JobLimitsAreLiftedWhenTheRuleGoesOrTheEngineStops()
+    {
+        var engine = new Engine(RuleFor(new Rule { Pattern = name, CpuLimitPercent = 20 }), new FakePower(), foregroundPid: () => -1);
+        var ping = procs.Ping(name);
+        engine.TickOnce();
+        Assert.Equal(1, engine.LimitedCount);
+
+        engine.UpdateSettings(RuleFor(new Rule { Pattern = "autre_" + name }));
+        engine.TickOnce(); // réapplication : limites levées, plus de règle pour ce programme
+        Assert.Equal(0, engine.LimitedCount);
+
+        engine.UpdateSettings(RuleFor(new Rule { Pattern = name, MemoryLimitMB = 256 }));
+        engine.TickOnce();
+        Assert.Equal(1, engine.LimitedCount);
+        engine.Stop();
+        Assert.Equal(0, engine.LimitedCount);
+        Assert.False(ping.HasExited);
     }
 
     [Fact]

@@ -275,7 +275,10 @@ public sealed class RemoteEngine : IEngine, ISettingsStore, IDisposable
             return NoResponse;
         }
         // ConfigureAwait(false) : SetPriorityOnce attend la réponse en bloquant le thread de l'interface
-        return await Task.WhenAny(tcs.Task, Task.Delay(timeout)).ConfigureAwait(false) == tcs.Task ? tcs.Task.Result : NoResponse;
+        if (await Task.WhenAny(tcs.Task, Task.Delay(timeout)).ConfigureAwait(false) == tcs.Task)
+            return tcs.Task.Result;
+        pending.TryRemove(message.Id, out _); // sans réponse : ne pas garder la demande indéfiniment
+        return NoResponse;
     }
 
     void SendSession()

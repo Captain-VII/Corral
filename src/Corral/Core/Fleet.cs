@@ -89,6 +89,9 @@ public static class Fleet
         }
     }
 
+    /// <summary>Dernière version valide reçue (cache local), sans contacter la source.</summary>
+    public static FleetConfig? Cached(string publicKey, string cacheDir) => ReadCache(Path.Combine(cacheDir, CacheName), publicKey);
+
     static FleetConfig? ReadCache(string cache, string publicKey)
     {
         try
