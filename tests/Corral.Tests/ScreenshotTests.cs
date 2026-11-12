@@ -138,13 +138,33 @@ public class ScreenshotTests
         }
     }
 
+    /// <summary>
+    /// Rendu de la fenêtre elle-même (PrintWindow) plutôt qu'une copie de l'écran : la fenêtre entière, même quand elle
+    /// dépasse de l'écran (1024 × 768 sur les runners GitHub), sans ce qu'il y a derrière.
+    /// </summary>
     static void Capture(Form f, string path)
     {
         using var bmp = new Bitmap(f.Width, f.Height);
         using (var g = Graphics.FromImage(bmp))
-            g.CopyFromScreen(f.Location, Point.Empty, f.Size);
+        {
+            var hdc = g.GetHdc();
+            try
+            {
+                if (!PrintWindow(f.Handle, hdc, PW_RENDERFULLCONTENT))
+                    throw new System.ComponentModel.Win32Exception();
+            }
+            finally
+            {
+                g.ReleaseHdc(hdc);
+            }
+        }
         bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
     }
+
+    const uint PW_RENDERFULLCONTENT = 2;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
 
     sealed class NoPower : IPowerPlanApi
     {
