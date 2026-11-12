@@ -166,6 +166,36 @@ public class PerformanceEngineTests : IDisposable
     }
 
     [Fact]
+    public void ProtectedProcessesDoNotThrowAtEveryPass()
+    {
+        // Idle, System, processus PPL : heure de démarrage inaccessible. Le refus est retenu au premier passage
+        // (deux passages qui se suivent : aucun nouveau processus protégé entre les deux, en pratique).
+        var engine = new Engine(Base(), new FakePower(), foregroundPid: () => -1);
+        int thread = Environment.CurrentManagedThreadId, count = 0;
+        void OnFirstChance(object? _, System.Runtime.ExceptionServices.FirstChanceExceptionEventArgs e)
+        {
+            if (Environment.CurrentManagedThreadId == thread && e.Exception is System.ComponentModel.Win32Exception
+                && Environment.StackTrace.Contains("get_StartTime"))
+                count++;
+        }
+        AppDomain.CurrentDomain.FirstChanceException += OnFirstChance;
+        try
+        {
+            engine.TickOnce();
+            int first = count;
+            count = 0;
+            engine.TickOnce();
+            Assert.True(first > 0, "aucun processus protégé trouvé");
+            Assert.True(count == 0, $"{count} exceptions au 2e passage, {first} au 1er");
+        }
+        finally
+        {
+            AppDomain.CurrentDomain.FirstChanceException -= OnFirstChance;
+            engine.Stop();
+        }
+    }
+
+    [Fact]
     public void ManualGameMode()
     {
         var s = Base();
