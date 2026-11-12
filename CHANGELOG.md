@@ -1,5 +1,9 @@
 # Journal des modifications
 
+## 3.1.5
+
+- **Plus de réglage perdu sans prévenir.** Si le service n'arrivait pas à enregistrer la configuration (disque plein, fichier verrouillé…), le changement s'appliquait mais disparaissait au redémarrage suivant, sans autre trace qu'une ligne dans le journal. La ligne de commande renvoie maintenant l'erreur, et les interfaces ouvertes affichent « Configuration appliquée mais non enregistrée ».
+
 ## 3.1.4
 
 - **Plus d'interface fantôme après une mise à jour.** Quand l'installeur (ou la fermeture de session) demandait à l'interface de se fermer, elle restait bloquée en mémoire sans icône, et il fallait la fermer à la main. Elle se ferme désormais normalement.
