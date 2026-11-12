@@ -691,7 +691,7 @@ public sealed class Engine : IEngine, IDisposable
             if (names.Count > 0)
                 reason = Tr($"Corral : {string.Join(", ", names.Take(3))} en cours", $"Corral: {string.Join(", ", names.Take(3))} running");
         }
-        if (reason == KeepAwakeReason || reason == keepAwakeFailed)
+        if (reason == KeepAwakeReason || (keepAwakeFailed != null && reason == keepAwakeFailed))
             return; // échec déjà noté pour cette raison : pas une nouvelle tentative (et une erreur) chaque seconde
         try
         {
