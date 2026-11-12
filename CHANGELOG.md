@@ -4,6 +4,7 @@
 
 - **Les limites CPU et mémoire sont levées comme le reste.** Un programme bridé par une règle (par exemple 20 % du processeur) le restait après la suppression de la règle, la pause de Corral ou l'arrêt du service, jusqu'à sa fermeture. Les limites sont désormais retirées à chaque restauration, et une nouvelle limite s'applique sans relancer le programme.
 - **Sécurité : pas de retour à une ancienne version par la mise à jour.** L'exe portable refuse désormais une mise à jour dont le fichier est plus ancien que la version installée, même signé. L'installeur MSI le refusait déjà.
+- **Sécurité : un compte standard ne peut plus bloquer les connexions au service.** En ouvrant les 32 connexions possibles, il empêchait toute interface de se connecter ; il est désormais limité à 8.
 - **Sécurité : le nettoyage de la mémoire est réservé aux administrateurs.** Il vide le cache et allège les programmes de toutes les sessions ; un compte standard pouvait le déclencher en boucle par la ligne de commande.
 - **Configuration de parc : le service démarre même si la source ne répond pas.** Un partage réseau pas encore joignable au démarrage du PC pouvait retenir le service au-delà du délai de Windows (30 s). Au bout de 5 s, la dernière version reçue s'applique et la lecture se termine en arrière-plan. Même chose pour le fichier de règles imposées (stratégie « Règles imposées ») : au-delà de 5 s, les règles locales sont gardées.
 - Interface : le cache des icônes de processus est borné (il grossissait sans limite les jours de marche).

@@ -160,6 +160,35 @@ public class ServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task OneStandardAccountCannotTakeEveryConnection()
+    {
+        WriteQuietConfig();
+        using var host = StartHost(admin: false);
+        var open = new List<System.IO.Pipes.NamedPipeClientStream>();
+        try
+        {
+            for (int i = 0; i < PipeServer.MaxPerStandardUser; i++)
+            {
+                var c = Protocol.OpenClient(pipe, RemoteEngine.ClientRights, 5000)!;
+                open.Add(c);
+                using var wait = new CancellationTokenSource(Timeout);
+                Assert.NotNull(await new LineReader(c).ReadAsync(wait.Token)); // accueil du service
+            }
+            using var extra = Protocol.OpenClient(pipe, RemoteEngine.ClientRights, 5000)!;
+            using var waitExtra = new CancellationTokenSource(Timeout);
+            string? line;
+            try { line = await new LineReader(extra).ReadAsync(waitExtra.Token); }
+            catch (IOException) { line = null; } // connexion fermée par le service
+            Assert.Null(line);
+        }
+        finally
+        {
+            foreach (var c in open)
+                c.Dispose();
+        }
+    }
+
+    [Fact]
     public void ServerSessionIsReadFromThePipe()
     {
         using var host = StartHost();
