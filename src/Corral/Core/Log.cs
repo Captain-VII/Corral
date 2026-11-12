@@ -37,7 +37,7 @@ public static class Log
         }
         catch (Exception ex)
         {
-            Warn("Observateur d'événements indisponible : " + ex.Message);
+            Warn("Observateur d'événements indisponible : " + Reason(ex)); // message parfois vide (vu en CI)
         }
     }
 

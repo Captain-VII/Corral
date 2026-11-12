@@ -55,6 +55,7 @@ jobs:
             Get-Content out.txt, err.txt; if ($c.ExitCode -ne 0) { throw "Corral.exe $args : code $($c.ExitCode)" } }
           Invoke-Corral status
           $ping = Start-Process ping -ArgumentList '-n', '600', '127.0.0.1' -PassThru -WindowStyle Hidden
+          $ping.PriorityClass = 'Normal' # le runner lance ses étapes en priorité basse : on part d'une priorité connue
           Invoke-Corral rules add ping.exe --priority belownormal
           if (-not (Select-String -Quiet 'ping.exe' "$env:ProgramData\Corral\config.json")) { throw "Règle absente de config.json" }
           $deadline = (Get-Date).AddSeconds(30)
