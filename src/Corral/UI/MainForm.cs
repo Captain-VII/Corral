@@ -52,7 +52,10 @@ public sealed partial class MainForm : Form
         {
             stats.Record(names);
             if (shown && IsHandleCreated)
-                BeginInvoke(RefreshStats);
+            {
+                try { BeginInvoke(RefreshStats); }
+                catch (InvalidOperationException) { } // fenêtre en cours de fermeture : l'erreur couperait la liaison avec le service
+            }
         };
         // Icônes : codes communs à Segoe Fluent Icons et Segoe MDL2 Assets
         AddPage("", "Processus", BuildProcessPage());
@@ -366,6 +369,8 @@ public sealed partial class MainForm : Form
     /// <summary>Enregistre sans relancer le moteur (réglages purement visuels).</summary>
     void SaveSettings()
     {
+        if (Policies.StandardUser)
+            return; // le service refuserait (et noterait un refus à chaque fermeture de la fenêtre)
         try
         {
             store.Save(settings);
