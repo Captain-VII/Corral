@@ -263,6 +263,8 @@ public sealed class NavBar : Control
     bool paused;
     bool gameOn;
     string? gameText;
+    /// <summary>Chargé une fois : la barre est redessinée à chaque instantané (chaque seconde).</summary>
+    readonly Icon logo = AppIcon.Load(new Size(32, 32));
 
     public NavBar()
     {
@@ -274,6 +276,13 @@ public sealed class NavBar : Control
         Controls.Add(pause);
         game.Click += (_, _) => GameRequested?.Invoke();
         Controls.Add(game);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            logo.Dispose();
+        base.Dispose(disposing);
     }
 
     public event Action<int>? SelectedChanged;
@@ -438,8 +447,7 @@ public sealed class NavBar : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
 
         // Logo + nom
-        using (var icon = AppIcon.Load(new Size(32, 32)))
-            g.DrawIcon(icon, new Rectangle(Side + 10, 22, 28, 28));
+        g.DrawIcon(logo, new Rectangle(Side + 10, 22, 28, 28));
         TextRenderer.DrawText(g, "Corral", Ui.Brand, new Point(Side + 46, 23), p.Fore);
 
         for (int i = 0; i < items.Count; i++)

@@ -140,6 +140,8 @@ public sealed partial class MainForm : Form
             RefreshLog(force: true);
         else if (pages[index].Title == "Démarrage")
             RefreshStartup();
+        else if (pages[index].Title == "Processus" && lastSnapshot != null)
+            ApplySnapshot(lastSnapshot);
         if (pages[index].Page.Contains(chart))
             chart.Invalidate();
     }
