@@ -20,6 +20,7 @@ Une bulle prévient à l'activation et à la désactivation (désactivable).
 Avec l'option **Reconnaître les jeux installés** (activée par défaut), un jeu n'a pas besoin de règle :
 
 - les jeux des bibliothèques **Steam** (sur tous les disques), **Epic**, **GOG**, **EA**, **Ubisoft**, **Xbox**, **Riot**, **Rockstar**, **Amazon** et **itch.io** ;
+- les jeux installés ailleurs que dans le dossier par défaut, d'après **Epic**, **GOG Galaxy**, **Ubisoft Connect** et **EA** ;
 - les jeux que **Windows** a reconnus (Game Bar), où qu'ils soient installés : Battle.net, jeux autonomes…
 
 Les lanceurs, rapports de plantage, installeurs, anti-triche et logiciels vendus sur Steam qui ne sont pas des jeux (Wallpaper Engine, Lossless Scaling…) sont écartés.

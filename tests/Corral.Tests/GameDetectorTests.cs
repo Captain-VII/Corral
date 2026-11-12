@@ -5,7 +5,8 @@ namespace Corral.Tests;
 
 public class GameDetectorTests
 {
-    static GameDetector NoGameBar() => new() { Hive = () => null };
+    /// <summary>Sans Game Bar ni lanceur : seuls les dossiers par défaut comptent (indépendant de la machine de test).</summary>
+    static GameDetector NoGameBar() => new() { Hive = () => null, LauncherFolders = Array.Empty<string> };
 
     [Theory]
     [InlineData(@"C:\Program Files (x86)\Steam\steamapps\common\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe")]
@@ -45,6 +46,7 @@ public class GameDetectorTests
     [InlineData(@"C:\Program Files\Rockstar Games\Launcher\Launcher.exe")]
     [InlineData(@"C:\Program Files\Rockstar Games\Social Club\SocialClubHelper.exe")]
     [InlineData(@"C:\Program Files\EA Games\Battlefield 2042\__Installer\Touchup.exe")]
+    [InlineData(@"C:\Program Files\Epic Games\UE_5.4\Engine\Binaries\Win64\UnrealEditor.exe")]
     public void ToolsAndOtherProgramsAreNotGames(string? path) => Assert.False(NoGameBar().IsGame(path), path);
 
     [Fact]
@@ -58,7 +60,7 @@ public class GameDetectorTests
                 child.SetValue("MatchedExeFullPath", @"C:\Games\Standalone\Game.exe");
             using (var launcher = Registry.CurrentUser.CreateSubKey(root + @"\System\GameConfigStore\Children\2"))
                 launcher.SetValue("MatchedExeFullPath", @"C:\Games\Standalone\GameLauncher.exe");
-            var detector = new GameDetector { Hive = () => Registry.CurrentUser.OpenSubKey(root) };
+            var detector = new GameDetector { Hive = () => Registry.CurrentUser.OpenSubKey(root), LauncherFolders = Array.Empty<string> };
 
             Assert.True(detector.IsGame(@"c:\games\standalone\game.exe"));
             Assert.False(detector.IsGame(@"C:\Games\Standalone\GameLauncher.exe")); // lanceur, même listé par Windows
@@ -73,8 +75,47 @@ public class GameDetectorTests
     [Fact]
     public void UnreadableHiveOnlyLeavesLibraries()
     {
-        var detector = new GameDetector { Hive = () => throw new UnauthorizedAccessException() };
+        var detector = new GameDetector { Hive = () => throw new UnauthorizedAccessException(), LauncherFolders = () => throw new IOException() };
         Assert.False(detector.IsGame(@"C:\Games\Standalone\Game.exe"));
         Assert.True(detector.IsGame(@"C:\Steam\steamapps\common\Game\Game.exe"));
+    }
+
+    [Fact]
+    public void GamesInFoldersDeclaredByLaunchersAreRecognized()
+    {
+        var detector = new GameDetector
+        {
+            Hive = () => null,
+            // Epic dans D:\Fortnite, Ubisoft avec des « / », et des dossiers trop larges qui doivent être ignorés
+            LauncherFolders = () => new[] { @"D:\Fortnite", "E:/Jeux/Far Cry 6/", @"C:\", @"C:\Program Files", @"C:\Users\moi", "relatif\\jeu", "" },
+        };
+        Assert.True(detector.IsGame(@"D:\Fortnite\FortniteGame\Binaries\Win64\FortniteClient-Win64-Shipping.exe"));
+        Assert.True(detector.IsGame(@"e:\jeux\far cry 6\bin\FarCry6.exe"));
+        Assert.False(detector.IsGame(@"D:\Fortnite\FortniteGame\Binaries\Win64\CrashReportClient.exe"));
+        Assert.False(detector.IsGame(@"D:\FortniteTools\tool.exe")); // même début de nom, autre dossier
+        Assert.False(detector.IsGame(@"C:\Program Files\Mozilla Firefox\firefox.exe"));
+        Assert.False(detector.IsGame(@"C:\Users\moi\Downloads\app.exe"));
+    }
+
+    [Theory]
+    [InlineData(@"D:\Fortnite", @"D:\Fortnite\")]
+    [InlineData(@"D:/Jeux/Far Cry 6/", @"D:\Jeux\Far Cry 6\")]
+    [InlineData(@"C:\Users\moi\Jeux\Celeste", @"C:\Users\moi\Jeux\Celeste\")]
+    [InlineData(@"D:\", null)]
+    [InlineData(@"C:\Windows", null)]
+    [InlineData(@"C:\Program Files (x86)\", null)]
+    [InlineData(@"C:\Users\moi", null)]
+    [InlineData(@"jeux\celeste", null)]
+    [InlineData("  ", null)]
+    public void InstallFoldersThatAreTooBroadAreIgnored(string folder, string? expected) =>
+        Assert.Equal(expected, GameDetector.AsInstallFolder(folder));
+
+    [Fact]
+    public void EpicManifestGivesItsInstallLocation()
+    {
+        Assert.Equal(@"D:\Fortnite", GameDetector.EpicInstallLocation("""{ "DisplayName": "Fortnite", "InstallLocation": "D:\\Fortnite" }"""));
+        Assert.Null(GameDetector.EpicInstallLocation("""{ "DisplayName": "Sans dossier" }"""));
+        Assert.Null(GameDetector.EpicInstallLocation("[1, 2]"));
+        Assert.Null(GameDetector.EpicInstallLocation("pas du JSON"));
     }
 }

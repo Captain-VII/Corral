@@ -175,7 +175,7 @@ public class PerformanceEngineTests : IDisposable
         var time = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
         int fg = -1;
         var game = Start("corral_autogame", @"steamapps\common\Corral Test Game");
-        var engine = new Engine(s, new FakePower(), foregroundPid: () => fg, clock: () => time) { Games = new GameDetector { Hive = () => null } };
+        var engine = new Engine(s, new FakePower(), foregroundPid: () => fg, clock: () => time) { Games = new GameDetector { Hive = () => null, LauncherFolders = Array.Empty<string> } };
 
         Assert.False(engine.TickOnce().GameMode); // jamais au premier plan : peut-être un logiciel de fond
 
@@ -205,7 +205,7 @@ public class PerformanceEngineTests : IDisposable
         else
             s.GameMode.DetectGames = false;
         var p = Start(name, @"steamapps\common\Corral Tool");
-        var engine = new Engine(s, new FakePower(), foregroundPid: () => p.Id) { Games = new GameDetector { Hive = () => null } };
+        var engine = new Engine(s, new FakePower(), foregroundPid: () => p.Id) { Games = new GameDetector { Hive = () => null, LauncherFolders = Array.Empty<string> } };
         Assert.False(engine.TickOnce().GameMode);
         Assert.False(engine.TickOnce().GameMode);
         engine.Stop();
