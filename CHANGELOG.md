@@ -1,5 +1,12 @@
 # Journal des modifications
 
+## 3.1.5
+
+- **Les limites CPU et mémoire sont levées comme le reste.** Un programme bridé par une règle (par exemple 20 % du processeur) le restait après la suppression de la règle, la pause de Corral ou l'arrêt du service, jusqu'à sa fermeture. Les limites sont désormais retirées à chaque restauration, et une nouvelle limite s'applique sans relancer le programme.
+- **Sécurité : pas de retour à une ancienne version par la mise à jour.** L'exe portable refuse désormais une mise à jour dont le fichier est plus ancien que la version installée, même signé. L'installeur MSI le refusait déjà.
+- **Sécurité : le nettoyage de la mémoire est réservé aux administrateurs.** Il vide le cache et allège les programmes de toutes les sessions ; un compte standard pouvait le déclencher en boucle par la ligne de commande.
+- Interface : le cache des icônes de processus est borné (il grossissait sans limite les jours de marche).
+
 ## 3.1.4
 
 - **Plus d'interface fantôme après une mise à jour.** Quand l'installeur (ou la fermeture de session) demandait à l'interface de se fermer, elle restait bloquée en mémoire sans icône, et il fallait la fermer à la main. Elle se ferme désormais normalement.
