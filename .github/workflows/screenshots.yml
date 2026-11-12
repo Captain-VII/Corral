@@ -14,9 +14,9 @@ jobs:
   captures:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: 8.0.x
 
@@ -30,7 +30,7 @@ jobs:
           dotnet test -c Release --filter "FullyQualifiedName~ScreenshotTests"
           if ($LASTEXITCODE -ne 0) { throw "Échec des captures" }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: captures
           path: captures
