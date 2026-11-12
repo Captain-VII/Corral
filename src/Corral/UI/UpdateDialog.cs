@@ -47,7 +47,9 @@ public sealed class UpdateDialog : Form
             Tag = Theme.FlatTag,
             Text = string.IsNullOrWhiteSpace(info.Notes) ? Tr("(pas de notes de version)", "(no release notes)") : info.Notes.Replace("\r\n", "\n").Replace("\n", Environment.NewLine),
         };
-        var link = new LinkLabel { Text = Tr("Voir la page de la version", "View the release page"), AutoSize = true, Visible = info.PageUrl.Length > 0 };
+        // Adresse venue de l'API GitHub : seulement une page https (ShellExecute ouvrirait aussi file:, ms-…, etc.)
+        bool safePage = Uri.TryCreate(info.PageUrl, UriKind.Absolute, out var page) && page.Scheme == Uri.UriSchemeHttps;
+        var link = new LinkLabel { Text = Tr("Voir la page de la version", "View the release page"), AutoSize = true, Visible = safePage };
         link.LinkClicked += (_, _) =>
         {
             try { Process.Start(new ProcessStartInfo(info.PageUrl) { UseShellExecute = true }); }
