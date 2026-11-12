@@ -362,6 +362,9 @@ public sealed partial class MainForm
         if (IsPageVisible("Journal"))
             RefreshLog(force: false);
 
+        // Liste (≈ 300 lignes, triées) mise à jour seulement à l'écran ; SelectPage la rafraîchit quand on y revient
+        if (!IsPageVisible("Processus"))
+            return;
         var filter = search.Text.Trim();
         procList.BeginUpdate();
         procList.ListViewItemSorter = null; // évite un tri à chaque ajout

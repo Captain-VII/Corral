@@ -220,8 +220,9 @@ public class PerformanceEngineTests : IDisposable
         int thread = Environment.CurrentManagedThreadId, count = 0;
         void OnFirstChance(object? _, System.Runtime.ExceptionServices.FirstChanceExceptionEventArgs e)
         {
-            if (Environment.CurrentManagedThreadId == thread && e.Exception is System.ComponentModel.Win32Exception
-                && Environment.StackTrace.Contains("get_StartTime"))
+            // Toutes les Win32Exception du passage (heure de démarrage, temps processeur : mémorisés au premier refus).
+            // Pas de filtre sur la pile : le JIT peut intégrer get_StartTime à l'appelant, qui disparaît alors de la pile.
+            if (Environment.CurrentManagedThreadId == thread && e.Exception is System.ComponentModel.Win32Exception)
                 count++;
         }
         AppDomain.CurrentDomain.FirstChanceException += OnFirstChance;

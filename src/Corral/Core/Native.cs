@@ -97,7 +97,8 @@ internal static class Native
         return GetClassName(hwnd, cls, cls.Capacity) > 0 && cls.ToString() == "ApplicationFrameWindow";
     }
 
-    static uint? HostedPid(IntPtr frame, uint framePid)
+    /// <summary>Processus de la première fenêtre enfant de <paramref name="frame"/> qui n'appartient pas au cadre lui-même.</summary>
+    internal static uint? HostedPid(IntPtr frame, uint framePid)
     {
         uint? hosted = null;
         EnumChildWindows(frame, (child, _) =>
