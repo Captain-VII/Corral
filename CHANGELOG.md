@@ -2,6 +2,7 @@
 
 ## 3.1.5
 
+- **Plus de réglage perdu sans prévenir.** Si le service n'arrivait pas à enregistrer la configuration (disque plein, fichier verrouillé…), le changement s'appliquait mais disparaissait au redémarrage suivant, sans autre trace qu'une ligne dans le journal. La ligne de commande renvoie maintenant l'erreur, et les interfaces ouvertes affichent « Configuration appliquée mais non enregistrée ».
 - **Les limites CPU et mémoire sont levées comme le reste.** Un programme bridé par une règle (par exemple 20 % du processeur) le restait après la suppression de la règle, la pause de Corral ou l'arrêt du service, jusqu'à sa fermeture. Les limites sont désormais retirées à chaque restauration, et une nouvelle limite s'applique sans relancer le programme.
 - **Sécurité : pas de retour à une ancienne version par la mise à jour.** L'exe portable refuse désormais une mise à jour dont le fichier est plus ancien que la version installée, même signé. L'installeur MSI le refusait déjà.
 - **Sécurité : un compte standard ne peut plus bloquer les connexions au service.** En ouvrant les 32 connexions possibles, il empêchait toute interface de se connecter ; il est désormais limité à 8.

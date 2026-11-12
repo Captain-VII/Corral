@@ -121,6 +121,7 @@
   "Compte standard : réglages en lecture seule (réservés aux administrateurs)": "Compte standard : réglages en lecture seule (réservés aux administrateurs)",
   "Compte standard : réglages réservés aux administrateurs.": "Compte standard : réglages réservés aux administrateurs.",
   "Conditions des règles modifiées : règles réappliquées": "Conditions des règles modifiées : règles réappliquées",
+  "Configuration appliquée mais non enregistrée : {ex.Message}": "Configuration appliquée mais non enregistrée : {ex.Message}",
   "Configuration de l'exe portable transmise au service": "Configuration de l'exe portable transmise au service",
   "Configuration de parc ({source}) : {ex.Message}": "Configuration de parc ({source}) : {ex.Message}",
   "Configuration de parc illisible : ": "Configuration de parc illisible : ",

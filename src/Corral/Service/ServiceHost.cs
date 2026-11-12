@@ -278,6 +278,7 @@ public sealed class ServiceHost : IDisposable
     {
         incoming.Normalize();
         Policies.Apply(incoming, policies);
+        string? error = null;
         lock (sync)
         {
             Fleet.Apply(incoming, fleet); // les sections imposées par le parc ne se modifient pas depuis le poste
@@ -289,11 +290,17 @@ public sealed class ServiceHost : IDisposable
                 fresh = false;
             }
             try { store.Save(incoming); }
-            catch (Exception ex) { Log.Error("Enregistrement de la configuration", ex); }
+            catch (Exception ex)
+            {
+                Log.Error("Enregistrement de la configuration", ex);
+                // Sans cela, la règle s'applique mais disparaît au prochain démarrage sans que personne le voie
+                error = Tr($"Configuration appliquée mais non enregistrée : {ex.Message}", $"Settings applied but not saved: {ex.Message}");
+                server.Broadcast(new PipeMessage { Type = MessageType.Notify, Text = "Corral", Text2 = error });
+            }
         }
         if (apply)
             engine.UpdateSettings(RuleStore.Clone(incoming));
-        return null;
+        return error;
     }
 
     /// <summary>Télécharge l'installeur signé, prévient les interfaces puis lance msiexec (qui arrête et relance le service).</summary>

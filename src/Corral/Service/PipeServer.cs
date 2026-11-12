@@ -181,7 +181,10 @@ public sealed class PipeServer : IDisposable
     {
         string? sid = null;
         bool admin = false; // identité illisible : traité comme un compte standard
-        // Thread jetable : un emprunt d'identité resté actif ne doit pas atteindre le pool (journal et moteur en échec sinon)
+        Exception? failure = null;
+        // Thread jetable : un emprunt d'identité resté actif ne doit pas atteindre le pool (journal et moteur en échec sinon).
+        // RunAsClient rend pourtant l'identité (RevertToSelf dans un finally, voir ImpersonationTests) : la cause des
+        // erreurs 1346 de la 3.1.3 reste inconnue, d'où l'erreur journalisée ci-dessous au lieu d'être avalée.
         var identify = new Thread(() =>
         {
             try
@@ -193,10 +196,12 @@ public sealed class PipeServer : IDisposable
                     admin = isAdmin(id);
                 });
             }
-            catch { }
+            catch (Exception ex) { failure = ex; }
         });
         identify.Start();
         identify.Join();
+        if (failure != null) // journalisé hors du thread jetable : il peut être resté sous l'identité du client
+            Log.Warn($"Pipe du service : identité du client illisible, traité comme un compte standard ({failure.GetType().Name} : {Log.Reason(failure)})");
         var client = new PipeClient(pipe, Protocol.ClientSession(pipe.SafePipeHandle), sid, admin);
         lock (clients)
         {
