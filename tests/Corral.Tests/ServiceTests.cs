@@ -124,6 +124,42 @@ public class ServiceTests : IDisposable
     }
 
     [Fact]
+    public void MalformedMessagesDoNotBreakTheService()
+    {
+        // Surface SYSTEM ouverte aux comptes standard : rien de ce qu'un client envoie ne doit arrêter le service
+        WriteQuietConfig();
+        using var host = StartHost();
+        using (var junk = Protocol.OpenClient(pipe, RemoteEngine.ClientRights, 5000)!)
+        {
+            var lines = string.Join("\n",
+                "pas du JSON",
+                "{\"Type\":",                                                                   // tronqué
+                "{\"Type\":\"save\",\"Settings\":{\"Rules\":[{\"Pattern\":\"x\",\"Priority\":\"Pirate\"}]}}", // valeur inconnue
+                "{\"Type\":\"inconnu\"}",
+                "{\"Type\":\"priority\",\"Pid\":-1}",
+                "{\"Type\":\"session\",\"Session\":null}",
+                new string('[', 10_000) + new string(']', 10_000));                             // imbrication profonde
+            junk.Write(Encoding.UTF8.GetBytes(lines + "\n\u00e9\u00e9\u00e9")); // et une fin coupée au milieu d'une ligne
+            junk.Flush();
+        }
+        using (var flood = Protocol.OpenClient(pipe, RemoteEngine.ClientRights, 5000)!)
+        {
+            // Ligne sans fin au-delà de la taille maximale : ce client est déconnecté, pas le service
+            var chunk = new byte[1 << 20];
+            Array.Fill(chunk, (byte)'a');
+            try
+            {
+                for (int i = 0; i <= Protocol.MaxMessage / chunk.Length + 1; i++)
+                    flood.Write(chunk);
+            }
+            catch (IOException) { } // le service a coupé la connexion
+        }
+        var (code, output, _) = Cli("status");
+        Assert.Equal(Corral.Cli.Ok, code);
+        Assert.Contains("Corral", output);
+    }
+
+    [Fact]
     public void ServerSessionIsReadFromThePipe()
     {
         using var host = StartHost();
