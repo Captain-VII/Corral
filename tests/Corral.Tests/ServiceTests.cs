@@ -124,6 +124,71 @@ public class ServiceTests : IDisposable
     }
 
     [Fact]
+    public void MalformedMessagesDoNotBreakTheService()
+    {
+        // Surface SYSTEM ouverte aux comptes standard : rien de ce qu'un client envoie ne doit arrêter le service
+        WriteQuietConfig();
+        using var host = StartHost();
+        using (var junk = Protocol.OpenClient(pipe, RemoteEngine.ClientRights, 5000)!)
+        {
+            var lines = string.Join("\n",
+                "pas du JSON",
+                "{\"Type\":",                                                                   // tronqué
+                "{\"Type\":\"save\",\"Settings\":{\"Rules\":[{\"Pattern\":\"x\",\"Priority\":\"Pirate\"}]}}", // valeur inconnue
+                "{\"Type\":\"inconnu\"}",
+                "{\"Type\":\"priority\",\"Pid\":-1}",
+                "{\"Type\":\"session\",\"Session\":null}",
+                new string('[', 10_000) + new string(']', 10_000));                             // imbrication profonde
+            junk.Write(Encoding.UTF8.GetBytes(lines + "\n\u00e9\u00e9\u00e9")); // et une fin coupée au milieu d'une ligne
+            junk.Flush();
+        }
+        using (var flood = Protocol.OpenClient(pipe, RemoteEngine.ClientRights, 5000)!)
+        {
+            // Ligne sans fin au-delà de la taille maximale : ce client est déconnecté, pas le service
+            var chunk = new byte[1 << 20];
+            Array.Fill(chunk, (byte)'a');
+            try
+            {
+                for (int i = 0; i <= Protocol.MaxMessage / chunk.Length + 1; i++)
+                    flood.Write(chunk);
+            }
+            catch (IOException) { } // le service a coupé la connexion
+        }
+        var (code, output, _) = Cli("status");
+        Assert.Equal(Corral.Cli.Ok, code);
+        Assert.Contains("Corral", output);
+    }
+
+    [Fact]
+    public async Task OneStandardAccountCannotTakeEveryConnection()
+    {
+        WriteQuietConfig();
+        using var host = StartHost(admin: false);
+        var open = new List<System.IO.Pipes.NamedPipeClientStream>();
+        try
+        {
+            for (int i = 0; i < PipeServer.MaxPerStandardUser; i++)
+            {
+                var c = Protocol.OpenClient(pipe, RemoteEngine.ClientRights, 5000)!;
+                open.Add(c);
+                using var wait = new CancellationTokenSource(Timeout);
+                Assert.NotNull(await new LineReader(c).ReadAsync(wait.Token)); // accueil du service
+            }
+            using var extra = Protocol.OpenClient(pipe, RemoteEngine.ClientRights, 5000)!;
+            using var waitExtra = new CancellationTokenSource(Timeout);
+            string? line;
+            try { line = await new LineReader(extra).ReadAsync(waitExtra.Token); }
+            catch (IOException) { line = null; } // connexion fermée par le service
+            Assert.Null(line);
+        }
+        finally
+        {
+            foreach (var c in open)
+                c.Dispose();
+        }
+    }
+
+    [Fact]
     public void ServerSessionIsReadFromThePipe()
     {
         using var host = StartHost();
@@ -167,6 +232,7 @@ public class ServiceTests : IDisposable
         var (code, _, err) = Cli("pause");
         Assert.Equal(Corral.Cli.Failed, code);
         Assert.Contains("administr", err);
+        Assert.Equal(Corral.Cli.Failed, Cli("clean").Code); // nettoyage de la mémoire de toutes les sessions
         Assert.Equal(Corral.Cli.Failed, Cli("rules", "add", "victime.exe", "--priority", "idle").Code);
         Assert.DoesNotContain(new RuleStore(Path.Combine(dir, "config.json")).Load().Rules, r => r.Pattern == "victime.exe");
     }
@@ -180,6 +246,23 @@ public class ServiceTests : IDisposable
         Assert.False(remote.StandardUser);
         Assert.Equal(Corral.Cli.Ok, Cli("rules", "add", "permis.exe", "--priority", "belownormal").Code);
         Assert.Contains(new RuleStore(Path.Combine(dir, "config.json")).Load().Rules, r => r.Pattern == "permis.exe");
+    }
+
+    [Fact]
+    public void FailedSaveIsReportedNotSilent()
+    {
+        WriteQuietConfig();
+        using var host = StartHost();
+        using var remote = RemoteEngine.Connect(Timeout, pipe, requireService: false, mirrorLog: false)!;
+        var notes = new List<string>();
+        remote.Notification += (_, message) => { lock (notes) notes.Add(message); };
+        remote.Start();
+        Directory.CreateDirectory(Path.Combine(dir, "config.json.tmp")); // l'écriture atomique échoue
+
+        var (code, _, err) = Cli("rules", "add", "perdu.exe", "--priority", "belownormal");
+        Assert.Equal(Corral.Cli.Failed, code);
+        Assert.NotEmpty(err);
+        Wait(() => { lock (notes) return notes.FirstOrDefault(); }, "notification aux interfaces");
     }
 
     (int Code, string Out, string Err) Cli(params string[] args)
@@ -244,6 +327,25 @@ public class ServiceTests : IDisposable
         Assert.True(Corral.Cli.IsCommand(new[] { "status" }));
         Assert.False(Corral.Cli.IsCommand(new[] { "--minimized" }));
         Assert.False(Corral.Cli.IsCommand(Array.Empty<string>()));
+    }
+
+    [Fact]
+    public void SlowFleetSourceDoesNotDelayTheService()
+    {
+        WriteQuietConfig();
+        var (source, publicKey) = FleetTests.Publish(dir, serial: 1, "parc1.exe");
+        Assert.NotNull(Fleet.Load(source, publicKey, dir)); // version reçue précédemment, gardée en cache
+
+        // Source qui ne répond jamais (comme un partage réseau au démarrage du PC) : un pipe qui accepte sans rien envoyer
+        var slow = "CorralSlowFleet_" + Guid.NewGuid().ToString("N");
+        using var never = new System.IO.Pipes.NamedPipeServerStream(slow, System.IO.Pipes.PipeDirection.InOut, 2,
+            System.IO.Pipes.PipeTransmissionMode.Byte, System.IO.Pipes.PipeOptions.Asynchronous);
+        _ = never.WaitForConnectionAsync();
+        var sw = Stopwatch.StartNew();
+        using var host = StartHost(new PolicySet(ConfigFile: @"\\.\pipe\" + slow, ConfigPublicKey: publicKey));
+        Assert.True(sw.Elapsed < ServiceHost.FleetStartTimeout + TimeSpan.FromSeconds(10), $"démarrage en {sw.Elapsed}");
+        using var ui = RemoteEngine.Connect(Timeout, pipe, requireService: false, mirrorLog: false)!;
+        Assert.Equal("parc1.exe", Assert.Single(ui.InitialSettings.Rules).Pattern); // le cache s'applique en attendant
     }
 
     [Fact]
@@ -397,6 +499,16 @@ public class PolicyTests
             var keep = new Settings();
             keep.Rules.Add(new Rule { Pattern = "local.exe" });
             Policies.Apply(keep, new PolicySet(RulesFile: rulesFile + ".absent"));
+            Assert.Equal("local.exe", Assert.Single(keep.Rules).Pattern);
+
+            // Fichier qui ne répond jamais (partage réseau au démarrage du PC) : pas d'attente au-delà du délai
+            var slow = "CorralSlowRules_" + Guid.NewGuid().ToString("N");
+            using var never = new System.IO.Pipes.NamedPipeServerStream(slow, System.IO.Pipes.PipeDirection.InOut, 1,
+                System.IO.Pipes.PipeTransmissionMode.Byte, System.IO.Pipes.PipeOptions.Asynchronous);
+            _ = never.WaitForConnectionAsync();
+            var sw = Stopwatch.StartNew();
+            Policies.Apply(keep, new PolicySet(RulesFile: @"\\.\pipe\" + slow));
+            Assert.True(sw.Elapsed < Policies.RulesFileTimeout + TimeSpan.FromSeconds(5), $"{sw.Elapsed}");
             Assert.Equal("local.exe", Assert.Single(keep.Rules).Pattern);
         }
         finally

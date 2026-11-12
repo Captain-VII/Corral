@@ -157,6 +157,7 @@ public static class Updater
         {
             Verify(target, expected);
             VerifySignature(target, signature, PublicKey);
+            VerifyNewer(target, CurrentVersion);
         }
         catch
         {
@@ -208,6 +209,20 @@ public static class Updater
             if (actual != expectedSha.ToLowerInvariant())
                 throw new InvalidDataException(Tr("Somme de contrôle incorrecte : téléchargement corrompu", "Wrong checksum: corrupted download"));
         }
+    }
+
+    /// <summary>
+    /// La signature ne couvre pas le numéro de version : sans ce contrôle, un compte GitHub compromis pourrait republier
+    /// une ancienne version signée (avec ses failles) sous un numéro plus récent. Le MSI, lui, refuse déjà les retours
+    /// en arrière (MajorUpgrade).
+    /// </summary>
+    public static void VerifyNewer(string file, Version current)
+    {
+        var info = FileVersionInfo.GetVersionInfo(file);
+        var version = new Version(info.FileMajorPart, info.FileMinorPart, info.FileBuildPart, info.FilePrivatePart);
+        if (version <= Normalize(current))
+            throw new InvalidDataException(Tr($"Le fichier téléchargé est une version {version.ToString(3)}, pas plus récente que celle installée",
+                $"The downloaded file is version {version.ToString(3)}, not newer than the installed one"));
     }
 
     /// <summary>Vérifie la signature ECDSA (base64, IEEE P1363) du fichier avec la clé publique donnée.</summary>

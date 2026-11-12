@@ -48,6 +48,8 @@ public sealed class ServiceHost : IDisposable
     FleetConfig? fleet;
     System.Threading.Timer? fleetTimer;
     bool fresh;
+    /// <summary>Lecture de la configuration de parc qui n'a pas abouti à temps au démarrage.</summary>
+    Task<FleetConfig?>? lateFleet;
     int updating;
     bool disposed;
 
@@ -68,7 +70,17 @@ public sealed class ServiceHost : IDisposable
         PowerPlanManager.RecoverFromCrash(powerApi, powerStateFile);
         store = new RuleStore(Path.Combine(dir, "config.json"));
         fresh = !File.Exists(ConfiguredFlag);
-        fleet = policies.LoadFleet(dir);
+        // Partage réseau pas encore joignable au démarrage du PC : le gestionnaire de services n'attend que 30 s. Au-delà
+        // de FleetStartTimeout, la dernière version reçue s'applique et la lecture se termine en arrière-plan.
+        var load = Task.Run(() => policies.LoadFleet(dir));
+        if (load.Wait(FleetStartTimeout))
+            fleet = load.Result;
+        else
+        {
+            fleet = policies.CachedFleet(dir);
+            lateFleet = load;
+            Log.Warn(Tr("Configuration de parc lente à répondre : dernière version reçue appliquée en attendant", "Fleet configuration slow to respond: last received version applied meanwhile"));
+        }
         settings = Program.PrepareSettings(store, policies, fleet);
 
         server = new PipeServer(pipeName, firstInstance, isAdmin);
@@ -113,12 +125,16 @@ public sealed class ServiceHost : IDisposable
     /// <summary>Intervalle de relecture de la configuration de parc.</summary>
     public static TimeSpan FleetInterval { get; set; } = TimeSpan.FromMinutes(15);
 
+    /// <summary>Attente maximale de la configuration de parc au démarrage du service.</summary>
+    public static TimeSpan FleetStartTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
     public void Start()
     {
         server.Start();
         engine.Start();
         if (policies.HasFleet)
             fleetTimer = new System.Threading.Timer(_ => RefreshFleet(), null, FleetInterval, FleetInterval);
+        lateFleet?.ContinueWith(_ => RefreshFleet(), TaskScheduler.Default); // relit la source une fois la première lecture finie
     }
 
     /// <summary>Relit la configuration de parc ; si elle a changé, l'applique et prévient les interfaces.</summary>
@@ -238,7 +254,9 @@ public sealed class ServiceHost : IDisposable
                     engine.SetGameMode(m.Flag);
                 break;
             case MessageType.Clean:
-                engine.CleanMemoryNow();
+                // Vide le cache et allège les programmes de toutes les sessions, sans délai entre deux demandes
+                if (!Refuse(client, m.Type))
+                    engine.CleanMemoryNow();
                 break;
             case MessageType.Priority:
                 client.Send(new PipeMessage
@@ -261,6 +279,7 @@ public sealed class ServiceHost : IDisposable
     {
         incoming.Normalize();
         Policies.Apply(incoming, policies);
+        string? error = null;
         lock (sync)
         {
             Fleet.Apply(incoming, fleet); // les sections imposées par le parc ne se modifient pas depuis le poste
@@ -272,11 +291,17 @@ public sealed class ServiceHost : IDisposable
                 fresh = false;
             }
             try { store.Save(incoming); }
-            catch (Exception ex) { Log.Error("Enregistrement de la configuration", ex); }
+            catch (Exception ex)
+            {
+                Log.Error("Enregistrement de la configuration", ex);
+                // Sans cela, la règle s'applique mais disparaît au prochain démarrage sans que personne le voie
+                error = Tr($"Configuration appliquée mais non enregistrée : {ex.Message}", $"Settings applied but not saved: {ex.Message}");
+                server.Broadcast(new PipeMessage { Type = MessageType.Notify, Text = "Corral", Text2 = error });
+            }
         }
         if (apply)
             engine.UpdateSettings(RuleStore.Clone(incoming));
-        return null;
+        return error;
     }
 
     /// <summary>Télécharge l'installeur signé, prévient les interfaces puis lance msiexec (qui arrête et relance le service).</summary>

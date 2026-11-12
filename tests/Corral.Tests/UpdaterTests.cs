@@ -105,6 +105,18 @@ public class UpdaterTests : IDisposable
     }
 
     [Fact]
+    public void DownloadedExeMustBeNewerThanTheInstalledOne()
+    {
+        // Une ancienne version signée republiée sous un numéro plus récent est refusée
+        var cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe"); // version 10.0.…
+        Updater.VerifyNewer(cmd, new Version(3, 1, 4));
+        Assert.Throws<InvalidDataException>(() => Updater.VerifyNewer(cmd, new Version(99, 0)));
+        var noVersion = Path.Combine(dir, "x.exe");
+        File.WriteAllBytes(noVersion, new byte[] { (byte)'M', (byte)'Z', 1, 2, 3 });
+        Assert.Throws<InvalidDataException>(() => Updater.VerifyNewer(noVersion, new Version(0, 1)));
+    }
+
+    [Fact]
     public void SignatureMustMatchFileAndKey()
     {
         var file = Path.Combine(dir, "x.exe");

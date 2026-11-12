@@ -70,6 +70,8 @@ public sealed class PipeClient : IDisposable
 public sealed class PipeServer : IDisposable
 {
     const int MaxClients = 32;
+    /// <summary>Connexions simultanées d'un même compte standard (les administrateurs ne sont pas limités).</summary>
+    public const int MaxPerStandardUser = 8;
 
     readonly string name;
     readonly Func<WindowsIdentity, bool> isAdmin;
@@ -179,7 +181,10 @@ public sealed class PipeServer : IDisposable
     {
         string? sid = null;
         bool admin = false; // identité illisible : traité comme un compte standard
-        // Thread jetable : un emprunt d'identité resté actif ne doit pas atteindre le pool (journal et moteur en échec sinon)
+        Exception? failure = null;
+        // Thread jetable : un emprunt d'identité resté actif ne doit pas atteindre le pool (journal et moteur en échec sinon).
+        // RunAsClient rend pourtant l'identité (RevertToSelf dans un finally, voir ImpersonationTests) : la cause des
+        // erreurs 1346 de la 3.1.3 reste inconnue, d'où l'erreur journalisée ci-dessous au lieu d'être avalée.
         var identify = new Thread(() =>
         {
             try
@@ -191,13 +196,24 @@ public sealed class PipeServer : IDisposable
                     admin = isAdmin(id);
                 });
             }
-            catch { }
+            catch (Exception ex) { failure = ex; }
         });
         identify.Start();
         identify.Join();
+        if (failure != null) // journalisé hors du thread jetable : il peut être resté sous l'identité du client
+            Log.Warn($"Pipe du service : identité du client illisible, traité comme un compte standard ({failure.GetType().Name} : {Log.Reason(failure)})");
         var client = new PipeClient(pipe, Protocol.ClientSession(pipe.SafePipeHandle), sid, admin);
         lock (clients)
+        {
+            // Un compte standard ne doit pas pouvoir occuper toutes les instances du pipe : plus aucune interface
+            // ne pourrait se connecter. Une interface et quelques scripts restent largement possibles.
+            if (!admin && clients.Count(c => c.Sid == sid) >= MaxPerStandardUser)
+            {
+                client.Dispose();
+                return;
+            }
             clients.Add(client);
+        }
         _ = Task.Run(() => client.PumpAsync(cts.Token));
         try { Connected?.Invoke(client); }
         catch (Exception ex) { Log.Error("Connexion d'un client", ex); }
