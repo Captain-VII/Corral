@@ -78,11 +78,18 @@ public sealed class ProcessDetailsDialog : Form
         var copy = new ModernButton(Tr("Copier", "Copy"));
         copy.Click += (_, _) =>
         {
-            Clipboard.SetText(string.Join(Environment.NewLine, new[]
+            try
             {
-                $"{d.Name} (PID {d.Pid})", d.Path, d.CommandLine, d.Description, d.Company, d.Version,
-            }.Where(s => !string.IsNullOrEmpty(s))));
-            copy.Text = Tr("Copié ✓", "Copied ✓");
+                Clipboard.SetText(string.Join(Environment.NewLine, new[]
+                {
+                    $"{d.Name} (PID {d.Pid})", d.Path, d.CommandLine, d.Description, d.Company, d.Version,
+                }.Where(s => !string.IsNullOrEmpty(s))));
+                copy.Text = Tr("Copié ✓", "Copied ✓");
+            }
+            catch (System.Runtime.InteropServices.ExternalException)
+            {
+                copy.Text = Tr("Presse-papiers occupé", "Clipboard busy"); // ouvert par une autre application
+            }
         };
         tips.SetToolTip(copy, Tr("Copier le nom, l'emplacement et la ligne de commande", "Copy the name, location and command line"));
         var open = new ModernButton(Tr("Ouvrir l'emplacement", "Open location")) { Enabled = d.Path != null };

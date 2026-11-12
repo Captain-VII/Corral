@@ -397,6 +397,7 @@
   "Pour régler un programme, double-cliquez dessus ci-dessous. Des modèles prêts à l'emploi (Jeu, Tâche de fond…) remplissent la règle pour vous.": "To tune a program, double-click it below. Ready-made templates (Game, Background task…) fill in the rule for you.",
   "Pour un jeu reconnu (ci-dessous) ou un programme dont la règle est marquée « C'est un jeu » (le modèle Jeu le fait).": "For a recognized game (below) or a program whose rule is marked “This is a game” (the Game template does it).",
   "Premier plan": "Foreground",
+  "Presse-papiers occupé": "Clipboard busy",
   "Principal": "Main",
   "Priorité": "Priority",
   "Priorité basse et mode efficacité pour les programmes ci-dessous (navigateurs, synchronisation…), sauf s'ils ont leur propre règle.": "Low priority and efficiency mode for the programs below (browsers, sync…), unless they have their own rule.",
