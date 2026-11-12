@@ -61,6 +61,8 @@ public sealed class Engine : IEngine, IDisposable
     readonly HashSet<ProcKey> jobLimited = new();
     /// <summary>Processus protégés (anti-triche, PPL) qui ont refusé l'accès : plus aucune tentative ni avertissement.</summary>
     readonly HashSet<ProcKey> denied = new();
+    /// <summary>Processus dont l'heure de démarrage est inaccessible (voir <see cref="KeyOf"/>), oubliés à leur fermeture.</summary>
+    readonly HashSet<(int Pid, string Name)> startTimeDenied = new();
     readonly List<string> pendingActed = new();
     readonly List<(string Title, string Message)> pendingNotifications = new();
     readonly KeepAwake keepAwake = new();
@@ -306,7 +308,7 @@ public sealed class Engine : IEngine, IDisposable
             foreach (var p in procs)
             {
                 ProcKey key;
-                try { key = new ProcKey(p.Id, p.ProcessName, StartTicks(p)); }
+                try { key = KeyOf(p); }
                 catch { continue; } // processus terminé entre-temps
                 if (!live.TryAdd(key, p))
                     continue;
@@ -354,6 +356,7 @@ public sealed class Engine : IEngine, IDisposable
                 jobLimited.Remove(gone);
                 denied.Remove(gone);
             }
+            startTimeDenied.RemoveWhere(d => !live.ContainsKey(new ProcKey(d.Pid, d.Name, 0)));
 
             if (pbActive)
                 RunProBalance(sysCpu, samples, live, pb);
@@ -1013,6 +1016,24 @@ public sealed class Engine : IEngine, IDisposable
     {
         try { return p.StartTime.Ticks; }
         catch { return 0; } // processus protégé : heure inaccessible
+    }
+
+    /// <summary>
+    /// Clé d'un processus. L'heure de démarrage d'un processus protégé (système, anti-triche) est inaccessible :
+    /// le refus est retenu pour ne pas relancer une exception à chaque passage. La clé reste la même (heure 0).
+    /// </summary>
+    ProcKey KeyOf(Process p)
+    {
+        var name = p.ProcessName;
+        if (startTimeDenied.Contains((p.Id, name)))
+            return new ProcKey(p.Id, name, 0);
+        try { return new ProcKey(p.Id, name, p.StartTime.Ticks); }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            startTimeDenied.Add((p.Id, name));
+            return new ProcKey(p.Id, name, 0);
+        }
+        catch { return new ProcKey(p.Id, name, 0); } // terminé entre-temps
     }
 
     /// <summary>Rouvre le processus seulement s'il s'agit toujours du même (PID non réutilisé).</summary>
