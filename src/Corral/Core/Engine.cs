@@ -65,6 +65,7 @@ public sealed class Engine : IEngine, IDisposable
     readonly List<string> pendingActed = new();
     readonly List<(string Title, string Message)> pendingNotifications = new();
     readonly KeepAwake keepAwake = new();
+    string? keepAwakeFailed;
     readonly Func<DateTime> now;
     readonly Stopwatch clock = new();
     readonly int ownPid = Environment.ProcessId;
@@ -687,17 +688,19 @@ public sealed class Engine : IEngine, IDisposable
             if (names.Count > 0)
                 reason = Tr($"Corral : {string.Join(", ", names.Take(3))} en cours", $"Corral: {string.Join(", ", names.Take(3))} running");
         }
-        if (reason == KeepAwakeReason)
-            return;
+        if (reason == KeepAwakeReason || reason == keepAwakeFailed)
+            return; // échec déjà noté pour cette raison : pas une nouvelle tentative (et une erreur) chaque seconde
         try
         {
             keepAwake.Set(reason);
             if ((reason == null) != (KeepAwakeReason == null))
                 Log.Info(reason == null ? Tr("Mise en veille de nouveau autorisée", "Sleep allowed again") : Tr($"Mise en veille empêchée ({reason})", $"Sleep prevented ({reason})"), LogCategory.Power);
             KeepAwakeReason = reason;
+            keepAwakeFailed = null;
         }
         catch (Exception ex)
         {
+            keepAwakeFailed = reason;
             Log.Error(Tr("Empêcher la mise en veille", "Prevent sleep"), ex);
         }
     }
