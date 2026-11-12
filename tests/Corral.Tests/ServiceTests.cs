@@ -284,6 +284,25 @@ public class ServiceTests : IDisposable
     }
 
     [Fact]
+    public void SlowFleetSourceDoesNotDelayTheService()
+    {
+        WriteQuietConfig();
+        var (source, publicKey) = FleetTests.Publish(dir, serial: 1, "parc1.exe");
+        Assert.NotNull(Fleet.Load(source, publicKey, dir)); // version reçue précédemment, gardée en cache
+
+        // Source qui ne répond jamais (comme un partage réseau au démarrage du PC) : un pipe qui accepte sans rien envoyer
+        var slow = "CorralSlowFleet_" + Guid.NewGuid().ToString("N");
+        using var never = new System.IO.Pipes.NamedPipeServerStream(slow, System.IO.Pipes.PipeDirection.InOut, 2,
+            System.IO.Pipes.PipeTransmissionMode.Byte, System.IO.Pipes.PipeOptions.Asynchronous);
+        _ = never.WaitForConnectionAsync();
+        var sw = Stopwatch.StartNew();
+        using var host = StartHost(new PolicySet(ConfigFile: @"\\.\pipe\" + slow, ConfigPublicKey: publicKey));
+        Assert.True(sw.Elapsed < ServiceHost.FleetStartTimeout + TimeSpan.FromSeconds(10), $"démarrage en {sw.Elapsed}");
+        using var ui = RemoteEngine.Connect(Timeout, pipe, requireService: false, mirrorLog: false)!;
+        Assert.Equal("parc1.exe", Assert.Single(ui.InitialSettings.Rules).Pattern); // le cache s'applique en attendant
+    }
+
+    [Fact]
     public async Task FleetConfigurationIsEnforcedAndRefreshed()
     {
         WriteQuietConfig();

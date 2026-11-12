@@ -124,6 +124,7 @@
   "Configuration de l'exe portable transmise au service": "Configuration de l'exe portable transmise au service",
   "Configuration de parc ({source}) : {ex.Message}": "Configuration de parc ({source}) : {ex.Message}",
   "Configuration de parc illisible : ": "Configuration de parc illisible : ",
+  "Configuration de parc lente à répondre : dernière version reçue appliquée en attendant": "Configuration de parc lente à répondre : dernière version reçue appliquée en attendant",
   "Configuration de parc n° {next?.Serial} appliquée": "Configuration de parc n° {next?.Serial} appliquée",
   "Configuration de parc plus ancienne (n° {config.Serial}) que celle déjà reçue (n° {cached.Serial}) : ignorée.": "Configuration de parc plus ancienne (n° {config.Serial}) que celle déjà reçue (n° {cached.Serial}) : ignorée.",
   "Configuration et journal": "Configuration et journal",

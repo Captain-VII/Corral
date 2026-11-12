@@ -124,6 +124,7 @@
   "Configuration de l'exe portable transmise au service": "Portable exe settings handed over to the service",
   "Configuration de parc ({source}) : {ex.Message}": "Fleet configuration ({source}): {ex.Message}",
   "Configuration de parc illisible : ": "Unreadable fleet configuration: ",
+  "Configuration de parc lente à répondre : dernière version reçue appliquée en attendant": "Fleet configuration slow to respond: last received version applied meanwhile",
   "Configuration de parc n° {next?.Serial} appliquée": "Fleet configuration #{next?.Serial} applied",
   "Configuration de parc plus ancienne (n° {config.Serial}) que celle déjà reçue (n° {cached.Serial}) : ignorée.": "Fleet configuration older (#{config.Serial}) than the one already received (#{cached.Serial}): ignored.",
   "Configuration et journal": "Settings and log",

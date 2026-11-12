@@ -24,6 +24,9 @@ public sealed record PolicySet(bool LockSettings = false, bool DisableUpdates = 
 
     /// <summary>Charge la configuration de parc (cache dans <paramref name="cacheDir"/>), ou null.</summary>
     public FleetConfig? LoadFleet(string cacheDir) => HasFleet ? Fleet.Load(ConfigFile!, ConfigPublicKey!, cacheDir) : null;
+
+    /// <summary>Dernière configuration de parc reçue (cache), sans contacter la source, ou null.</summary>
+    public FleetConfig? CachedFleet(string cacheDir) => HasFleet ? Fleet.Cached(ConfigPublicKey!, cacheDir) : null;
 }
 
 public static class Policies
