@@ -181,7 +181,9 @@ public sealed class ProBalanceStats
             return;
         try
         {
-            File.WriteAllText(path, JsonSerializer.Serialize(days));
+            // Fichier temporaire puis remplacement : un arrêt brutal ne laisse pas un fichier à moitié écrit
+            File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(days));
+            File.Move(path + ".tmp", path, overwrite: true);
         }
         catch (Exception ex)
         {
