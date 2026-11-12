@@ -21,3 +21,97 @@ jobs:
 
       - name: Tests
         run: dotnet test -c Release
+
+  # Installe vraiment le MSI : les tests unitaires ne lancent pas le service Windows (ServiceController, droits SYSTEM)
+  msi:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Compilation de l'exe et du MSI
+        shell: pwsh
+        run: |
+          dotnet publish src/Corral -c Release -r win-x64 --self-contained `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=0.0.1 -o publish
+          if ($LASTEXITCODE -ne 0) { throw "Échec de la publication" }
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.Util.wixext/5.0.2
+          wix build packaging/Corral.wxs -arch x64 -ext WixToolset.Util.wixext -d Version=0.0.1 -d ExePath=publish/Corral.exe -o Corral.msi
+          if ($LASTEXITCODE -ne 0) { throw "Échec de la compilation du MSI" }
+
+      - name: Installation, règle appliquée puis restaurée à l'arrêt du service
+        shell: pwsh
+        run: |
+          $p = Start-Process msiexec -ArgumentList '/i', 'Corral.msi', '/qn', '/l*v', 'install.log' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec : code $($p.ExitCode)" }
+          if ((Get-Service Corral).Status -ne 'Running') { throw "Service non démarré" }
+          $exe = "$env:ProgramFiles\Corral\Corral.exe"
+          # Corral.exe est une application fenêtrée : Start-Process -Wait pour attendre la ligne de commande
+          function Invoke-Corral { $c = Start-Process $exe -ArgumentList $args -Wait -PassThru -NoNewWindow -RedirectStandardOutput out.txt -RedirectStandardError err.txt
+            Get-Content out.txt, err.txt; if ($c.ExitCode -ne 0) { throw "Corral.exe $args : code $($c.ExitCode)" } }
+          Invoke-Corral status
+          $ping = Start-Process ping -ArgumentList '-n', '600', '127.0.0.1' -PassThru -WindowStyle Hidden
+          $ping.PriorityClass = 'Normal' # le runner lance ses étapes en priorité basse : on part d'une priorité connue
+          Invoke-Corral rules add ping.exe --priority belownormal
+          if (-not (Select-String -Quiet 'ping.exe' "$env:ProgramData\Corral\config.json")) { throw "Règle absente de config.json" }
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Get-Process -Id $ping.Id).PriorityClass -ne 'BelowNormal') {
+            if ((Get-Date) -gt $deadline) { throw "Règle non appliquée" }; Start-Sleep 1 }
+          Stop-Service Corral
+          if ((Get-Service Corral).Status -ne 'Stopped') { throw "Service non arrêté" }
+          if ((Get-Process -Id $ping.Id).PriorityClass -ne 'Normal') { throw "Priorité non restaurée à l'arrêt" }
+          Start-Service Corral
+          Invoke-Corral status
+
+          # Fin de session ou installeur (Restart Manager) : l'interface doit se fermer. En 3.1.4, un interblocage la laissait
+          # en mémoire sans icône après chaque MSI.
+          $ui = Start-Process $exe -PassThru
+          Start-Sleep 5
+          if ($ui.HasExited) { throw "Interface fermée avant le test (code $($ui.ExitCode))" }
+          Add-Type -TypeDefinition @'
+          using System; using System.Runtime.InteropServices;
+          public static class EndSession {
+            delegate bool EnumProc(IntPtr hwnd, IntPtr lParam);
+            [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc proc, IntPtr lParam);
+            [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+            [DllImport("user32.dll")] static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
+            // WM_QUERYENDSESSION puis WM_ENDSESSION avec ENDSESSION_CLOSEAPP, comme le Restart Manager d'un MSI
+            public static int Send(int pid) {
+              int windows = 0;
+              EnumWindows((hwnd, _) => {
+                uint owner; GetWindowThreadProcessId(hwnd, out owner);
+                if (owner == pid) {
+                  IntPtr r;
+                  SendMessageTimeout(hwnd, 0x11, IntPtr.Zero, (IntPtr)1, 2, 5000, out r);
+                  SendMessageTimeout(hwnd, 0x16, (IntPtr)1, (IntPtr)1, 2, 5000, out r);
+                  windows++;
+                }
+                return true;
+              }, IntPtr.Zero);
+              return windows;
+            }
+          }
+          '@
+          $windows = [EndSession]::Send($ui.Id)
+          if ($windows -eq 0) { throw "Aucune fenêtre trouvée pour l'interface" }
+          if (-not $ui.WaitForExit(20000)) { Stop-Process -Id $ui.Id -Force; throw "L'interface ne se ferme pas à la fin de session ($windows fenêtres)" }
+          $p = Start-Process msiexec -ArgumentList '/x', 'Corral.msi', '/qn' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Désinstallation : code $($p.ExitCode)" }
+
+      - name: Copie des journaux
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force journaux | Out-Null
+          Copy-Item install.log, "$env:ProgramData\Corral\corral.log*" journaux -ErrorAction SilentlyContinue
+
+      - name: Journaux
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: journaux-msi
+          path: journaux

@@ -182,6 +182,23 @@ public class ServiceTests : IDisposable
         Assert.Contains(new RuleStore(Path.Combine(dir, "config.json")).Load().Rules, r => r.Pattern == "permis.exe");
     }
 
+    [Fact]
+    public void FailedSaveIsReportedNotSilent()
+    {
+        WriteQuietConfig();
+        using var host = StartHost();
+        using var remote = RemoteEngine.Connect(Timeout, pipe, requireService: false, mirrorLog: false)!;
+        var notes = new List<string>();
+        remote.Notification += (_, message) => { lock (notes) notes.Add(message); };
+        remote.Start();
+        Directory.CreateDirectory(Path.Combine(dir, "config.json.tmp")); // l'écriture atomique échoue
+
+        var (code, _, err) = Cli("rules", "add", "perdu.exe", "--priority", "belownormal");
+        Assert.Equal(Corral.Cli.Failed, code);
+        Assert.NotEmpty(err);
+        Wait(() => { lock (notes) return notes.FirstOrDefault(); }, "notification aux interfaces");
+    }
+
     (int Code, string Out, string Err) Cli(params string[] args)
     {
         var (o, e) = (new StringWriter(), new StringWriter());

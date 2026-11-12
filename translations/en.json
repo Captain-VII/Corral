@@ -121,6 +121,7 @@
   "Compte standard : réglages en lecture seule (réservés aux administrateurs)": "Standard account: settings are read-only (restricted to administrators)",
   "Compte standard : réglages réservés aux administrateurs.": "Standard account: settings restricted to administrators.",
   "Conditions des règles modifiées : règles réappliquées": "Rule conditions changed: rules reapplied",
+  "Configuration appliquée mais non enregistrée : {ex.Message}": "Settings applied but not saved: {ex.Message}",
   "Configuration de l'exe portable transmise au service": "Portable exe settings handed over to the service",
   "Configuration de parc ({source}) : {ex.Message}": "Fleet configuration ({source}): {ex.Message}",
   "Configuration de parc illisible : ": "Unreadable fleet configuration: ",
