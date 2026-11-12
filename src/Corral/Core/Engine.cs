@@ -46,6 +46,8 @@ public sealed class Engine : IEngine, IDisposable
         public ProcessPriorityClass? BoostOrig;
         public DateTime? AlertSince;
         public bool AlertFired;
+        /// <summary>Jeu reconnu sans règle (voir <see cref="GameDetector"/>).</summary>
+        public bool AutoGame;
     }
 
     /// <summary>Clé fictive pour la demande de plan d'alimentation du Mode Jeu.</summary>
@@ -80,6 +82,14 @@ public sealed class Engine : IEngine, IDisposable
     bool gamePlanApplied;
     (bool Active, string? Trigger)? pendingGameEvent;
     System.Threading.Timer? timer;
+
+    /// <summary>
+    /// Dernier passage au premier plan de chaque jeu reconnu sans règle. Il ne déclenche le Mode Jeu que s'il a été
+    /// au premier plan depuis moins de <see cref="AutoGameGrace"/> : un logiciel de fond rangé dans une bibliothèque
+    /// de jeux ne l'active pas. Gardé hors de <see cref="tracked"/>, qui est vidé à chaque réapplication.
+    /// </summary>
+    readonly Dictionary<ProcKey, DateTime> autoGameForeground = new();
+    static readonly TimeSpan AutoGameGrace = TimeSpan.FromMinutes(10);
 
     static readonly ProcKey IdleKey = new(-2, "__economie_au_repos", 0);
     ProcKey? boosted;
@@ -316,12 +326,15 @@ public sealed class Engine : IEngine, IDisposable
                     t = new Tracked(key.Name);
                     tracked[key] = t;
                     try { t.Session = p.SessionId; } catch { }
-                    // Chemin lu avant la règle : la préférence GPU en a besoin
+                    // Chemin lu avant la règle : la préférence GPU et la détection des jeux en ont besoin
                     t.Path = Native.GetProcessPath(key.Pid);
+                    t.AutoGame = s.GameMode.DetectGames && !HasOwnRule(s, key.Name) && Games.IsGame(t.Path);
                     if (!paused)
                         ApplyRule(p, key, t, s);
                 }
 
+                if (t.AutoGame && key.Pid == fg)
+                    autoGameForeground[key] = now();
                 double cpu = SampleCpu(p, t, elapsedMs);
                 if (t.Rule?.HasAlert == true)
                     cpuByKey[key] = cpu;
@@ -354,6 +367,8 @@ public sealed class Engine : IEngine, IDisposable
                 jobLimited.Remove(gone);
                 denied.Remove(gone);
             }
+            foreach (var gone in autoGameForeground.Keys.Where(k => !live.ContainsKey(k)).ToList())
+                autoGameForeground.Remove(gone);
 
             if (pbActive)
                 RunProBalance(sysCpu, samples, live, pb);
@@ -395,14 +410,19 @@ public sealed class Engine : IEngine, IDisposable
 
     /// <summary>
     /// Le Mode Jeu est actif s'il est demandé manuellement, ou (option automatique) si un programme
-    /// dont la règle est marquée « jeu » tourne. Tout changement d'état déclenche une réapplication
-    /// complète au passage suivant (programmes de fond abaissés ou restaurés).
+    /// dont la règle est marquée « jeu » tourne, ou un jeu reconnu sans règle passé au premier plan
+    /// récemment. Tout changement d'état déclenche une réapplication complète au passage suivant
+    /// (programmes de fond abaissés ou restaurés).
     /// </summary>
     void UpdateGameMode(Settings s)
     {
         string? trigger = null;
         if (!paused && s.GameMode.Automatic)
-            trigger = tracked.FirstOrDefault(kv => kv.Value.Rule?.IsGame == true).Value?.Name;
+        {
+            var n = now();
+            trigger = tracked.FirstOrDefault(kv => kv.Value.Rule?.IsGame == true
+                || (kv.Value.AutoGame && autoGameForeground.TryGetValue(kv.Key, out var seen) && n - seen <= AutoGameGrace)).Value?.Name;
+        }
         bool want = !paused && (gameManual || trigger != null);
 
         if (want != gameActive)
@@ -514,6 +534,9 @@ public sealed class Engine : IEngine, IDisposable
 
     /// <summary>Préférences GPU par programme (null = fonction désactivée, par exemple dans les tests).</summary>
     public GpuPreferences? Gpu { get; set; }
+
+    /// <summary>Reconnaissance des jeux sans règle (le service lui donne la ruche de l'utilisateur connecté).</summary>
+    public GameDetector Games { get; set; } = new();
 
     /// <summary>Usage du GPU par PID, appelé à chaque passage sur le thread du moteur (null = colonne GPU à 0).</summary>
     public Func<IReadOnlyDictionary<int, double>>? GpuUsage { get; set; }
@@ -629,7 +652,7 @@ public sealed class Engine : IEngine, IDisposable
             foreach (var (key, p) in live)
             {
                 if (key.Pid == fg || Exclusions.IsProtected(key.Name, key.Pid, ownPid)
-                    || (tracked.TryGetValue(key, out var t) && t.Rule?.IsGame == true)
+                    || (tracked.TryGetValue(key, out var t) && IsGame(t))
                     || cpu.GetValueOrDefault(key.Pid) >= 1)
                     continue;
                 try
@@ -700,6 +723,12 @@ public sealed class Engine : IEngine, IDisposable
 
     static bool IsBackgroundApp(Settings s, string name) =>
         s.GameMode.BackgroundApps.Any(x => RuleMatcher.Matches(x, name));
+
+    static bool IsGame(Tracked t) => t.Rule?.IsGame == true || t.AutoGame;
+
+    /// <summary>Une règle vise ce programme (même inactive) : c'est elle qui dit s'il est un jeu, pas la détection.</summary>
+    static bool HasOwnRule(Settings s, string name) =>
+        s.Rules.Any(r => !IsCatchAll(r.Pattern) && RuleMatcher.Matches(r.Pattern, name));
 
     /// <summary>
     /// Évalue les conditions des règles. Si l'une change d'état, tout est restauré puis réappliqué
@@ -1032,10 +1061,11 @@ public sealed class Engine : IEngine, IDisposable
 
     /// <summary>
     /// ProBalance et l'équité entre sessions peuvent-ils abaisser ce processus ? Jamais le premier plan, un processus
-    /// dont une règle fixe la priorité, un processus protégé ou exclu par l'utilisateur (jokers acceptés).
+    /// dont une règle fixe la priorité, un processus protégé ou exclu par l'utilisateur (jokers acceptés), ni un jeu
+    /// (même en arrière-plan : il saccaderait au retour).
     /// </summary>
     bool CanLower(ProcKey key, Tracked t, int fg, IEnumerable<string> exclusions) =>
-        key.Pid != fg && t.Rule?.Priority == null && !Exclusions.IsProtected(key.Name, key.Pid, ownPid)
+        key.Pid != fg && t.Rule?.Priority == null && !IsGame(t) && !Exclusions.IsProtected(key.Name, key.Pid, ownPid)
         && !exclusions.Any(x => RuleMatcher.Matches(x, key.Name));
 
     /// <summary>Change la priorité d'un processus ; renvoie celle d'avant (à restaurer), ou null en cas d'échec.</summary>

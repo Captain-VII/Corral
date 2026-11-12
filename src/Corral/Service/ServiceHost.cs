@@ -75,6 +75,7 @@ public sealed class ServiceHost : IDisposable
         engine = new Engine(RuleStore.Clone(settings), powerApi, powerStateFile, () => server.ActiveClient()?.Session?.ForegroundPid ?? 0)
         {
             Gpu = new GpuPreferences(Path.Combine(dir, "gpu-managed.json")) { Hive = OpenUserHive },
+            Games = new GameDetector { Hive = OpenUserHive },
             GpuUsage = gpu.Sample,
             // Sans interface connectée, personne n'est devant l'écran à mesurer : on ne passe jamais en économie
             IdleTimeSource = () => TimeSpan.FromSeconds(server.ActiveClient()?.Session?.IdleSeconds ?? 0),
