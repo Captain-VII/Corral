@@ -182,7 +182,7 @@ public class PerformanceEngineTests : IDisposable
         fg = game.Id;
         var snap = engine.TickOnce();
         Assert.True(snap.GameMode);
-        Assert.Equal("corral_autogame", snap.GameTrigger);
+        Assert.Equal("Corral Test Game", snap.GameTrigger); // dossier du jeu, pas le nom de l'exe
 
         fg = -1; // le joueur passe sur une autre fenêtre
         time += TimeSpan.FromMinutes(9);

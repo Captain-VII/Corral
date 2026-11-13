@@ -118,4 +118,23 @@ public class GameDetectorTests
         Assert.Null(GameDetector.EpicInstallLocation("[1, 2]"));
         Assert.Null(GameDetector.EpicInstallLocation("pas du JSON"));
     }
+
+    [Theory]
+    [InlineData(@"C:\Steam\steamapps\common\ELDEN RING\Game\start_protected_game.exe", "ELDEN RING")]
+    [InlineData(@"C:\Riot Games\VALORANT\live\ShooterGame\Binaries\Win64\VALORANT-Win64-Shipping.exe", "VALORANT")]
+    [InlineData(@"C:\Program Files (x86)\Ubisoft\Ubisoft Game Launcher\games\Rainbow Six Siege\RainbowSix.exe", "Rainbow Six Siege")]
+    [InlineData("c:/steam/STEAMAPPS/COMMON/Hades/Hades.exe", "Hades")]
+    [InlineData(@"C:\Steam\steamapps\common\jeu.exe", null)] // exe à la racine de la bibliothèque
+    [InlineData(@"C:\Program Files\Mozilla Firefox\firefox.exe", null)]
+    [InlineData(null, null)]
+    public void TitleIsTheGameFolder(string? path, string? expected) => Assert.Equal(expected, NoGameBar().Title(path));
+
+    [Fact]
+    public void TitleOfAGameInAFolderDeclaredByALauncher()
+    {
+        var detector = new GameDetector { Hive = () => null, LauncherFolders = () => new[] { "E:/Jeux/Far Cry 6/" } };
+        var exe = @"E:\Jeux\Far Cry 6\bin\FarCry6.exe";
+        Assert.True(detector.IsGame(exe));
+        Assert.Equal("Far Cry 6", detector.Title(exe));
+    }
 }

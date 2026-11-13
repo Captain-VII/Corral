@@ -74,6 +74,29 @@ public sealed class GameDetector
         return knownToWindows.Contains(path) || installFolders.Any(f => path.StartsWith(f, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// Nom à afficher : dossier du jeu dans sa bibliothèque ou dossier déclaré par le lanceur, ou null (le nom de l'exe
+    /// reste alors). L'exe peut n'être qu'un lanceur d'anti-triche (start_protected_game.exe).
+    /// </summary>
+    public string? Title(string? path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return null;
+        path = path.Replace('/', '\\');
+        foreach (var library in Libraries)
+        {
+            int i = path.IndexOf(library, StringComparison.OrdinalIgnoreCase);
+            if (i >= 0)
+            {
+                var rest = path[(i + library.Length)..];
+                int end = rest.IndexOf('\\');
+                return end > 0 ? rest[..end] : null; // exe posé à la racine de la bibliothèque : pas de dossier de jeu
+            }
+        }
+        var folder = installFolders.FirstOrDefault(f => path.StartsWith(f, StringComparison.OrdinalIgnoreCase));
+        return folder != null ? Path.GetFileName(folder.TrimEnd('\\')) : null;
+    }
+
     public static bool InLibrary(string path) => Libraries.Any(l => path.Contains(l, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Lanceur, installeur, anti-triche, outil… même rangé dans un dossier de jeu.</summary>
