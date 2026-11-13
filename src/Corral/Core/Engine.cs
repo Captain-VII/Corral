@@ -48,6 +48,8 @@ public sealed class Engine : IEngine, IDisposable
         public bool AlertFired;
         /// <summary>Jeu reconnu sans règle (voir <see cref="GameDetector"/>).</summary>
         public bool AutoGame;
+        /// <summary>Nom du jeu reconnu (dossier), affiché à la place du nom de l'exe.</summary>
+        public string? GameTitle;
     }
 
     /// <summary>Clé fictive pour la demande de plan d'alimentation du Mode Jeu.</summary>
@@ -339,6 +341,7 @@ public sealed class Engine : IEngine, IDisposable
                     // Chemin lu avant la règle : la préférence GPU et la détection des jeux en ont besoin
                     t.Path = Native.GetProcessPath(key.Pid);
                     t.AutoGame = s.GameMode.DetectGames && !HasOwnRule(s, key.Name) && Games.IsGame(t.Path);
+                    t.GameTitle = t.AutoGame ? Games.Title(t.Path) : null;
                     if (!paused)
                         ApplyRule(p, key, t, s);
                 }
@@ -433,7 +436,8 @@ public sealed class Engine : IEngine, IDisposable
         {
             var n = now();
             trigger = tracked.FirstOrDefault(kv => kv.Value.Rule?.IsGame == true
-                || (kv.Value.AutoGame && autoGameForeground.TryGetValue(kv.Key, out var seen) && n - seen <= AutoGameGrace)).Value?.Name;
+                || (kv.Value.AutoGame && autoGameForeground.TryGetValue(kv.Key, out var seen) && n - seen <= AutoGameGrace)).Value is { } t
+                ? t.GameTitle ?? t.Name : null;
         }
         bool want = !paused && (gameManual || trigger != null);
 

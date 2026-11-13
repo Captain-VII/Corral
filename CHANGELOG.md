@@ -1,5 +1,9 @@
 # Journal des modifications
 
+## 3.2.1
+
+- **Le Mode Jeu affiche le nom du jeu.** Un jeu reconnu sans règle apparaissait sous le nom de son exe, parfois celui de son anti-triche (« start_protected_game » pour Elden Ring). La bulle, l'interface et `corral status` affichent désormais le dossier du jeu (« ELDEN RING »).
+
 ## 3.2.0
 
 - **Les jeux sont reconnus sans règle.** Le Mode Jeu s'active tout seul pour les jeux des bibliothèques Steam (sur tous les disques), Epic, GOG, EA, Ubisoft, Xbox, Riot, Rockstar, Amazon et itch.io, pour les jeux qu'Epic, GOG Galaxy, Ubisoft Connect et EA ont installés ailleurs, et pour ceux que Windows a reconnus (Game Bar). Les lanceurs, rapports de plantage, installeurs et anti-triche rangés dans ces dossiers sont écartés. Un jeu reconnu déclenche le Mode Jeu quand il passe au premier plan, et le garde tant qu'il tourne et qu'il a été au premier plan dans les 10 dernières minutes. Une règle a toujours le dernier mot : un programme qui a sa propre règle n'est un jeu que si elle est marquée « C'est un jeu ». Option « Reconnaître les jeux installés » sur la page Mode Jeu.
