@@ -1,5 +1,11 @@
 # Journal des modifications
 
+## 3.3.0
+
+- **CPU Sets : réserver des cœurs sans enfermer le programme.** Nouvelle option « Mode souple (CPU Sets) » sous le choix des cœurs d'une règle. Windows place alors le programme de préférence sur ces cœurs, mais peut en utiliser d'autres en cas de besoin, là où l'affinité classique l'interdit. Le programme voit toujours tous les cœurs, ce que préfèrent les jeux récents. Comme le reste, les CPU Sets d'origine sont rétablis à la fermeture de Corral, en pause ou au changement de règle. Ligne de commande : `--cpu-sets` (avec `--affinity`) ; PowerShell : `Add-CorralRule -CpuSets`.
+- **Le modèle Jeu utilise les CPU Sets** pour les cœurs performants (Intel hybride) ou le CCD avec V-Cache (Ryzen X3D). Les règles existantes ne changent pas.
+- Développement : `tools/update-translations.py` régénère les catalogues de traduction sans SDK .NET.
+
 ## 3.2.2
 
 - **Sécurité : mise à jour par le service plus sûre.** Le service téléchargeait l'installeur dans un fichier qui pouvait déjà exister ; son propriétaire pouvait alors le modifier entre la vérification de la signature et l'installation. Le service supprime désormais ce fichier et le recrée lui-même.
