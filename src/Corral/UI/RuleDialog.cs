@@ -36,6 +36,7 @@ public sealed class RuleDialog : Form
     readonly ToggleSwitch enabled = new() { Checked = true };
     readonly ComboBox priority = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
     readonly ToggleSwitch affinityOn = new();
+    readonly ToggleSwitch cpuSetsOn = new() { Enabled = false };
     readonly CheckedListBox cpus = new() { CheckOnClick = true, Width = 300, Height = 120, MultiColumn = true, ColumnWidth = 70, Enabled = false };
     readonly ComboBox plan = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
     readonly NumericUpDown cpuLimit = new() { Minimum = 0, Maximum = 99, Width = 80, TextAlign = HorizontalAlignment.Right };
@@ -106,9 +107,10 @@ public sealed class RuleDialog : Form
         none.Click += (_, _) => SetAllCpus(false);
         affinityOn.CheckedChanged += (_, _) =>
         {
-            cpus.Enabled = all.Enabled = none.Enabled = affinityOn.Checked;
+            cpus.Enabled = all.Enabled = none.Enabled = cpuSetsOn.Enabled = affinityOn.Checked;
             UpdateHelp();
         };
+        cpuSetsOn.CheckedChanged += (_, _) => UpdateHelp();
         // ItemCheck est levé avant le changement : on relit après
         cpus.ItemCheck += (_, _) =>
         {
@@ -132,7 +134,7 @@ public sealed class RuleDialog : Form
         var templates = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(310, 0), Margin = new Padding(0) };
         AddTemplate(templates, Tr("Jeu", "Game"),
             Tr("Priorité haute, marqué comme jeu (active le Mode Jeu), plan Performances élevées s'il existe", "High priority, marked as a game (turns on Game Mode), High performance plan if it exists") +
-            (gamePreset != null ? Tr($" et « {gamePreset.Name} ».", $" and “{gamePreset.Name}”.") : "."), () =>
+            (gamePreset != null ? Tr($" et « {gamePreset.Name} » en mode souple (CPU Sets).", $" and “{gamePreset.Name}” in soft mode (CPU Sets).") : "."), () =>
         {
             Reset(ProcessPriorityClass.High);
             isGame.Checked = true;
@@ -140,7 +142,10 @@ public sealed class RuleDialog : Form
             if (perf >= 0)
                 plan.SelectedIndex = perf;
             if (gamePreset != null)
+            {
                 SetMask(gamePreset.Mask);
+                cpuSetsOn.Checked = true; // le jeu voit tous les cœurs et peut déborder en cas de pic
+            }
         });
         AddTemplate(templates, "Streaming", Tr("Priorité supérieure à la normale, jamais en mode efficacité : l'encodage reste fluide.", "Above normal priority, never in efficiency mode: encoding stays smooth."), () =>
         {
@@ -172,6 +177,7 @@ public sealed class RuleDialog : Form
         tips.SetToolTip(enabled, Tr("Une règle inactive est conservée mais n'est plus appliquée.", "A disabled rule is kept but no longer applied."));
         tips.SetToolTip(isGame, Tr("Tant que ce programme tourne, le Mode Jeu s'active (s'il est en automatique).", "While this program runs, Game Mode turns on (if set to automatic)."));
         tips.SetToolTip(affinityOn, Tr("Réserver certains cœurs du processeur à ce programme.", "Reserve some CPU cores for this program."));
+        tips.SetToolTip(cpuSetsOn, Tr("CPU Sets : Windows préfère ces cœurs mais peut en utiliser d'autres si besoin. Plus doux que l'affinité stricte.", "CPU Sets: Windows prefers these cores but may use others if needed. Softer than strict affinity."));
         tips.SetToolTip(cpuLimit, Tr("Plafond strict d'usage du processeur, en % du total.", "Hard cap on CPU usage, in % of the total."));
         tips.SetToolTip(memLimit, Tr("Mémoire maximale que le programme peut réserver.", "Maximum memory the program can commit."));
 
@@ -201,6 +207,7 @@ public sealed class RuleDialog : Form
             quick.Controls.Add(b);
         }
         AddRow(left, "", quick);
+        AddRow(left, Tr("Mode souple (CPU Sets)", "Soft mode (CPU Sets)"), cpuSetsOn);
 
         // Conditions : sur secteur ou batterie, plage horaire, jours
         whenPower.Items.AddRange(new object[] { Tr("Toujours", "Always"), Tr("Seulement sur secteur", "Only on AC power"), Tr("Seulement sur batterie", "Only on battery") });
@@ -333,7 +340,7 @@ public sealed class RuleDialog : Form
     void Reset(ProcessPriorityClass p)
     {
         priority.SelectedIndex = Math.Max(0, Array.FindIndex(Priorities, x => x.Value == p));
-        affinityOn.Checked = false;
+        affinityOn.Checked = cpuSetsOn.Checked = false;
         plan.SelectedIndex = 0;
         cpuLimit.Value = 0;
         memLimit.Value = 0;
@@ -392,7 +399,9 @@ public sealed class RuleDialog : Form
         int checkedCount = cpus.CheckedIndices.Count;
         affinityHelp.Text = !affinityOn.Checked
             ? Tr($"Le programme peut utiliser les {cpuCount} cœurs.", $"The program can use all {cpuCount} cores.")
-            : Tr($"Limité à {checkedCount} cœur(s) sur {cpuCount}. Utile pour un vieux jeu ou pour garder des cœurs libres.", $"Limited to {checkedCount} core(s) out of {cpuCount}. Useful for an old game or to keep cores free.");
+            : cpuSetsOn.Checked
+                ? Tr($"Placé de préférence sur {checkedCount} cœur(s) sur {cpuCount} ; Windows peut en utiliser d'autres si besoin.", $"Placed preferably on {checkedCount} core(s) out of {cpuCount}; Windows may use others if needed.")
+                : Tr($"Limité à {checkedCount} cœur(s) sur {cpuCount}. Utile pour un vieux jeu ou pour garder des cœurs libres.", $"Limited to {checkedCount} core(s) out of {cpuCount}. Useful for an old game or to keep cores free.");
 
         var chosen = (Choice<Guid?>?)plan.SelectedItem;
         planHelp.Text = chosen?.Value == null
@@ -499,6 +508,7 @@ public sealed class RuleDialog : Form
         priority.SelectedIndex = Math.Max(0, Array.FindIndex(Priorities, p => p.Value == rule.Priority));
 
         affinityOn.Checked = rule.AffinityMask != null;
+        cpuSetsOn.Checked = rule.UseCpuSets;
         long mask = rule.AffinityMask ?? -1;
         for (int i = 0; i < cpuCount; i++)
             cpus.SetItemChecked(i, ((mask >> i) & 1) == 1);
@@ -588,6 +598,7 @@ public sealed class RuleDialog : Form
             Enabled = enabled.Checked,
             Priority = ((Choice<ProcessPriorityClass?>)priority.SelectedItem!).Value,
             AffinityMask = mask,
+            UseCpuSets = mask != null && cpuSetsOn.Checked,
             PowerPlan = ((Choice<Guid?>)plan.SelectedItem!).Value,
             CpuLimitPercent = cpuLimit.Value > 0 ? (int)cpuLimit.Value : null,
             MemoryLimitMB = memLimit.Value > 0 ? (int)memLimit.Value : null,

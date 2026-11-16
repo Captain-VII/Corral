@@ -39,7 +39,7 @@ public static class RuleText
             return null;
         var parts = new List<string>();
         if (r.Priority is { } p) parts.Add(Tr("priorité ", "priority ") + PriorityLabel(p).ToLowerInvariant());
-        if (r.AffinityMask is { } m) parts.Add(Tr($"{System.Numerics.BitOperations.PopCount((ulong)m)} cœurs", $"{System.Numerics.BitOperations.PopCount((ulong)m)} cores"));
+        if (r.AffinityMask is { } m) parts.Add(Tr($"{System.Numerics.BitOperations.PopCount((ulong)m)} cœurs", $"{System.Numerics.BitOperations.PopCount((ulong)m)} cores") + (r.UseCpuSets ? " (CPU Sets)" : ""));
         if (r.PowerPlan != null) parts.Add(Tr("plan d'alimentation", "power plan"));
         if (r.CpuLimitPercent is { } c) parts.Add($"CPU max {c} %");
         if (r.MemoryLimitMB is { } mem) parts.Add(Tr($"RAM max {mem} Mo", $"RAM max {mem} MB"));

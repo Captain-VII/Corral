@@ -48,6 +48,7 @@ function Add-CorralRule {
         [Parameter(Mandatory, Position = 0)] [string] $Pattern,
         [ValidateSet('Idle', 'BelowNormal', 'Normal', 'AboveNormal', 'High')] [string] $Priority,
         [long] $AffinityMask,
+        [switch] $CpuSets,
         [ValidateRange(1, 99)] [int] $CpuLimitPercent,
         [Nullable[bool]] $EfficiencyMode,
         [switch] $Game
@@ -55,6 +56,7 @@ function Add-CorralRule {
     $a = @('rules', 'add', $Pattern)
     if ($Priority) { $a += '--priority', $Priority }
     if ($PSBoundParameters.ContainsKey('AffinityMask')) { $a += '--affinity', ('0x{0:X}' -f $AffinityMask) }
+    if ($CpuSets) { $a += '--cpu-sets' }
     if ($CpuLimitPercent) { $a += '--cpu-limit', $CpuLimitPercent }
     if ($null -ne $EfficiencyMode) { $a += '--efficiency', $(if ($EfficiencyMode) { 'on' } else { 'off' }) }
     if ($Game) { $a += '--game' }

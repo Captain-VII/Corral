@@ -75,6 +75,90 @@ public static class ProcessTweaks
             throw new Win32Exception();
     }
 
+    /// <summary>
+    /// CPU Sets par défaut du processus : Windows place ses threads de préférence sur ces cœurs, mais garde le droit
+    /// d'en déborder si le système en a besoin (contrairement à l'affinité, stricte). Null ou vide efface les CPU Sets.
+    /// </summary>
+    public static void SetCpuSets(IntPtr process, uint[]? ids)
+    {
+        if (!SetProcessDefaultCpuSets(process, ids is { Length: > 0 } ? ids : null, (uint)(ids?.Length ?? 0)))
+            throw new Win32Exception();
+    }
+
+    /// <summary>CPU Sets par défaut du processus (vide = aucun, cas habituel).</summary>
+    public static uint[] GetCpuSets(IntPtr process)
+    {
+        if (GetProcessDefaultCpuSets(process, null, 0, out uint required))
+            return Array.Empty<uint>();
+        int error = Marshal.GetLastWin32Error();
+        if (error != ErrorInsufficientBuffer)
+            throw new Win32Exception(error);
+        var ids = new uint[required];
+        if (!GetProcessDefaultCpuSets(process, ids, required, out required))
+            throw new Win32Exception();
+        return ids[..(int)Math.Min(required, (uint)ids.Length)];
+    }
+
+    static Dictionary<int, uint>? cpuSetIds;
+
+    /// <summary>Identifiants CPU Set des processeurs logiques cochés dans le masque (groupe 0, comme l'affinité).</summary>
+    public static uint[] CpuSetIdsFor(long mask) => CpuSetIdsFor(mask, cpuSetIds ??= TryReadCpuSetIds());
+
+    /// <param name="table">Numéro de processeur logique → identifiant CPU Set.</param>
+    public static uint[] CpuSetIdsFor(long mask, IReadOnlyDictionary<int, uint> table) =>
+        Enumerable.Range(0, 64).Where(i => ((mask >> i) & 1) == 1 && table.ContainsKey(i)).Select(i => table[i]).ToArray();
+
+    /// <summary>Table lue une fois ; vide si l'API échoue (erreur journalisée une seule fois).</summary>
+    static Dictionary<int, uint> TryReadCpuSetIds()
+    {
+        try { return ReadCpuSetIds(); }
+        catch (Exception ex)
+        {
+            Log.Error(Tr("Lecture des CPU Sets", "Reading CPU Sets"), ex);
+            return new Dictionary<int, uint>();
+        }
+    }
+
+    static Dictionary<int, uint> ReadCpuSetIds()
+    {
+        GetSystemCpuSetInformation(IntPtr.Zero, 0, out uint length, IntPtr.Zero, 0);
+        if (length == 0)
+            throw new Win32Exception();
+        var buffer = Marshal.AllocHGlobal((int)length);
+        try
+        {
+            if (!GetSystemCpuSetInformation(buffer, length, out length, IntPtr.Zero, 0))
+                throw new Win32Exception();
+            var ids = new Dictionary<int, uint>();
+            for (int offset = 0; offset < length;)
+            {
+                int size = Marshal.ReadInt32(buffer, offset);
+                if (size <= 0)
+                    break;
+                // SYSTEM_CPU_SET_INFORMATION : Size, Type (0 = CpuSetInformation), Id (+8), Group (+12), LogicalProcessorIndex (+14)
+                if (Marshal.ReadInt32(buffer, offset + 4) == 0 && Marshal.ReadInt16(buffer, offset + 12) == 0)
+                    ids[Marshal.ReadByte(buffer, offset + 14)] = (uint)Marshal.ReadInt32(buffer, offset + 8);
+                offset += size;
+            }
+            return ids;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    const int ErrorInsufficientBuffer = 122;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool SetProcessDefaultCpuSets(IntPtr process, uint[]? cpuSetIds, uint count);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool GetProcessDefaultCpuSets(IntPtr process, [Out] uint[]? cpuSetIds, uint count, out uint required);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool GetSystemCpuSetInformation(IntPtr info, uint length, out uint returned, IntPtr process, uint flags);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool SetProcessInformation(IntPtr process, int infoClass, ref PowerThrottlingState info, int size);
 

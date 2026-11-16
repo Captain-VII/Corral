@@ -218,7 +218,7 @@ public sealed partial class MainForm
                 r.Pattern,
                 r.Enabled ? "Active" : "Inactive",
                 r.Priority is { } prio ? RuleText.PriorityLabel(prio) : "—",
-                r.AffinityMask is { } m ? $"{System.Numerics.BitOperations.PopCount((ulong)m)}" : Tr("Tous", "All"),
+                r.AffinityMask is { } m ? $"{System.Numerics.BitOperations.PopCount((ulong)m)}" + (r.UseCpuSets ? " (CPU Sets)" : "") : Tr("Tous", "All"),
                 RuleOptions(r),
             }));
         }

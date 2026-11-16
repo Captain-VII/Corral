@@ -10,7 +10,7 @@ Gestionnaire de processus libre et gratuit pour Windows 10/11, alternative open 
 [![Licence GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Captain-VII/Corral/badge)](https://scorecard.dev/viewer/?uri=github.com/Captain-VII/Corral)
 
-- **Règles par application** : priorité, affinité CPU (avec choix adaptés au processeur : cœurs P, CCD avec V-Cache, sans SMT), plan d'alimentation, plafonds CPU et RAM (Job Objects), mode efficacité, priorités disque et mémoire, carte graphique préférée. Jokers acceptés (`chrome*`), modèles prêts à l'emploi (Jeu, Streaming, Tâche de fond, Brider), import et export.
+- **Règles par application** : priorité, affinité CPU stricte ou CPU Sets (avec choix adaptés au processeur : cœurs P, CCD avec V-Cache, sans SMT), plan d'alimentation, plafonds CPU et RAM (Job Objects), mode efficacité, priorités disque et mémoire, carte graphique préférée. Jokers acceptés (`chrome*`), modèles prêts à l'emploi (Jeu, Streaming, Tâche de fond, Brider), import et export.
 - **Automatisations** : bloquer un programme ou n'en autoriser qu'une instance, empêcher la mise en veille tant qu'il tourne, alerte (ou baisse de priorité, ou fermeture) quand il dépasse un seuil de CPU ou de mémoire.
 - **ProBalance** : abaisse temporairement la priorité des processus qui saturent le CPU, avec préréglages et statistiques. La fenêtre au premier plan et les processus système ne sont jamais touchés.
 - **Mode Jeu** : plan Performances, ProBalance réactif et programmes de fond calmés, automatiquement quand un jeu tourne ou à la demande.
@@ -110,7 +110,7 @@ Seuls les exe produits par ce workflow se mettent à jour automatiquement : une 
 
 ## Traduire Corral
 
-Les textes de l'interface sont dans [`translations/`](translations) : `fr.json` (texte d'origine) et `en.json` sont générés depuis le code. Pour une nouvelle langue, créez `translations/xx.json` (`xx` = code de la langue, par exemple `de`) avec les mêmes clés et vos traductions en valeur, puis ouvrez une pull request. Les textes non traduits s'affichent en anglais. Le fichier peut aussi être déposé dans un dossier `lang` à côté de l'exe pour l'essayer sans recompiler.
+Les textes de l'interface sont dans [`translations/`](translations) : `fr.json` (texte d'origine) et `en.json` sont générés depuis le code (`CORRAL_UPDATE_TRANSLATIONS=1 dotnet test --filter TranslationTests`, ou `python3 tools/update-translations.py` sans SDK .NET). Pour une nouvelle langue, créez `translations/xx.json` (`xx` = code de la langue, par exemple `de`) avec les mêmes clés et vos traductions en valeur, puis ouvrez une pull request. Les textes non traduits s'affichent en anglais. Le fichier peut aussi être déposé dans un dossier `lang` à côté de l'exe pour l'essayer sans recompiler.
 
 ## Contribuer
 

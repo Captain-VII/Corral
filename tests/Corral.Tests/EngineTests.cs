@@ -64,6 +64,25 @@ public class EngineTests : IDisposable
     }
 
     [Fact]
+    public void AppliesCpuSetsInsteadOfAffinityThenRestoresOnStop()
+    {
+        var ping = procs.Ping(name);
+        var origAffinity = ping.ProcessorAffinity;
+        var expected = ProcessTweaks.CpuSetIdsFor(1);
+        Assert.Single(expected);
+        Assert.Empty(ProcessTweaks.GetCpuSets(ping.Handle));
+        var engine = new Engine(RuleFor(new Rule { Pattern = name + ".exe", AffinityMask = 1, UseCpuSets = true }), new FakePower(), foregroundPid: () => -1);
+
+        engine.TickOnce();
+        ping.Refresh();
+        Assert.Equal(expected, ProcessTweaks.GetCpuSets(ping.Handle));
+        Assert.Equal(origAffinity, ping.ProcessorAffinity); // l'affinité stricte n'est pas touchée
+
+        engine.Stop();
+        Assert.Empty(ProcessTweaks.GetCpuSets(ping.Handle));
+    }
+
+    [Fact]
     public void RepeatedRuleApplicationsAreLoggedOnce()
     {
         // Comme un navigateur : plusieurs processus du même nom, lancés coup sur coup

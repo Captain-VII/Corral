@@ -43,6 +43,15 @@ public class RuleMatcherTests
         Assert.Equal(expected, RuleMatcher.IsValidAffinity(mask, cpus));
 
     [Fact]
+    public void CpuSetIdsFollowTheMask()
+    {
+        var table = new Dictionary<int, uint> { [0] = 0x100, [1] = 0x101, [2] = 0x102, [63] = 0x13F };
+        Assert.Equal(new uint[] { 0x100, 0x102 }, ProcessTweaks.CpuSetIdsFor(0b101, table));
+        Assert.Equal(new uint[] { 0x13F }, ProcessTweaks.CpuSetIdsFor(long.MinValue, table)); // bit 63
+        Assert.Empty(ProcessTweaks.CpuSetIdsFor(0b1000, table)); // processeur absent de la table
+    }
+
+    [Fact]
     public void ProtectedProcesses()
     {
         Assert.True(Exclusions.IsProtected("csrss", 600, 1));

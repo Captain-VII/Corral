@@ -324,6 +324,9 @@ public class ServiceTests : IDisposable
     {
         var r = Corral.Cli.ParseRule(" jeu.exe ", new[] { "--priority", "High", "--affinity", "0x3", "--cpu-limit", "50", "--game" });
         Assert.Equal(("jeu.exe", ProcessPriorityClass.High, 3L, 50, true), (r.Pattern, r.Priority, r.AffinityMask, r.CpuLimitPercent, r.IsGame));
+        Assert.True(Corral.Cli.ParseRule("jeu.exe", new[] { "--affinity", "0x1", "--cpu-sets" }).UseCpuSets);
+        Assert.False(r.UseCpuSets);
+        Assert.ThrowsAny<Exception>(() => Corral.Cli.ParseRule("jeu.exe", new[] { "--cpu-sets" })); // --cpu-sets sans --affinity
         Assert.True(Corral.Cli.IsCommand(new[] { "status" }));
         Assert.False(Corral.Cli.IsCommand(new[] { "--minimized" }));
         Assert.False(Corral.Cli.IsCommand(Array.Empty<string>()));

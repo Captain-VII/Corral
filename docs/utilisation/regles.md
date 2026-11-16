@@ -16,7 +16,7 @@ Si plusieurs règles correspondent, c'est la première de la liste qui s'appliqu
 
 | Modèle | Effet |
 |---|---|
-| Jeu | Priorité haute, marqué comme jeu (déclenche le [Mode Jeu](mode-jeu.md)), plan Performances s'il existe |
+| Jeu | Priorité haute, marqué comme jeu (déclenche le [Mode Jeu](mode-jeu.md)), plan Performances s'il existe, cœurs performants ou CCD avec V-Cache en mode souple (CPU Sets) selon le processeur |
 | Streaming | Priorité supérieure à la normale, jamais en mode efficacité |
 | Tâche de fond | Priorité inférieure à la normale |
 | Brider | Priorité inférieure à la normale et 25 % du processeur au maximum |
@@ -25,6 +25,7 @@ Si plusieurs règles correspondent, c'est la première de la liste qui s'appliqu
 
 - **Priorité** : de *Inactive* à *Haute*. *Haute* convient à un jeu, pas à un programme qui tourne en permanence.
 - **Cœurs** : limite le programme à certains cœurs. Corral propose des choix adaptés au processeur (cœurs performants, CCD avec V-Cache, sans SMT).
+    - **Mode souple (CPU Sets)** : au lieu de l'interdire ailleurs, Windows place le programme de préférence sur ces cœurs et peut en déborder si besoin. Plus doux que l'affinité stricte, souvent mieux toléré par les jeux récents.
 - **Plan d'alimentation** : activé tant que le programme tourne, puis le plan d'origine revient.
 - **CPU max et RAM max** : plafonds stricts, appliqués au lancement du programme.
 - **Mode efficacité, priorités disque et mémoire, carte graphique** : réglages avancés de Windows 11.
