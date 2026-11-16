@@ -110,7 +110,7 @@ Seuls les exe produits par ce workflow se mettent à jour automatiquement : une 
 
 ## Traduire Corral
 
-Les textes de l'interface sont dans [`translations/`](translations) : `fr.json` (texte d'origine) et `en.json` sont générés depuis le code. Pour une nouvelle langue, créez `translations/xx.json` (`xx` = code de la langue, par exemple `de`) avec les mêmes clés et vos traductions en valeur, puis ouvrez une pull request. Les textes non traduits s'affichent en anglais. Le fichier peut aussi être déposé dans un dossier `lang` à côté de l'exe pour l'essayer sans recompiler.
+Les textes de l'interface sont dans [`translations/`](translations) : `fr.json` (texte d'origine) et `en.json` sont générés depuis le code (`CORRAL_UPDATE_TRANSLATIONS=1 dotnet test --filter TranslationTests`, ou `python3 tools/update-translations.py` sans SDK .NET). Pour une nouvelle langue, créez `translations/xx.json` (`xx` = code de la langue, par exemple `de`) avec les mêmes clés et vos traductions en valeur, puis ouvrez une pull request. Les textes non traduits s'affichent en anglais. Le fichier peut aussi être déposé dans un dossier `lang` à côté de l'exe pour l'essayer sans recompiler.
 
 ## Contribuer
 
