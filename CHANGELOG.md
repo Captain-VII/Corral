@@ -1,5 +1,9 @@
 # Journal des modifications
 
+## 3.2.2
+
+- **Sécurité : mise à jour par le service plus sûre.** Le service téléchargeait l'installeur dans un fichier qui pouvait déjà exister ; son propriétaire pouvait alors le modifier entre la vérification de la signature et l'installation. Le service supprime désormais ce fichier et le recrée lui-même.
+
 ## 3.2.1
 
 - **Le Mode Jeu affiche le nom du jeu.** Un jeu reconnu sans règle apparaissait sous le nom de son exe, parfois celui de son anti-triche (« start_protected_game » pour Elden Ring). La bulle, l'interface et `corral status` affichent désormais le dossier du jeu (« ELDEN RING »).
