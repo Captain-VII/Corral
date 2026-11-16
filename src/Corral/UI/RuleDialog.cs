@@ -134,7 +134,7 @@ public sealed class RuleDialog : Form
         var templates = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(310, 0), Margin = new Padding(0) };
         AddTemplate(templates, Tr("Jeu", "Game"),
             Tr("Priorité haute, marqué comme jeu (active le Mode Jeu), plan Performances élevées s'il existe", "High priority, marked as a game (turns on Game Mode), High performance plan if it exists") +
-            (gamePreset != null ? Tr($" et « {gamePreset.Name} ».", $" and “{gamePreset.Name}”.") : "."), () =>
+            (gamePreset != null ? Tr($" et « {gamePreset.Name} » en mode souple (CPU Sets).", $" and “{gamePreset.Name}” in soft mode (CPU Sets).") : "."), () =>
         {
             Reset(ProcessPriorityClass.High);
             isGame.Checked = true;
@@ -142,7 +142,10 @@ public sealed class RuleDialog : Form
             if (perf >= 0)
                 plan.SelectedIndex = perf;
             if (gamePreset != null)
+            {
                 SetMask(gamePreset.Mask);
+                cpuSetsOn.Checked = true; // le jeu voit tous les cœurs et peut déborder en cas de pic
+            }
         });
         AddTemplate(templates, "Streaming", Tr("Priorité supérieure à la normale, jamais en mode efficacité : l'encodage reste fluide.", "Above normal priority, never in efficiency mode: encoding stays smooth."), () =>
         {

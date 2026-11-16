@@ -16,7 +16,7 @@ Si plusieurs règles correspondent, c'est la première de la liste qui s'appliqu
 
 | Modèle | Effet |
 |---|---|
-| Jeu | Priorité haute, marqué comme jeu (déclenche le [Mode Jeu](mode-jeu.md)), plan Performances s'il existe |
+| Jeu | Priorité haute, marqué comme jeu (déclenche le [Mode Jeu](mode-jeu.md)), plan Performances s'il existe, cœurs performants ou CCD avec V-Cache en mode souple (CPU Sets) selon le processeur |
 | Streaming | Priorité supérieure à la normale, jamais en mode efficacité |
 | Tâche de fond | Priorité inférieure à la normale |
 | Brider | Priorité inférieure à la normale et 25 % du processeur au maximum |

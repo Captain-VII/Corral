@@ -9,7 +9,7 @@
   " (règle inactive)": " (rule disabled)",
   " : ": ": ",
   " Dernière version reçue conservée.": " Last received version kept.",
-  " et « {gamePreset.Name} ».": " and “{gamePreset.Name}”.",
+  " et « {gamePreset.Name} » en mode souple (CPU Sets).": " and “{gamePreset.Name}” in soft mode (CPU Sets).",
   " · Mode Jeu": " · Game Mode",
   " · veille bloquée": " · sleep blocked",
   "% (0 = non)": "% (0 = off)",
