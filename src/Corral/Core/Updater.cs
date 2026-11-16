@@ -175,6 +175,8 @@ public static class Updater
         var signature = await http.GetStringAsync(info.MsiSigUrl, ct);
         Directory.CreateDirectory(directory);
         var target = Path.Combine(directory, "Corral-update.msi");
+        // Supprimé puis recréé (pas réécrit) : un fichier laissé là garderait son propriétaire, qui pourrait le modifier entre la vérification et msiexec.
+        File.Delete(target);
         await using (var input = await http.GetStreamAsync(info.MsiUrl, ct))
         await using (var output = File.Create(target))
             await input.CopyToAsync(output, ct);
