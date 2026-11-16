@@ -29,6 +29,8 @@ public sealed class Engine : IEngine, IDisposable
         public Rule? Rule;
         public ProcessPriorityClass? OrigPriority;
         public IntPtr? OrigAffinity;
+        /// <summary>CPU Sets d'origine (vide = aucun) si une règle en a posé.</summary>
+        public uint[]? OrigCpuSets;
         public ProcessPriorityClass? ProBalanceOrig;
         /// <summary>Abaissé par l'équité entre sessions (et non par ProBalance) : <see cref="ProBalanceOrig"/> garde la priorité d'origine.</summary>
         public bool ByFairness;
@@ -811,6 +813,19 @@ public sealed class Engine : IEngine, IDisposable
         {
             if (!RuleMatcher.IsValidAffinity(mask, cores))
                 Log.Warn(Tr($"Règle « {rule.Pattern} » : masque d'affinité 0x{mask:X} invalide pour {cores} CPU", $"Rule “{rule.Pattern}”: affinity mask 0x{mask:X} invalid for {cores} CPUs"), LogCategory.Rule);
+            else if (rule.UseCpuSets)
+            {
+                var ids = ProcessTweaks.CpuSetIdsFor(mask);
+                if (ids.Length == 0)
+                    Log.Warn(Tr($"Règle « {rule.Pattern} » : aucun CPU Set pour le masque 0x{mask:X}", $"Rule “{rule.Pattern}”: no CPU Set for mask 0x{mask:X}"), LogCategory.Rule);
+                else if (TryDo(key, "CPU Sets", () =>
+                         {
+                             var current = ProcessTweaks.GetCpuSets(p.Handle);
+                             ProcessTweaks.SetCpuSets(p.Handle, ids);
+                             t.OrigCpuSets ??= current;
+                         }))
+                    done.Add($"CPU Sets 0x{mask:X}");
+            }
             else if (TryDo(key, Tr("affinité", "affinity"), () =>
                      {
                          var current = p.ProcessorAffinity;
@@ -985,11 +1000,12 @@ public sealed class Engine : IEngine, IDisposable
             var priority = t.OrigPriority ?? t.ProBalanceOrig ?? t.BoostOrig;
             t.BoostOrig = null;
             var affinity = t.OrigAffinity;
+            var cpuSets = t.OrigCpuSets;
             var io = t.OrigIo;
             var memory = t.OrigMemory;
             bool efficiency = t.EfficiencySet;
-            (t.OrigPriority, t.OrigAffinity, t.ProBalanceOrig, t.OrigIo, t.OrigMemory, t.EfficiencySet, t.ByFairness) = (null, null, null, null, null, false, false);
-            if (priority == null && affinity == null && io == null && memory == null && !efficiency)
+            (t.OrigPriority, t.OrigAffinity, t.OrigCpuSets, t.ProBalanceOrig, t.OrigIo, t.OrigMemory, t.EfficiencySet, t.ByFairness) = (null, null, null, null, null, null, false, false);
+            if (priority == null && affinity == null && cpuSets == null && io == null && memory == null && !efficiency)
                 continue;
             using var p = OpenSame(key);
             if (p == null)
@@ -998,6 +1014,8 @@ public sealed class Engine : IEngine, IDisposable
                 TryDo(key, Tr("restauration priorité", "priority restore"), () => p.PriorityClass = pr);
             if (affinity is { } af)
                 TryDo(key, Tr("restauration affinité", "affinity restore"), () => p.ProcessorAffinity = af);
+            if (cpuSets != null)
+                TryDo(key, Tr("restauration CPU Sets", "CPU Sets restore"), () => ProcessTweaks.SetCpuSets(p.Handle, cpuSets));
             if (io is { } i)
                 TryDo(key, Tr("restauration priorité disque", "disk priority restore"), () => ProcessTweaks.SetIoPriority(p.Handle, i));
             if (memory is { } m)

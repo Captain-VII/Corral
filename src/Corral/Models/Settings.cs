@@ -9,6 +9,8 @@ public sealed class Rule
     public string Pattern { get; set; } = "";
     public ProcessPriorityClass? Priority { get; set; }
     public long? AffinityMask { get; set; }
+    /// <summary>Cœurs de <see cref="AffinityMask"/> appliqués en CPU Sets (préférence que Windows peut dépasser) au lieu de l'affinité stricte.</summary>
+    public bool UseCpuSets { get; set; }
     public Guid? PowerPlan { get; set; }
     /// <summary>Plafond en % du CPU total (1-99).</summary>
     public int? CpuLimitPercent { get; set; }

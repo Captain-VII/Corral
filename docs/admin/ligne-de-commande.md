@@ -10,7 +10,7 @@ et la [configuration de parc](parc.md) ; l'interface ouverte affiche aussitôt l
 | `Corral status [--json]` | État : pause, Mode Jeu, CPU, mémoire, profil et règles |
 | `Corral processes [--json]` | Processus suivis |
 | `Corral rules [--json]` | Règles du profil actif |
-| `Corral rules add <nom> [options]` | Ajoute ou remplace une règle (`--priority`, `--affinity 0xFF`, `--cpu-limit 50`, `--efficiency on/off`, `--game`) |
+| `Corral rules add <nom> [options]` | Ajoute ou remplace une règle (`--priority`, `--affinity 0xFF`, `--cpu-sets` (avec `--affinity` : CPU Sets au lieu de l'affinité stricte), `--cpu-limit 50`, `--efficiency on/off`, `--game`) |
 | `Corral rules remove <nom>` (ou `enable`, `disable`) | Supprime, active ou désactive une règle |
 | `Corral rules export <fichier>` | Exporte les règles |
 | `Corral rules import <fichier> [--replace]` | Importe des règles |
@@ -35,6 +35,7 @@ Installé avec le MSI, disponible dans Windows PowerShell 5.1 et PowerShell 7 :
 Get-CorralStatus
 Get-CorralProcess chrome* | Set-CorralPriority -Priority BelowNormal
 Add-CorralRule obs64.exe -Priority AboveNormal
+Add-CorralRule jeu.exe -AffinityMask 0xFF -CpuSets
 Get-CorralRule | Export-Csv regles.csv -NoTypeInformation
 Set-CorralGameMode $true
 ```

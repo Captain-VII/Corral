@@ -110,7 +110,8 @@ public static class Cli
           rules [--json]                      Règles du profil actif
           rules add <nom> [options]           Ajoute ou remplace une règle :
               --priority <Idle|BelowNormal|Normal|AboveNormal|High>
-              --affinity <masque, ex. 0xFF>   --cpu-limit <1-99>   --efficiency <on|off>   --game
+              --affinity <masque, ex. 0xFF>   --cpu-sets (avec --affinity : CPU Sets au lieu de l'affinité stricte)
+              --cpu-limit <1-99>   --efficiency <on|off>   --game
           rules remove <nom>                  Supprime une règle
           rules enable|disable <nom>          Active ou désactive une règle
           rules export <fichier>              Exporte les règles
@@ -135,7 +136,8 @@ public static class Cli
           rules [--json]                      Rules of the active profile
           rules add <name> [options]          Adds or replaces a rule:
               --priority <Idle|BelowNormal|Normal|AboveNormal|High>
-              --affinity <mask, e.g. 0xFF>    --cpu-limit <1-99>   --efficiency <on|off>   --game
+              --affinity <mask, e.g. 0xFF>    --cpu-sets (with --affinity: CPU Sets instead of strict affinity)
+              --cpu-limit <1-99>   --efficiency <on|off>   --game
           rules remove <name>                 Deletes a rule
           rules enable|disable <name>         Enables or disables a rule
           rules export <file>                 Exports the rules
@@ -293,7 +295,7 @@ public static class Cli
     {
         var parts = new List<string>();
         if (r.Priority is { } p) parts.Add(p.ToString());
-        if (r.AffinityMask is { } m) parts.Add($"0x{m:X}");
+        if (r.AffinityMask is { } m) parts.Add(r.UseCpuSets ? $"CPU Sets 0x{m:X}" : $"0x{m:X}");
         if (r.CpuLimitPercent is { } c) parts.Add($"CPU ≤ {c} %");
         if (r.EfficiencyMode is { } e) parts.Add(e ? "Eco" : "No eco");
         if (r.IsGame) parts.Add(Tr("jeu", "game"));
@@ -325,6 +327,9 @@ public static class Cli
                         throw new CliException(Tr($"Masque d'affinité invalide : {text}", $"Invalid affinity mask: {text}"), Usage);
                     rule.AffinityMask = mask;
                     break;
+                case "--cpu-sets":
+                    rule.UseCpuSets = true;
+                    break;
                 case "--cpu-limit":
                     rule.CpuLimitPercent = int.TryParse(Value(), out var cpu) && cpu is >= 1 and <= 99 ? cpu
                         : throw new CliException(Tr("--cpu-limit attend un nombre de 1 à 99.", "--cpu-limit expects a number from 1 to 99."), Usage);
@@ -344,6 +349,8 @@ public static class Cli
                     throw new CliException(Tr($"Option inconnue : {options[i]}", $"Unknown option: {options[i]}"), Usage);
             }
         }
+        if (rule.UseCpuSets && rule.AffinityMask == null)
+            throw new CliException(Tr("--cpu-sets s'utilise avec --affinity.", "--cpu-sets requires --affinity."), Usage);
         return rule;
     }
 

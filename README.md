@@ -10,7 +10,7 @@ Gestionnaire de processus libre et gratuit pour Windows 10/11, alternative open 
 [![Licence GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Captain-VII/Corral/badge)](https://scorecard.dev/viewer/?uri=github.com/Captain-VII/Corral)
 
-- **Règles par application** : priorité, affinité CPU (avec choix adaptés au processeur : cœurs P, CCD avec V-Cache, sans SMT), plan d'alimentation, plafonds CPU et RAM (Job Objects), mode efficacité, priorités disque et mémoire, carte graphique préférée. Jokers acceptés (`chrome*`), modèles prêts à l'emploi (Jeu, Streaming, Tâche de fond, Brider), import et export.
+- **Règles par application** : priorité, affinité CPU stricte ou CPU Sets (avec choix adaptés au processeur : cœurs P, CCD avec V-Cache, sans SMT), plan d'alimentation, plafonds CPU et RAM (Job Objects), mode efficacité, priorités disque et mémoire, carte graphique préférée. Jokers acceptés (`chrome*`), modèles prêts à l'emploi (Jeu, Streaming, Tâche de fond, Brider), import et export.
 - **Automatisations** : bloquer un programme ou n'en autoriser qu'une instance, empêcher la mise en veille tant qu'il tourne, alerte (ou baisse de priorité, ou fermeture) quand il dépasse un seuil de CPU ou de mémoire.
 - **ProBalance** : abaisse temporairement la priorité des processus qui saturent le CPU, avec préréglages et statistiques. La fenêtre au premier plan et les processus système ne sont jamais touchés.
 - **Mode Jeu** : plan Performances, ProBalance réactif et programmes de fond calmés, automatiquement quand un jeu tourne ou à la demande.
