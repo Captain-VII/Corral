@@ -29,7 +29,7 @@ public sealed partial class MainForm
         procList.Columns.Add("PID", 70, HorizontalAlignment.Right);
         procList.Columns.Add("CPU", 80, HorizontalAlignment.Right);
         procList.Columns.Add(Tr("Mémoire", "Memory"), 86, HorizontalAlignment.Right);
-        procList.Columns.Add(Tr("Disque", "Disk"), 80, HorizontalAlignment.Right);
+        procList.Columns.Add(Tr("Disque", "Disk"), 96, HorizontalAlignment.Right);
         procList.Columns.Add("GPU", 60, HorizontalAlignment.Right);
         procList.Columns.Add(Tr("Règle", "Rule"), 120);
         procList.Columns.Add("ProBalance", 100);

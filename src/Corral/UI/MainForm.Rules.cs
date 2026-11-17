@@ -26,8 +26,8 @@ public sealed partial class MainForm
         ruleList.Columns.Add(Tr("Processus", "Process"), 170);
         ruleList.Columns.Add(Tr("État", "Status"), 90);
         ruleList.Columns.Add(Tr("Priorité", "Priority"), 170);
-        ruleList.Columns.Add(Tr("Cœurs", "Cores"), 80);
-        ruleList.Columns.Add(Tr("Autres réglages", "Other settings"), 330);
+        ruleList.Columns.Add(Tr("Cœurs", "Cores"), 110);
+        ruleList.Columns.Add(Tr("Autres réglages", "Other settings"), 300);
         Theme.StyleList(ruleList, (item, col) => col == 1
             ? new Theme.CellStyle(Text: item.SubItems[1].Text == "Inactive" ? "○ Inactive" : "● Active",
                 Fore: item.SubItems[1].Text == "Inactive" ? Theme.Current.Muted : Theme.Current.Accent)

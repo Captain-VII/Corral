@@ -1,4 +1,4 @@
-using System.IO.Pipes;
+﻿using System.IO.Pipes;
 using System.Security.Principal;
 using Corral.Service;
 
@@ -22,7 +22,9 @@ public class ImpersonationTests
             var wait = server.WaitForConnectionAsync();
             using var client = Protocol.OpenClient(name, RemoteEngine.ClientRights, 5000);
             Assert.NotNull(client);
-            await wait.ConfigureAwait(false); // suite sur un thread du pool, comme AcceptLoop
+#pragma warning disable xUnit1030 // voulu : la suite doit tourner sur un thread du pool, comme AcceptLoop
+            await wait.ConfigureAwait(false);
+#pragma warning restore xUnit1030
 
             var inside = TokenImpersonationLevel.None;
             Exception? error = null;

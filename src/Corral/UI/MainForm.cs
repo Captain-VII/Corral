@@ -185,11 +185,13 @@ public sealed partial class MainForm : Form
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         header.Controls.Add(new Label { Text = title, Font = Ui.Title, AutoSize = true, Margin = new Padding(0) }, 0, 0);
-        header.Controls.Add(new Label { Text = description, AutoSize = true, Tag = Theme.HintTag, MaximumSize = new Size(560, 0), Margin = new Padding(2, 4, 0, 0) }, 0, 1);
+        // Sous les actions, sur toute la largeur : la phrase ne se tasse pas quand il y a beaucoup de boutons (Règles)
+        var hint = new Label { Text = description, AutoSize = true, Tag = Theme.HintTag, MaximumSize = new Size(560, 0), Margin = new Padding(2, 4, 0, 0) };
+        header.Controls.Add(hint, 0, 1);
+        header.SetColumnSpan(hint, 2);
         var bar = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Top | AnchorStyles.Right, Margin = new Padding(0, 6, 0, 0) };
         bar.Controls.AddRange(actions);
         header.Controls.Add(bar, 1, 0);
-        header.SetRowSpan(bar, 2);
 
         content.Dock = DockStyle.Fill;
         page.Controls.Add(content);
@@ -203,7 +205,8 @@ public sealed partial class MainForm : Form
         var row = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 0, 8) };
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var text = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Dock = DockStyle.Fill, Margin = new Padding(0) };
+        // Sans description, le libellé est centré verticalement sur le contrôle, comme lui
+        var text = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Dock = description == null ? DockStyle.None : DockStyle.Fill, Anchor = AnchorStyles.Left, Margin = new Padding(0) };
         text.Controls.Add(new Label { Text = label, AutoSize = true, Margin = new Padding(0, 2, 0, 0) });
         if (description != null)
             text.Controls.Add(new Label { Text = description, AutoSize = true, Tag = Theme.HintTag, MaximumSize = new Size(520, 0), Margin = new Padding(0, 2, 0, 0) });

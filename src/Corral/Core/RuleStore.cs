@@ -87,6 +87,7 @@ public sealed class RuleStore : ISettingsStore
             r.Pattern = r.Pattern.Trim();
             if (r.AffinityMask is { } m && !RuleMatcher.IsValidAffinity(m, Environment.ProcessorCount))
                 r.AffinityMask = null;
+            r.UseCpuSets &= r.AffinityMask != null;
             if (r.CpuLimitPercent is < 1 or > 99) r.CpuLimitPercent = null;
             if (r.MemoryLimitMB is < 1) r.MemoryLimitMB = null;
         }

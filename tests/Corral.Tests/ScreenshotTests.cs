@@ -25,18 +25,18 @@ public class ScreenshotTests
                 Theme.Set(mode);
                 var settings = new Settings { Theme = mode };
                 settings.ProBalance.Enabled = false;
-                settings.Rules.Add(new Rule { Pattern = "chrome*", Priority = System.Diagnostics.ProcessPriorityClass.BelowNormal, AffinityMask = 0xFF });
+                settings.Rules.Add(new Rule { Pattern = "chrome*", Priority = System.Diagnostics.ProcessPriorityClass.BelowNormal, AffinityMask = 0xFF, UseCpuSets = true });
                 settings.Rules.Add(new Rule { Pattern = "jeu.exe", Priority = System.Diagnostics.ProcessPriorityClass.High, IsGame = true, EfficiencyMode = false });
                 settings.Rules.Add(new Rule { Pattern = "sauvegarde*", Enabled = false, Priority = System.Diagnostics.ProcessPriorityClass.Idle, CpuLimitPercent = 20, MemoryLimitMB = 2048 });
                 using var engine = new Engine(RuleStore.Clone(settings), new NoPower(), foregroundPid: () => -1);
                 settings.ProBalance.Enabled = true; // seulement côté interface : affiche le seuil sans que le moteur agisse
-                using var form = new MainForm(engine, new RuleStore(Path.Combine(configDir, "config.json")), settings) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(40, 40) };
+                using var form = new MainForm(engine, new RuleStore(Path.Combine(configDir, "config.json")), settings) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = Origin + new Size(40, 40) };
                 form.Show();
                 engine.Start();
                 Pump(2500);
                 Capture(form, Path.Combine(outDir, $"shot-{mode}.png"));
 
-                using (var overlay = new OverlayWindow(new OverlaySettings { X = 1200, Y = 40 }))
+                using (var overlay = new OverlayWindow(new OverlaySettings { X = Origin.X + 1200, Y = Origin.Y + 40 }))
                 {
                     overlay.Show();
                     overlay.SetSnapshot(new EngineSnapshot(67, false, Array.Empty<ProcessRow>(), GameMode: true, MemoryUsed: 11L << 30, MemoryTotal: 32L << 30));
@@ -93,7 +93,7 @@ public class ScreenshotTests
                 }
 
                 settings.Rules[0].When = new RuleCondition { Power = PowerSource.Battery, From = new TimeOnly(9, 0), To = new TimeOnly(18, 0), Days = new() { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday } };
-                using var dlg = new RuleDialog(settings.Rules[0], PowerCfg.List(), isNew: false, new[] { "chrome", "chrome", "chrome", "code", "System" }) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(1200, 40) };
+                using var dlg = new RuleDialog(settings.Rules[0], PowerCfg.List(), isNew: false, new[] { "chrome", "chrome", "chrome", "code", "System" }) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = Origin + new Size(1200, 40) };
                 dlg.Show();
                 Pump(500);
                 Capture(dlg, Path.Combine(outDir, $"shot-{mode}-dialog.png"));
@@ -107,7 +107,7 @@ public class ScreenshotTests
                     var t0 = DateTime.UtcNow.AddMinutes(-5);
                     for (int s = 0; s <= 300; s++)
                         hist.Add(t0.AddSeconds(s), new[] { new ProcessRow(explorer.Id, explorer.ProcessName, 3 + 2 * Math.Sin(s / 15.0), (180L << 20) + s * (1L << 18), null, false, IoBytesPerSec: s % 40 < 5 ? 3L << 20 : 20_000, Gpu: s > 200 ? 12 : 1) });
-                    using var details = new ProcessDetailsDialog(ProcessDetails.Read(explorer.Id), null, canCreateRule: true, hist) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = new Point(1200, 40) };
+                    using var details = new ProcessDetailsDialog(ProcessDetails.Read(explorer.Id), null, canCreateRule: true, hist) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = Origin + new Size(1200, 40) };
                     details.Show();
                     Pump(500);
                     Capture(details, Path.Combine(outDir, $"shot-{mode}-details.png"));
@@ -121,6 +121,9 @@ public class ScreenshotTests
         thread.Start();
         thread.Join();
     }
+
+    /// <summary>Fenêtres sur l'écran secondaire s'il y en a un : l'écran principal reste libre (jeu en cours).</summary>
+    static readonly Point Origin = Screen.AllScreens.FirstOrDefault(s => !s.Primary)?.WorkingArea.Location ?? Point.Empty;
 
     static T? Find<T>(Control root) where T : Control =>
         root is T match ? match : root.Controls.Cast<Control>().Select(Find<T>).FirstOrDefault(c => c != null);
