@@ -1,5 +1,12 @@
 # Journal des modifications
 
+## 3.3.1
+
+- **Finitions de l'interface.** Plus de texte tronqué dans les colonnes Cœurs (« 8 (CPU Sets) ») des règles et Disque des processus. La phrase d'explication en haut de chaque page passe sous les boutons, sur toute la largeur : sur la page Règles, elle se tassait sur cinq lignes. Les libellés sans description (« Après », « Seuil ») sont alignés sur leur champ, les listes Thème et Langue ont la même largeur, et la fiche d'un processus ne s'ouvre plus avec le nom sélectionné.
+- **Conditions d'une règle : « de 09:00 à 18:00 ».** La plage horaire s'écrivait « 09:00-18:00 » et pouvait se couper au tiret.
+- Import de règles : l'option CPU Sets est retirée d'une règle dont le masque de cœurs est invalide.
+- Documentation : captures de la fenêtre de règle, de ProBalance et du Mode Jeu refaites.
+
 ## 3.3.0
 
 - **CPU Sets : réserver des cœurs sans enfermer le programme.** Nouvelle option « Mode souple (CPU Sets) » sous le choix des cœurs d'une règle. Windows place alors le programme de préférence sur ces cœurs, mais peut en utiliser d'autres en cas de besoin, là où l'affinité classique l'interdit. Le programme voit toujours tous les cœurs, ce que préfèrent les jeux récents. Comme le reste, les CPU Sets d'origine sont rétablis à la fermeture de Corral, en pause ou au changement de règle. Ligne de commande : `--cpu-sets` (avec `--affinity`) ; PowerShell : `Add-CorralRule -CpuSets`.
