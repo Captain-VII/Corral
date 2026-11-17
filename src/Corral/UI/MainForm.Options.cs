@@ -7,7 +7,7 @@ namespace Corral.UI;
 // Page « Options » : apparence, démarrage, mises à jour, raccourcis globaux.
 public sealed partial class MainForm
 {
-    readonly ComboBox themeChoice = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
+    readonly ComboBox themeChoice = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
     readonly ToggleSwitch autoStart = new();
     bool updatingAutoStart;
 

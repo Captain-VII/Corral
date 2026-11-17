@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Corral.Core;
 using Corral.Models;
 
@@ -118,7 +118,7 @@ public class ConditionTests : IDisposable
         engine.TickOnce();
         ping.Refresh();
         Assert.Equal(orig, ping.PriorityClass);
-        Assert.Contains("09:00-18:00", RuleText.Summary(s.Rules[0]));
+        Assert.Contains("de 09:00 à 18:00", RuleText.Summary(s.Rules[0]));
         engine.Stop();
     }
 }

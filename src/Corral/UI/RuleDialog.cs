@@ -391,7 +391,7 @@ public sealed class RuleDialog : Form
         var when = ReadCondition();
         whenHelp.Text = when == null
             ? Tr("La règle s'applique tout le temps.", "The rule always applies.")
-            : Tr($"La règle ne s'applique que {when.Describe()} ; en dehors, Corral annule ses effets", $"The rule only applies {when.Describe()}; otherwise, Corral undoes its effects");
+            : Tr($"La règle ne s'applique que {when.Describe()} ; en dehors, Corral annule ses effets.", $"The rule only applies {when.Describe()}; otherwise, Corral undoes its effects.");
 
         var p = ((Choice<ProcessPriorityClass?>?)priority.SelectedItem)?.Value;
         priorityHelp.Text = p is { } v && PriorityHelp.TryGetValue(v, out var help) ? help : Tr("La priorité du programme n'est pas modifiée.", "The program's priority is not changed.");

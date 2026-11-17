@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Corral.Core;
 using Corral.Models;
 
@@ -39,7 +39,7 @@ public class ImportExportTests : IDisposable
         var file = Path.Combine(dir, "regles.json");
         File.WriteAllText(file, """
             { "Rules": [
-                { "Pattern": "  ok.exe  ", "AffinityMask": 0, "CpuLimitPercent": 150 },
+                { "Pattern": "  ok.exe  ", "AffinityMask": 0, "UseCpuSets": true, "CpuLimitPercent": 150 },
                 { "Pattern": "" },
                 null
             ] }
@@ -47,6 +47,7 @@ public class ImportExportTests : IDisposable
         var rule = Assert.Single(RuleStore.ImportRules(file));
         Assert.Equal("ok.exe", rule.Pattern);
         Assert.Null(rule.AffinityMask);
+        Assert.False(rule.UseCpuSets);
         Assert.Null(rule.CpuLimitPercent);
     }
 

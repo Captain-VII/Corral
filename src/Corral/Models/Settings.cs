@@ -95,13 +95,13 @@ public sealed class RuleCondition
         return c.IsAlways ? null : c;
     }
 
-    /// <summary>« sur batterie · 09:00-18:00 · lun., mar. »</summary>
+    /// <summary>« sur batterie · de 09:00 à 18:00 · lun., mar. »</summary>
     public string Describe()
     {
         var parts = new List<string>();
         if (Power == PowerSource.AC) parts.Add(Tr("sur secteur", "on AC power"));
         if (Power == PowerSource.Battery) parts.Add(Tr("sur batterie", "on battery"));
-        if (HasTime) parts.Add($"{From:HH:mm}-{To:HH:mm}");
+        if (HasTime) parts.Add(Tr($"de {From:HH:mm} à {To:HH:mm}", $"from {From:HH:mm} to {To:HH:mm}"));
         if (HasDays)
         {
             var culture = System.Globalization.CultureInfo.GetCultureInfo(Corral.Core.Lang.English ? "en-US" : "fr-FR");

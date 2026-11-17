@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Corral.Core;
 
 namespace Corral.UI;
@@ -113,6 +113,7 @@ public sealed class ProcessDetailsDialog : Form
         Controls.Add(grid);
         AcceptButton = close;
         CancelButton = close;
+        ActiveControl = close; // sinon le premier champ s'ouvre avec son texte sélectionné
         Theme.Apply(this);
     }
 
