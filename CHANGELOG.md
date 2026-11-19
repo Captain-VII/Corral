@@ -1,5 +1,16 @@
 # Journal des modifications
 
+## 3.5.0
+
+- **Page Graphique : toutes les mesures en détail.** À gauche, le processeur, la mémoire, la carte graphique, les disques et le réseau ont chacun leur ligne avec leur valeur et une petite courbe. Un clic (ou Tab puis Entrée) affiche à droite le détail de la mesure :
+  - processeur : nom du modèle, fréquence, nombre de processus, de threads et de handles, et charge de chaque processeur logique ;
+  - mémoire : utilisée, disponible, validée, en cache, compressée, défauts de page, et répartition entre programmes, cache et mémoire libre ;
+  - carte graphique : nom du modèle, mémoire vidéo dédiée et partagée, et charge par type de moteur (3D, décodage vidéo…) ;
+  - disques : lecture et écriture en deux courbes, activité, file d'attente, et pour chaque disque son activité et sa place libre ;
+  - réseau : reçu et envoyé en deux courbes, utilisation, et le détail de chaque carte avec son débit nominal.
+- **Les plus gourmands suivent la mesure affichée** : processeur, mémoire, carte graphique ou lectures et écritures (réseau compris). Windows ne donne pas le débit réseau de chaque programme sans traçage ; la page l'indique.
+- Les mesures de détail (par cœur, par disque, par carte réseau) ne sont lues que lorsque la page est affichée.
+
 ## 3.4.0
 
 - **Page Graphique : carte graphique, disques et réseau.** Trois petites courbes s'ajoutent sous le processeur et la mémoire, sur la même période (1, 5 ou 15 min) : l'usage de la carte graphique (son moteur le plus chargé, comme le Gestionnaire des tâches), le débit des disques avec le détail lecture et écriture, et le débit réseau avec le détail reçu et envoyé. La carte graphique n'est mesurée que lorsque la fenêtre de Corral est au premier plan, car la lecture de ces compteurs est coûteuse ; sa courbe est coupée le reste du temps.
