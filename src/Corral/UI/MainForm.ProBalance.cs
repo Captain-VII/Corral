@@ -155,8 +155,8 @@ public sealed partial class MainForm
         pbEnabled.Checked = pb.Enabled;
         pbNotify.Checked = settings.NotifyProBalance;
         pbFairness.Checked = pb.SessionFairness;
-        chart.Threshold = pb.Enabled ? pb.SystemThreshold : null;
-        chart.Invalidate();
+        cpuThreshold = pb.Enabled ? pb.SystemThreshold : null;
+        ConfigureChart();
         SetNum(pbSystem, pb.SystemThreshold);
         SetNum(pbProcess, pb.ProcessThreshold);
         SetNum(pbRestore, pb.RestoreThreshold);

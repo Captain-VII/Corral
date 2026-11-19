@@ -355,13 +355,7 @@ public sealed partial class MainForm
                 $"Memory in use right now: {snap.MemoryPercent:0} % ({FormatBytes(snap.MemoryUsed)} of {FormatBytes(snap.MemoryTotal)})")
                 : "";
         if (chart.Visible)
-        {
-            chart.Invalidate();
-            memChart.Caption = snap.MemoryTotal > 0 ? Tr($"{FormatBytes(snap.MemoryUsed)} utilisés sur {FormatBytes(snap.MemoryTotal)}", $"{FormatBytes(snap.MemoryUsed)} used of {FormatBytes(snap.MemoryTotal)}") : null;
-            memChart.Invalidate();
-            RefreshSystemCharts();
-            RefreshTop();
-        }
+            RefreshCharts(snap);
         if (IsPageVisible("Journal"))
             RefreshLog(force: false);
 

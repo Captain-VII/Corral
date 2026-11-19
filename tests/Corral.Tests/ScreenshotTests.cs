@@ -55,13 +55,19 @@ public class ScreenshotTests
                     form.History.Add(start.AddSeconds(s), v);
                     form.MemoryHistory.Add(start.AddSeconds(s), 46 + 6 * Math.Sin(s / 60.0) + (s > 150 ? 8 : 0));
                     form.GpuHistory.Add(start.AddSeconds(s), s is > 150 and < 190 ? 85 + rnd.NextDouble() * 10 : 4 + rnd.NextDouble() * 3);
-                    form.DiskHistory.Add(start.AddSeconds(s), (s % 40 < 5 ? 40 : 1) * (1 << 20) * (0.5 + rnd.NextDouble()));
-                    form.NetworkHistory.Add(start.AddSeconds(s), (2 + 1.5 * Math.Sin(s / 15.0)) * (1 << 20));
+                    double read = (s % 40 < 5 ? 40 : 1) * (1 << 20) * (0.5 + rnd.NextDouble()), write = (0.6 + 0.4 * Math.Sin(s / 9.0)) * (1 << 20);
+                    form.DiskReadHistory.Add(start.AddSeconds(s), read);
+                    form.DiskWriteHistory.Add(start.AddSeconds(s), write);
+                    form.DiskHistory.Add(start.AddSeconds(s), read + write);
+                    double down = (2 + 1.5 * Math.Sin(s / 15.0)) * (1 << 20), up = (0.2 + 0.1 * Math.Sin(s / 7.0)) * (1 << 20);
+                    form.NetworkReceivedHistory.Add(start.AddSeconds(s), down);
+                    form.NetworkSentHistory.Add(start.AddSeconds(s), up);
+                    form.NetworkHistory.Add(start.AddSeconds(s), down + up);
                     form.TopUsage.Add(start.AddSeconds(s), new[]
                     {
-                        new ProcessRow(1, "jeu", s is > 150 and < 190 ? 70 : 8, 6L << 30, null, false),
-                        new ProcessRow(2, "brave", 6, 2L << 30, null, false),
-                        new ProcessRow(3, "Discord", 2.5, 900L << 20, null, false),
+                        new ProcessRow(1, "jeu", s is > 150 and < 190 ? 70 : 8, 6L << 30, null, false, IoBytesPerSec: 700L << 10, Gpu: s is > 150 and < 190 ? 84 : 3),
+                        new ProcessRow(2, "brave", 6, 2L << 30, null, false, IoBytesPerSec: 120L << 10, Gpu: 1.5),
+                        new ProcessRow(3, "Discord", 2.5, 900L << 20, null, false, IoBytesPerSec: 40L << 10, Gpu: 0.8),
                         new ProcessRow(4, "steamwebhelper", 1.2, 600L << 20, null, false),
                         new ProcessRow(5, "OneDrive", 0.4, 200L << 20, null, false),
                     });
@@ -76,6 +82,15 @@ public class ScreenshotTests
                     .Invoke(chart, new object[] { new MouseEventArgs(MouseButtons.None, 0, chart.Width * 6 / 10, chart.Height / 2, 0) });
                 Pump(300);
                 Capture(form, Path.Combine(outDir, $"shot-{mode}-chart-hover.png"));
+
+                // Détail de chaque autre mesure (mémoire, GPU, disques, réseau), puis retour au processeur
+                for (int gauge = 1; gauge <= 4; gauge++)
+                {
+                    form.SelectGauge(gauge);
+                    Pump(400);
+                    Capture(form, Path.Combine(outDir, $"shot-{mode}-chart-{gauge}.png"));
+                }
+                form.SelectGauge(0);
 
                 Log.Info("chrome (1234) : règle « chrome* » → priorité BelowNormal", LogCategory.Rule);
                 Log.Info("ProBalance : jeu (4321) abaissé (CPU système 91%)", LogCategory.ProBalance);

@@ -45,7 +45,6 @@ public sealed partial class MainForm : Form
         KeyPreview = true;
 
         chart = new CpuChart(cpuHistory);
-        memChart = new CpuChart(memHistory);
         stats = new ProBalanceStats(Path.Combine(store.ConfigDirectory, "stats.json"));
         // Interventions comptées même fenêtre cachée (événement levé sur le thread du moteur)
         engine.ProBalanceActed += (names, _) =>
@@ -88,8 +87,6 @@ public sealed partial class MainForm : Form
         RestoreWindow();
         Theme.Apply(this);
         A11y.NameIconButtons(this, tips);
-        chart.AccessibleName = Tr("Historique du processeur", "CPU history");
-        memChart.AccessibleName = Tr("Historique de la mémoire", "Memory history");
         loading = false;
     }
 
@@ -99,6 +96,10 @@ public sealed partial class MainForm : Form
     public CpuHistory GpuHistory => gpuHistory;
     public CpuHistory DiskHistory => diskHistory;
     public CpuHistory NetworkHistory => netHistory;
+    public CpuHistory DiskReadHistory => diskRead;
+    public CpuHistory DiskWriteHistory => diskWrite;
+    public CpuHistory NetworkReceivedHistory => netReceived;
+    public CpuHistory NetworkSentHistory => netSent;
     public TopTracker TopUsage => topTracker;
 
     public void ShowPage(string title)
@@ -145,8 +146,8 @@ public sealed partial class MainForm : Form
             RefreshStartup();
         else if (pages[index].Title == "Processus" && lastSnapshot != null)
             ApplySnapshot(lastSnapshot);
-        if (pages[index].Page.Contains(chart))
-            chart.Invalidate();
+        if (pages[index].Page.Contains(chart) && lastSnapshot != null)
+            RefreshCharts(lastSnapshot);
     }
 
     /// <summary>Formulaire « Bug » du dépôt (.github/ISSUE_TEMPLATE/bug.yml), champs version et windows pré-remplis.</summary>
