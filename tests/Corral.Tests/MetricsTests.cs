@@ -75,12 +75,51 @@ public class MetricsTests : IDisposable
     }
 
     [Fact]
+    public void GpuEnginesAreReportedPerTypeAcrossCards()
+    {
+        var engines = GpuSampler.ByEngine(new[]
+        {
+            ("pid_1_luid_0x0_0xA_phys_0_eng_0_engtype_3D", 30.0),
+            ("pid_2_luid_0x0_0xA_phys_0_eng_0_engtype_3D", 20.0),
+            ("pid_1_luid_0x0_0xB_phys_0_eng_0_engtype_3D", 70.0), // autre carte : la plus chargée l'emporte
+            ("pid_1_luid_0x0_0xA_phys_0_eng_5_engtype_VideoDecode", 8.0),
+        });
+        Assert.Equal(70.0, engines["3D"]);
+        Assert.Equal(8.0, engines["VideoDecode"]);
+        Assert.Equal(2, engines.Count);
+    }
+
+    [Fact]
+    public void LogicalProcessorsSortNumerically()
+    {
+        var names = new[] { "0,10", "0,2", "1,0", "0,9" };
+        Assert.Equal(new[] { "0,2", "0,9", "0,10", "1,0" }, names.OrderBy(SystemSampler.LogicalIndex));
+    }
+
+    [Fact]
+    public void ChartScaleIsRounded()
+    {
+        Assert.Equal(1, Corral.UI.CpuChart.NiceTop(0));
+        Assert.Equal(2_000_000, Corral.UI.CpuChart.NiceTop(1_300_000));
+        Assert.Equal(8_000, Corral.UI.CpuChart.NiceTop(4_100));
+        Assert.Equal(10, Corral.UI.CpuChart.NiceTop(10));
+    }
+
+    [Fact]
     public void SystemSamplerNeverThrows()
     {
         using var sampler = new SystemSampler();
         for (int i = 0; i < 2; i++)
+        {
             if (sampler.Read(withGpu: true) is { } s)
                 Assert.True(s.DiskRead >= 0 && s.NetSent >= 0 && s.Gpu is null or (>= 0 and <= 100));
+            if (sampler.ReadDetails() is { } d)
+                Assert.All(d.Threads, v => Assert.InRange(v, 0, 100));
+        }
+        var perf = SystemSampler.ReadPerformance();
+        Assert.True(perf is null || (perf.PhysicalTotal > 0 && perf.Processes > 0));
+        Assert.NotNull(Hardware.CpuName);
+        Assert.NotNull(Hardware.Gpu.Name);
     }
 
     [Fact]

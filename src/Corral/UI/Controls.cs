@@ -188,7 +188,17 @@ public sealed class Card : Panel
         Controls.Add(content);
     }
 
-    public string? Title { get; }
+    public string? Title
+    {
+        get => title;
+        set
+        {
+            title = value;
+            Invalidate();
+        }
+    }
+
+    string? title;
 
     /// <summary>Le contenu remplit la carte (liste, graphique) au lieu de dicter sa hauteur.</summary>
     public bool Fill { get; }
@@ -547,6 +557,71 @@ public sealed class BufferedListView : ListView
 }
 
 /// <summary>Classement compact : nom, valeur et barre proportionnelle au premier (le plus gourmand).</summary>
+/// <summary>Tuiles « libellé / valeur » (avec barre facultative, 0-1) qui passent à la ligne selon la largeur.</summary>
+public sealed class StatGrid : Control
+{
+    const int Gap = 8;
+    IReadOnlyList<(string Label, string Value, double? Fraction)> items = Array.Empty<(string, string, double?)>();
+
+    public StatGrid()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        AccessibleRole = AccessibleRole.Table;
+    }
+
+    /// <summary>Largeur minimale d'une tuile.</summary>
+    public int TileWidth { get; set; } = 150;
+
+    int TileHeight => items.Any(i => i.Fraction != null) ? 60 : 52;
+
+    public void SetItems(IReadOnlyList<(string Label, string Value, double? Fraction)> list)
+    {
+        items = list;
+        AccessibleDescription = string.Join(" ; ", list.Select(i => $"{i.Label} {i.Value}"));
+        Invalidate();
+    }
+
+    int Columns(int width) => Math.Max(1, (width + Gap) / (TileWidth + Gap));
+
+    public override Size GetPreferredSize(Size proposed)
+    {
+        int rows = (items.Count + Columns(proposed.Width) - 1) / Columns(proposed.Width);
+        return new(proposed.Width, Math.Max(0, rows * (TileHeight + Gap) - Gap));
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var p = Theme.Current;
+        var g = e.Graphics;
+        g.Clear(p.Surface);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        int cols = Columns(Width), h = TileHeight;
+        float w = (Width - Gap * (cols - 1f)) / cols;
+        using var back = new SolidBrush(p.Surface2);
+        using var bar = new SolidBrush(p.Accent);
+        for (int i = 0; i < items.Count; i++)
+        {
+            var (label, value, fraction) = items[i];
+            var tile = new RectangleF(i % cols * (w + Gap), i / cols * (h + Gap), w, h);
+            using (var path = Ui.Rounded(tile, 6))
+                g.FillPath(back, path);
+            var inner = Rectangle.Round(new RectangleF(tile.X + 10, tile.Y + 6, tile.Width - 20, 18));
+            TextRenderer.DrawText(g, label, Font, inner, p.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            inner.Offset(0, 20);
+            TextRenderer.DrawText(g, value, Ui.Strong, inner, p.Fore, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            if (fraction is { } f)
+            {
+                var track = new RectangleF(tile.X + 10, tile.Bottom - 12, tile.Width - 20, 4);
+                using (var tp = Ui.Rounded(track, 2))
+                using (var tb = new SolidBrush(p.Back))
+                    g.FillPath(tb, tp);
+                using var fp = Ui.Rounded(new RectangleF(track.X, track.Y, Math.Max(4, track.Width * (float)Math.Clamp(f, 0, 1)), track.Height), 2);
+                g.FillPath(bar, fp);
+            }
+        }
+    }
+}
+
 public sealed class TopList : Control
 {
     IReadOnlyList<(string Name, double Value, string Text)> items = Array.Empty<(string, double, string)>();
@@ -559,6 +634,9 @@ public sealed class TopList : Control
     }
 
     public string EmptyText { get; set; } = Tr("Collecte des mesures…", "Collecting data…");
+
+    /// <summary>Valeur d'une barre pleine (ex. 100 pour des %) ; null = la première ligne.</summary>
+    public double? FullValue { get; set; }
 
     public void SetItems(IReadOnlyList<(string Name, double Value, string Text)> list)
     {
@@ -579,7 +657,7 @@ public sealed class TopList : Control
             TextRenderer.DrawText(g, EmptyText, Font, ClientRectangle, p.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.WordBreak);
             return;
         }
-        double max = Math.Max(items[0].Value, 1e-9);
+        double max = Math.Max(FullValue ?? items[0].Value, 1e-9);
         for (int i = 0; i < items.Count; i++)
         {
             int y = i * RowHeight;
@@ -590,7 +668,7 @@ public sealed class TopList : Control
             using (var trackPath = Ui.Rounded(track, 3))
             using (var back = new SolidBrush(p.Surface2))
                 g.FillPath(back, trackPath);
-            float w = (float)Math.Max(6, track.Width * value / max);
+            float w = (float)Math.Clamp(track.Width * value / max, 6, track.Width);
             using var barPath = Ui.Rounded(new RectangleF(track.X, track.Y, w, track.Height), 3);
             using var bar = new SolidBrush(p.Accent);
             g.FillPath(bar, barPath);

@@ -38,6 +38,21 @@ public class MonitoringTests : IDisposable
     }
 
     [Fact]
+    public void TopRanksByPeakGpuAndAverageIo()
+    {
+        var top = new TopTracker(TimeSpan.FromMinutes(15));
+        var t0 = new DateTime(2026, 1, 1, 12, 0, 0);
+        // GPU non mesuré au 1er passage (0) : le pic n'est pas dilué ; E/S des instances additionnées puis moyennées
+        top.Add(t0, new[] { new ProcessRow(1, "jeu", 0, 0, null, false, IoBytesPerSec: 300, Gpu: 0), new ProcessRow(2, "jeu", 0, 0, null, false, IoBytesPerSec: 100) });
+        top.Add(t0.AddSeconds(1), new[] { new ProcessRow(1, "jeu", 0, 0, null, false, IoBytesPerSec: 0, Gpu: 80), new ProcessRow(3, "vidéo", 0, 0, null, false, Gpu: 12) });
+
+        var gpu = top.Top(t0, TopTracker.Metric.Gpu);
+        Assert.Equal(new[] { ("jeu", 80.0), ("vidéo", 12.0) }, gpu.Select(e => (e.Name, e.Value)));
+        var io = top.Top(t0, TopTracker.Metric.Io);
+        Assert.Equal(("jeu", 200.0), (io[0].Name, io[0].Value)); // (400 + 0) / 2
+    }
+
+    [Fact]
     public void TopForgetsOldSamples()
     {
         var top = new TopTracker(TimeSpan.FromMinutes(1));

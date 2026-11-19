@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.Win32;
 using System.Runtime.InteropServices;
 
 namespace Corral.Core;
@@ -195,47 +196,178 @@ public sealed class GpuSampler : IDisposable
     }
 
     /// <summary>Usage global : tous processus confondus, par carte et type de moteur ; le plus chargé l'emporte (comme le Gestionnaire des tâches).</summary>
-    public static double Total(IEnumerable<(string Instance, double Value)> values)
+    public static double Total(IEnumerable<(string Instance, double Value)> values) =>
+        ByEngine(values) is { Count: > 0 } engines ? engines.Values.Max() : 0;
+
+    /// <summary>Charge par type de moteur (« 3D », « VideoDecode »…), tous processus confondus ; avec deux cartes, la plus chargée.</summary>
+    public static Dictionary<string, double> ByEngine(IEnumerable<(string Instance, double Value)> values)
     {
-        var byEngine = new Dictionary<string, double>();
+        var perCard = new Dictionary<(string Card, string Type), double>();
         foreach (var (instance, value) in values)
         {
             int luid = instance.IndexOf("_luid_", StringComparison.Ordinal), eng = instance.IndexOf("_eng_", StringComparison.Ordinal);
             int t = instance.IndexOf("engtype_", StringComparison.Ordinal);
             if (luid < 0 || eng < luid || t < eng)
                 continue;
-            var key = string.Concat(instance.AsSpan(luid, eng - luid), instance.AsSpan(t));
-            byEngine[key] = byEngine.GetValueOrDefault(key) + Math.Max(0, value);
+            var key = (instance[luid..eng], instance[(t + 8)..]);
+            perCard[key] = perCard.GetValueOrDefault(key) + Math.Max(0, value);
         }
-        return byEngine.Count > 0 ? Math.Min(100, byEngine.Values.Max()) : 0;
+        var result = new Dictionary<string, double>();
+        foreach (var ((_, type), v) in perCard)
+            result[type] = Math.Min(100, Math.Max(result.GetValueOrDefault(type), v));
+        return result;
     }
 
     public void Dispose() => pdh.Dispose();
 }
 
-/// <summary>Mesures de tout le PC pour la page Graphique : débits disque et réseau (octets/s), usage GPU (%).</summary>
+/// <summary>
+/// Mesures de tout le PC pour la page Graphique. <see cref="Read"/> (débits, GPU) est appelé à chaque instantané du moteur ;
+/// <see cref="ReadDetails"/> (par cœur, par disque, par carte réseau) seulement quand la page est affichée, depuis un autre thread :
+/// chaque requête PDH n'est utilisée que par un seul thread.
+/// </summary>
 public sealed class SystemSampler : IDisposable
 {
-    public readonly record struct Sample(double DiskRead, double DiskWrite, double NetReceived, double NetSent, double? Gpu);
+    /// <summary>Débits en octets/s ; GPU en % (null si non lu), mémoire vidéo en octets, charge par type de moteur.</summary>
+    public sealed record Sample(double DiskRead, double DiskWrite, double NetReceived, double NetSent,
+        double? Gpu, IReadOnlyDictionary<string, double> GpuEngines, long GpuDedicated, long GpuShared);
+
+    /// <summary>Charge de chaque processeur logique (%), fréquence (MHz), défauts de page/s, activité (%) et file d'attente
+    /// de chaque disque physique, trafic (octets/s) et débit nominal (bits/s) de chaque carte réseau.</summary>
+    public sealed record Details(IReadOnlyList<double> Threads, double? FrequencyMHz, double PageFaults,
+        IReadOnlyList<(string Name, double Active, double Queue)> Disks,
+        IReadOnlyList<(string Name, double BytesPerSec, double Bandwidth)> Adapters);
+
+    /// <summary>Mémoire (octets) et compteurs du système, via GetPerformanceInfo.</summary>
+    public sealed record Performance(long CommitTotal, long CommitLimit, long PhysicalTotal, long PhysicalAvailable, long SystemCache,
+        int Handles, int Processes, int Threads);
+
+    static readonly IReadOnlyDictionary<string, double> NoEngines = new Dictionary<string, double>();
 
     readonly PdhCounters io = new(Tr("Débits disque et réseau indisponibles : ", "Disk and network rates unavailable: "),
         @"\PhysicalDisk(_Total)\Disk Read Bytes/sec", @"\PhysicalDisk(_Total)\Disk Write Bytes/sec",
         @"\Network Interface(*)\Bytes Received/sec", @"\Network Interface(*)\Bytes Sent/sec");
-    readonly PdhCounters gpu = new(Tr("Usage GPU global indisponible : ", "Overall GPU usage unavailable: "), GpuSampler.Counter);
+    readonly PdhCounters gpu = new(Tr("Usage GPU global indisponible : ", "Overall GPU usage unavailable: "),
+        GpuSampler.Counter, @"\GPU Adapter Memory(*)\Dedicated Usage", @"\GPU Adapter Memory(*)\Shared Usage");
+    readonly PdhCounters detail = new(Tr("Détail de la page Graphique indisponible : ", "Charts page details unavailable: "),
+        @"\Processor Information(*)\% Processor Time", @"\Processor Information(_Total)\% Processor Performance",
+        @"\Processor Information(_Total)\Processor Frequency", @"\Memory\Page Faults/sec",
+        @"\PhysicalDisk(*)\% Idle Time", @"\PhysicalDisk(*)\Avg. Disk Queue Length",
+        @"\Network Interface(*)\Bytes Total/sec", @"\Network Interface(*)\Current Bandwidth");
 
     /// <summary>Null si les compteurs sont indisponibles. Le GPU (compteurs coûteux) n'est lu que si <paramref name="withGpu"/>.</summary>
     public Sample? Read(bool withGpu)
     {
         if (io.Collect() is not { } v)
             return null;
-        double? g = withGpu && gpu.Collect() is { } gv ? GpuSampler.Total(gv[0]) : null;
-        return new Sample(v[0].Sum(x => x.Value), v[1].Sum(x => x.Value), v[2].Sum(x => x.Value), v[3].Sum(x => x.Value), g);
+        double? total = null;
+        var engines = NoEngines;
+        long dedicated = 0, shared = 0;
+        if (withGpu && gpu.Collect() is { } gv)
+        {
+            engines = GpuSampler.ByEngine(gv[0]);
+            total = engines.Count > 0 ? engines.Values.Max() : 0;
+            // shortcut: carte la plus remplie seulement (dGPU en général), sans relier le LUID au nom lu dans le registre
+            if (gv[1].Count > 0)
+            {
+                var busiest = gv[1].MaxBy(x => x.Value);
+                dedicated = (long)busiest.Value;
+                shared = (long)gv[2].FirstOrDefault(x => x.Instance == busiest.Instance).Value;
+            }
+        }
+        return new Sample(v[0].Sum(x => x.Value), v[1].Sum(x => x.Value), v[2].Sum(x => x.Value), v[3].Sum(x => x.Value),
+            total, engines, dedicated, shared);
+    }
+
+    public Details? ReadDetails()
+    {
+        if (detail.Collect() is not { } v)
+            return null;
+        var threads = v[0].Where(x => !x.Instance.Contains("_Total", StringComparison.Ordinal))
+            .Select(x => (Key: LogicalIndex(x.Instance), x.Value)).OrderBy(x => x.Key).Select(x => Math.Clamp(x.Value, 0, 100)).ToList();
+        double? freq = v[1].Count > 0 && v[2].Count > 0 ? v[2][0].Value * v[1][0].Value / 100 : null;
+        var queues = v[5].ToDictionary(x => x.Instance, x => x.Value);
+        var disks = v[4].Where(x => x.Instance != "_Total").OrderBy(x => x.Instance, StringComparer.Ordinal)
+            .Select(x => (x.Instance, Math.Clamp(100 - x.Value, 0, 100), queues.GetValueOrDefault(x.Instance))).ToList();
+        var bandwidth = v[7].GroupBy(x => x.Instance).ToDictionary(g => g.Key, g => g.First().Value);
+        var adapters = v[6].Where(x => bandwidth.GetValueOrDefault(x.Instance) > 0)
+            .Select(x => (x.Instance, x.Value, bandwidth[x.Instance])).OrderByDescending(x => x.Item2).ToList();
+        return new Details(threads, freq, v[3].Sum(x => x.Value), disks, adapters);
+    }
+
+    /// <summary>Instance « groupe,numéro » d'un processeur logique, triable (« 0,10 » après « 0,9 »).</summary>
+    internal static (int Group, int Number) LogicalIndex(string instance)
+    {
+        var parts = instance.Split(',');
+        return (parts.Length == 2 && int.TryParse(parts[0], out int g) && int.TryParse(parts[1], out int n)) ? (g, n) : (int.MaxValue, 0);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct PERFORMANCE_INFORMATION
+    {
+        public uint cb;
+        public UIntPtr CommitTotal, CommitLimit, CommitPeak, PhysicalTotal, PhysicalAvailable, SystemCache,
+            KernelTotal, KernelPaged, KernelNonpaged, PageSize;
+        public uint HandleCount, ProcessCount, ThreadCount;
+    }
+
+    [DllImport("psapi.dll", SetLastError = true)]
+    static extern bool GetPerformanceInfo(out PERFORMANCE_INFORMATION info, uint size);
+
+    public static Performance? ReadPerformance()
+    {
+        if (!GetPerformanceInfo(out var i, (uint)Marshal.SizeOf<PERFORMANCE_INFORMATION>()))
+            return null;
+        long page = (long)i.PageSize;
+        return new Performance((long)i.CommitTotal * page, (long)i.CommitLimit * page, (long)i.PhysicalTotal * page,
+            (long)i.PhysicalAvailable * page, (long)i.SystemCache * page, (int)i.HandleCount, (int)i.ProcessCount, (int)i.ThreadCount);
     }
 
     public void Dispose()
     {
         io.Dispose();
         gpu.Dispose();
+        detail.Dispose();
+    }
+}
+
+/// <summary>Noms du matériel affichés par la page Graphique, lus une fois dans le registre.</summary>
+public static class Hardware
+{
+    static string? cpuName;
+    static (string Name, long Memory)? gpu;
+
+    public static string CpuName => cpuName ??= Read(() =>
+        (Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0")?.GetValue("ProcessorNameString") as string)?.Trim() ?? "", "");
+
+    /// <summary>Carte graphique qui a le plus de mémoire dédiée (la carte dédiée plutôt que le GPU intégré).</summary>
+    public static (string Name, long Memory) Gpu => gpu ??= Read(ReadGpu, ("", 0L));
+
+    static (string, long) ReadGpu()
+    {
+        using var cls = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}");
+        var best = ("", 0L);
+        foreach (var sub in cls?.GetSubKeyNames() ?? Array.Empty<string>())
+        {
+            using var k = Read(() => cls!.OpenSubKey(sub), null); // « Properties » est interdite en lecture
+            if (k?.GetValue("DriverDesc") is not string name)
+                continue;
+            long memory = k.GetValue("HardwareInformation.qwMemorySize") switch
+            {
+                long q => q,
+                byte[] b when b.Length >= 8 => BitConverter.ToInt64(b),
+                _ => k.GetValue("HardwareInformation.MemorySize") switch { int d => (uint)d, byte[] b when b.Length >= 4 => BitConverter.ToUInt32(b), _ => 0 },
+            };
+            if (best.Item1 == "" || memory > best.Item2)
+                best = (name, memory);
+        }
+        return best;
+    }
+
+    static T Read<T>(Func<T> read, T fallback)
+    {
+        try { return read(); }
+        catch (Exception) { return fallback; } // registre illisible : on affiche sans le nom
     }
 }
 

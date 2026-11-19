@@ -10,12 +10,17 @@ namespace Corral.Core;
 /// </summary>
 public sealed class TopTracker
 {
-    public enum Metric { Cpu, Memory }
+    public enum Metric { Cpu, Memory, Gpu, Io }
 
     public sealed record Entry(string Name, double Value);
 
+    readonly record struct Usage(double Cpu, long Mem, double Gpu, long Io)
+    {
+        public double Get(Metric m) => m switch { Metric.Cpu => Cpu, Metric.Memory => Mem, Metric.Gpu => Gpu, _ => Io };
+    }
+
     readonly object sync = new();
-    readonly Queue<(DateTime Time, Dictionary<string, (double Cpu, long Mem)> Usage)> samples = new();
+    readonly Queue<(DateTime Time, Dictionary<string, Usage> Usage)> samples = new();
     readonly TimeSpan keep;
     const int PerSample = 15;
 
@@ -23,14 +28,13 @@ public sealed class TopTracker
 
     public void Add(DateTime time, IEnumerable<ProcessRow> rows)
     {
-        var byName = new Dictionary<string, (double Cpu, long Mem)>(StringComparer.OrdinalIgnoreCase);
+        var byName = new Dictionary<string, Usage>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in rows)
         {
             byName.TryGetValue(r.Name, out var u);
-            byName[r.Name] = (u.Cpu + r.Cpu, u.Mem + r.MemoryBytes);
+            byName[r.Name] = new Usage(u.Cpu + r.Cpu, u.Mem + r.MemoryBytes, Math.Min(100, u.Gpu + r.Gpu), u.Io + r.IoBytesPerSec);
         }
-        var kept = byName.OrderByDescending(kv => kv.Value.Cpu).Take(PerSample)
-            .Concat(byName.OrderByDescending(kv => kv.Value.Mem).Take(PerSample))
+        var kept = Enum.GetValues<Metric>().SelectMany(m => byName.OrderByDescending(kv => kv.Value.Get(m)).Take(PerSample))
             .GroupBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().Value, StringComparer.OrdinalIgnoreCase);
         lock (sync)
@@ -42,8 +46,9 @@ public sealed class TopTracker
     }
 
     /// <summary>
-    /// Les <paramref name="count"/> plus gourmands depuis <paramref name="from"/> :
-    /// CPU moyen sur la période (en %), ou pic de mémoire (en octets).
+    /// Les <paramref name="count"/> plus gourmands depuis <paramref name="from"/> : CPU moyen sur la période (en %),
+    /// pic de mémoire (en octets), pic de GPU (en % ; mesuré seulement Corral au premier plan, une moyenne serait faussée)
+    /// ou E/S moyennes (en octets/s).
     /// </summary>
     public List<Entry> Top(DateTime from, Metric metric, int count = 5)
     {
@@ -58,17 +63,19 @@ public sealed class TopTracker
                 foreach (var (name, u) in usage)
                 {
                     totals.TryGetValue(name, out var v);
-                    totals[name] = metric == Metric.Cpu ? v + u.Cpu : Math.Max(v, u.Mem);
+                    totals[name] = Averaged(metric) ? v + u.Get(metric) : Math.Max(v, u.Get(metric));
                 }
             }
             return totals
-                .Select(kv => new Entry(kv.Key, metric == Metric.Cpu ? kv.Value / window.Count : kv.Value))
+                .Select(kv => new Entry(kv.Key, Averaged(metric) ? kv.Value / window.Count : kv.Value))
                 .Where(e => e.Value > 0)
                 .OrderByDescending(e => e.Value)
                 .Take(count)
                 .ToList();
         }
     }
+
+    static bool Averaged(Metric m) => m is Metric.Cpu or Metric.Io;
 }
 
 /// <summary>
