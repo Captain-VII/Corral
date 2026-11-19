@@ -1,5 +1,9 @@
 # Journal des modifications
 
+## 3.4.0
+
+- **Page Graphique : carte graphique, disques et réseau.** Trois petites courbes s'ajoutent sous le processeur et la mémoire, sur la même période (1, 5 ou 15 min) : l'usage de la carte graphique (son moteur le plus chargé, comme le Gestionnaire des tâches), le débit des disques avec le détail lecture et écriture, et le débit réseau avec le détail reçu et envoyé. La carte graphique n'est mesurée que lorsque la fenêtre de Corral est au premier plan, car la lecture de ces compteurs est coûteuse ; sa courbe est coupée le reste du temps.
+
 ## 3.3.1
 
 - **Finitions de l'interface.** Plus de texte tronqué dans les colonnes Cœurs (« 8 (CPU Sets) ») des règles et Disque des processus. La phrase d'explication en haut de chaque page passe sous les boutons, sur toute la largeur : sur la page Règles, elle se tassait sur cinq lignes. Les libellés sans description (« Après », « Seuil ») sont alignés sur leur champ, les listes Thème et Langue ont la même largeur, et la fiche d'un processus ne s'ouvre plus avec le nom sélectionné.
