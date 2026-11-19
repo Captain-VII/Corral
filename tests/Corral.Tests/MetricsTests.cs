@@ -59,6 +59,31 @@ public class MetricsTests : IDisposable
     }
 
     [Fact]
+    public void GpuTotalIsTheBusiestEngineTypePerCard()
+    {
+        Assert.Equal(45.0, GpuSampler.Total(new[]
+        {
+            ("pid_100_luid_0x0_0xD1E5_phys_0_eng_0_engtype_3D", 20.0),
+            ("pid_100_luid_0x0_0xD1E5_phys_0_eng_1_engtype_3D", 15.0),
+            ("pid_200_luid_0x0_0xD1E5_phys_0_eng_0_engtype_3D", 10.0), // tous processus confondus : 45
+            ("pid_100_luid_0x0_0xD1E5_phys_0_eng_5_engtype_VideoDecode", 30.0),
+            ("pid_300_luid_0x0_0xAAAA_phys_0_eng_0_engtype_3D", 40.0), // autre carte, comptée à part
+            ("_Total", 99.0),
+        }));
+        Assert.Equal(100.0, GpuSampler.Total(new[] { ("pid_1_luid_0x0_0x1_phys_0_eng_0_engtype_3D", 80.0), ("pid_2_luid_0x0_0x1_phys_0_eng_0_engtype_3D", 70.0) }));
+        Assert.Equal(0.0, GpuSampler.Total(Array.Empty<(string, double)>()));
+    }
+
+    [Fact]
+    public void SystemSamplerNeverThrows()
+    {
+        using var sampler = new SystemSampler();
+        for (int i = 0; i < 2; i++)
+            if (sampler.Read(withGpu: true) is { } s)
+                Assert.True(s.DiskRead >= 0 && s.NetSent >= 0 && s.Gpu is null or (>= 0 and <= 100));
+    }
+
+    [Fact]
     public void GpuSamplerNeverThrows()
     {
         using var sampler = new GpuSampler();
