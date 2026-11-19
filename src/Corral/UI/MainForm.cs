@@ -96,6 +96,9 @@ public sealed partial class MainForm : Form
     /// <summary>Historique CPU affiché par l'onglet Graphique (exposé pour les captures de test).</summary>
     public CpuHistory History => cpuHistory;
     public CpuHistory MemoryHistory => memHistory;
+    public CpuHistory GpuHistory => gpuHistory;
+    public CpuHistory DiskHistory => diskHistory;
+    public CpuHistory NetworkHistory => netHistory;
     public TopTracker TopUsage => topTracker;
 
     public void ShowPage(string title)
@@ -260,6 +263,7 @@ public sealed partial class MainForm : Form
         {
             Theme.Changed -= OnThemeChanged; // événement statique : éviter une fuite
             tips.Dispose();
+            systemSampler.Dispose();
             foreach (var img in iconCache.Values)
                 img.Dispose();
         }

@@ -54,6 +54,9 @@ public class ScreenshotTests
                     if (s is > 150 and < 190) v = 80 + rnd.NextDouble() * 15;
                     form.History.Add(start.AddSeconds(s), v);
                     form.MemoryHistory.Add(start.AddSeconds(s), 46 + 6 * Math.Sin(s / 60.0) + (s > 150 ? 8 : 0));
+                    form.GpuHistory.Add(start.AddSeconds(s), s is > 150 and < 190 ? 85 + rnd.NextDouble() * 10 : 4 + rnd.NextDouble() * 3);
+                    form.DiskHistory.Add(start.AddSeconds(s), (s % 40 < 5 ? 40 : 1) * (1 << 20) * (0.5 + rnd.NextDouble()));
+                    form.NetworkHistory.Add(start.AddSeconds(s), (2 + 1.5 * Math.Sin(s / 15.0)) * (1 << 20));
                     form.TopUsage.Add(start.AddSeconds(s), new[]
                     {
                         new ProcessRow(1, "jeu", s is > 150 and < 190 ? 70 : 8, 6L << 30, null, false),

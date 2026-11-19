@@ -319,9 +319,11 @@ public sealed partial class MainForm
     void OnSnapshot(EngineSnapshot snapshot)
     {
         // Historique alimenté même fenêtre cachée ; la toute première mesure (sans référence, donc 0) est ignorée.
-        if (Interlocked.Increment(ref snapshotCount) > 1)
+        var t = DateTime.UtcNow;
+        bool record = Interlocked.Increment(ref snapshotCount) > 1;
+        SampleSystem(t, record);
+        if (record)
         {
-            var t = DateTime.UtcNow;
             cpuHistory.Add(t, snapshot.SystemCpu);
             if (snapshot.MemoryTotal > 0)
                 memHistory.Add(t, snapshot.MemoryPercent);
@@ -357,6 +359,7 @@ public sealed partial class MainForm
             chart.Invalidate();
             memChart.Caption = snap.MemoryTotal > 0 ? Tr($"{FormatBytes(snap.MemoryUsed)} utilisés sur {FormatBytes(snap.MemoryTotal)}", $"{FormatBytes(snap.MemoryUsed)} used of {FormatBytes(snap.MemoryTotal)}") : null;
             memChart.Invalidate();
+            RefreshSystemCharts();
             RefreshTop();
         }
         if (IsPageVisible("Journal"))

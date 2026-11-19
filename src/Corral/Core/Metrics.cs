@@ -42,11 +42,10 @@ public static class ProcessIo
 }
 
 /// <summary>
-/// Usage du GPU par processus, lu dans les compteurs de performances « GPU Engine » (comme le Gestionnaire des tâches) :
-/// pour chaque processus, on additionne les moteurs d'un même type (3D, Copy, VideoDecode…) et on garde le type le plus chargé.
-/// À n'utiliser que depuis un seul thread (celui du moteur).
+/// Compteurs de performances PDH lus ensemble, par leur nom anglais (indépendant de la langue de Windows).
+/// Au premier échec, la lecture est abandonnée (journalisé une fois). À n'utiliser que depuis un seul thread.
 /// </summary>
-public sealed class GpuSampler : IDisposable
+public sealed class PdhCounters : IDisposable
 {
     const uint PDH_FMT_DOUBLE = 0x200, PDH_FMT_NOCAP100 = 0x8000, PDH_MORE_DATA = 0x800007D2;
 
@@ -73,66 +72,105 @@ public sealed class GpuSampler : IDisposable
     [DllImport("pdh.dll")]
     static extern uint PdhCloseQuery(IntPtr query);
 
-    static readonly IReadOnlyDictionary<int, double> Empty = new Dictionary<int, double>();
-
-    IntPtr query, counter;
+    readonly string[] paths;
+    readonly string warning;
+    readonly IntPtr[] counters;
+    IntPtr query;
     bool failed;
 
-    /// <summary>Usage par PID (0-100 %). Vide si les compteurs sont indisponibles (pilote ancien, machine virtuelle…).</summary>
-    public IReadOnlyDictionary<int, double> Sample()
+    /// <param name="warning">Début du message journalisé en cas d'échec (déjà traduit).</param>
+    public PdhCounters(string warning, params string[] paths)
+    {
+        this.warning = warning;
+        this.paths = paths;
+        counters = new IntPtr[paths.Length];
+    }
+
+    /// <summary>Valeurs par instance de chaque compteur (dans l'ordre des chemins), ou null si indisponibles.
+    /// Un compteur sans valeur (premier passage, aucune instance) donne une liste vide.</summary>
+    public List<(string Instance, double Value)>[]? Collect()
     {
         if (failed)
-            return Empty;
+            return null;
         try
         {
             if (query == IntPtr.Zero)
             {
-                if (PdhOpenQuery(null, IntPtr.Zero, out query) != 0
-                    || PdhAddEnglishCounter(query, @"\GPU Engine(*)\Utilization Percentage", IntPtr.Zero, out counter) != 0)
-                {
-                    Fail(Tr("compteurs GPU indisponibles", "GPU counters unavailable"));
-                    return Empty;
-                }
+                if (PdhOpenQuery(null, IntPtr.Zero, out query) != 0)
+                    return Fail(Tr("compteurs indisponibles", "counters unavailable"));
+                for (int i = 0; i < paths.Length; i++)
+                    if (PdhAddEnglishCounter(query, paths[i], IntPtr.Zero, out counters[i]) != 0)
+                        return Fail(Tr("compteurs indisponibles", "counters unavailable"));
             }
             if (PdhCollectQueryData(query) != 0)
-                return Empty;
-
-            uint size = 0;
-            uint status = PdhGetFormattedCounterArray(counter, PDH_FMT_DOUBLE | PDH_FMT_NOCAP100, ref size, out _, IntPtr.Zero);
-            if (status != PDH_MORE_DATA || size == 0)
-                return Empty; // premier passage (pas encore de référence) ou aucun moteur
-            var buffer = Marshal.AllocHGlobal((int)size);
-            try
-            {
-                if (PdhGetFormattedCounterArray(counter, PDH_FMT_DOUBLE | PDH_FMT_NOCAP100, ref size, out uint count, buffer) != 0)
-                    return Empty;
-                int stride = Marshal.SizeOf<Item>();
-                var values = new List<(string, double)>((int)count);
-                for (int i = 0; i < count; i++)
-                {
-                    var item = Marshal.PtrToStructure<Item>(buffer + i * stride);
-                    if (item.Status <= 1 && Marshal.PtrToStringUni(item.Name) is { } name) // donnée valide ou nouvelle
-                        values.Add((name, item.Value));
-                }
-                return Aggregate(values);
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(buffer);
-            }
+                return null;
+            var result = new List<(string, double)>[counters.Length];
+            for (int i = 0; i < counters.Length; i++)
+                result[i] = Read(counters[i]);
+            return result;
         }
         catch (Exception ex)
         {
-            Fail(ex.Message);
-            return Empty;
+            return Fail(ex.Message);
         }
     }
 
-    void Fail(string reason)
+    static List<(string, double)> Read(IntPtr counter)
+    {
+        var values = new List<(string, double)>();
+        uint size = 0;
+        uint status = PdhGetFormattedCounterArray(counter, PDH_FMT_DOUBLE | PDH_FMT_NOCAP100, ref size, out _, IntPtr.Zero);
+        if (status != PDH_MORE_DATA || size == 0)
+            return values; // premier passage (pas encore de référence) ou aucune instance
+        var buffer = Marshal.AllocHGlobal((int)size);
+        try
+        {
+            if (PdhGetFormattedCounterArray(counter, PDH_FMT_DOUBLE | PDH_FMT_NOCAP100, ref size, out uint count, buffer) != 0)
+                return values;
+            int stride = Marshal.SizeOf<Item>();
+            for (int i = 0; i < count; i++)
+            {
+                var item = Marshal.PtrToStructure<Item>(buffer + i * stride);
+                if (item.Status <= 1 && Marshal.PtrToStringUni(item.Name) is { } name) // donnée valide ou nouvelle
+                    values.Add((name, item.Value));
+            }
+            return values;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    List<(string, double)>[]? Fail(string reason)
     {
         failed = true;
-        Log.Warn(Tr("Usage GPU par processus désactivé : ", "Per-process GPU usage disabled: ") + reason);
+        Log.Warn(warning + reason);
+        return null;
     }
+
+    public void Dispose()
+    {
+        if (query != IntPtr.Zero)
+            PdhCloseQuery(query);
+        query = IntPtr.Zero;
+    }
+}
+
+/// <summary>
+/// Usage du GPU par processus, lu dans les compteurs de performances « GPU Engine » (comme le Gestionnaire des tâches) :
+/// pour chaque processus, on additionne les moteurs d'un même type (3D, Copy, VideoDecode…) et on garde le type le plus chargé.
+/// À n'utiliser que depuis un seul thread (celui du moteur).
+/// </summary>
+public sealed class GpuSampler : IDisposable
+{
+    public const string Counter = @"\GPU Engine(*)\Utilization Percentage";
+    static readonly IReadOnlyDictionary<int, double> Empty = new Dictionary<int, double>();
+
+    readonly PdhCounters pdh = new(Tr("Usage GPU par processus désactivé : ", "Per-process GPU usage disabled: "), Counter);
+
+    /// <summary>Usage par PID (0-100 %). Vide si les compteurs sont indisponibles (pilote ancien, machine virtuelle…).</summary>
+    public IReadOnlyDictionary<int, double> Sample() => pdh.Collect() is { } v ? Aggregate(v[0]) : Empty;
 
     /// <summary>Regroupe les instances « pid_1234_luid_…_eng_0_engtype_3D » par processus.</summary>
     public static Dictionary<int, double> Aggregate(IEnumerable<(string Instance, double Value)> values)
@@ -156,11 +194,48 @@ public sealed class GpuSampler : IDisposable
         return result;
     }
 
+    /// <summary>Usage global : tous processus confondus, par carte et type de moteur ; le plus chargé l'emporte (comme le Gestionnaire des tâches).</summary>
+    public static double Total(IEnumerable<(string Instance, double Value)> values)
+    {
+        var byEngine = new Dictionary<string, double>();
+        foreach (var (instance, value) in values)
+        {
+            int luid = instance.IndexOf("_luid_", StringComparison.Ordinal), eng = instance.IndexOf("_eng_", StringComparison.Ordinal);
+            int t = instance.IndexOf("engtype_", StringComparison.Ordinal);
+            if (luid < 0 || eng < luid || t < eng)
+                continue;
+            var key = string.Concat(instance.AsSpan(luid, eng - luid), instance.AsSpan(t));
+            byEngine[key] = byEngine.GetValueOrDefault(key) + Math.Max(0, value);
+        }
+        return byEngine.Count > 0 ? Math.Min(100, byEngine.Values.Max()) : 0;
+    }
+
+    public void Dispose() => pdh.Dispose();
+}
+
+/// <summary>Mesures de tout le PC pour la page Graphique : débits disque et réseau (octets/s), usage GPU (%).</summary>
+public sealed class SystemSampler : IDisposable
+{
+    public readonly record struct Sample(double DiskRead, double DiskWrite, double NetReceived, double NetSent, double? Gpu);
+
+    readonly PdhCounters io = new(Tr("Débits disque et réseau indisponibles : ", "Disk and network rates unavailable: "),
+        @"\PhysicalDisk(_Total)\Disk Read Bytes/sec", @"\PhysicalDisk(_Total)\Disk Write Bytes/sec",
+        @"\Network Interface(*)\Bytes Received/sec", @"\Network Interface(*)\Bytes Sent/sec");
+    readonly PdhCounters gpu = new(Tr("Usage GPU global indisponible : ", "Overall GPU usage unavailable: "), GpuSampler.Counter);
+
+    /// <summary>Null si les compteurs sont indisponibles. Le GPU (compteurs coûteux) n'est lu que si <paramref name="withGpu"/>.</summary>
+    public Sample? Read(bool withGpu)
+    {
+        if (io.Collect() is not { } v)
+            return null;
+        double? g = withGpu && gpu.Collect() is { } gv ? GpuSampler.Total(gv[0]) : null;
+        return new Sample(v[0].Sum(x => x.Value), v[1].Sum(x => x.Value), v[2].Sum(x => x.Value), v[3].Sum(x => x.Value), g);
+    }
+
     public void Dispose()
     {
-        if (query != IntPtr.Zero)
-            PdhCloseQuery(query);
-        query = IntPtr.Zero;
+        io.Dispose();
+        gpu.Dispose();
     }
 }
 

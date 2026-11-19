@@ -171,7 +171,7 @@ public sealed class CpuChart : Control
         TextRenderer.DrawText(g, text, Font, box, p.Fore, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
     }
 
-    static IEnumerable<List<(DateTime Time, double Value)>> Segments(List<(DateTime Time, double Value)> data)
+    internal static IEnumerable<List<(DateTime Time, double Value)>> Segments(List<(DateTime Time, double Value)> data)
     {
         var current = new List<(DateTime Time, double Value)>();
         foreach (var d in data)
@@ -231,6 +231,9 @@ public sealed class MiniChart : Control
     public double? Max { get; set; } = 100;
     public TimeSpan Range { get; set; } = TimeSpan.FromMinutes(5);
 
+    /// <summary>Détail affiché en bas à droite (ex. « ↓ 1,2 Mo/s  ↑ 40 Ko/s »).</summary>
+    public string? Caption { get; set; }
+
     public void SetData(List<(DateTime Time, double Value)> points)
     {
         data = points;
@@ -252,29 +255,33 @@ public sealed class MiniChart : Control
         var plot = new Rectangle(10, 34, Width - 20, Height - 56);
         double peak = data.Count > 0 ? data.Max(d => d.Value) : 0;
         double top = Max ?? Math.Max(peak * 1.15, 1);
-        TextRenderer.DrawText(g, data.Count > 0 ? Tr($"Pic {Format(peak)}", $"Peak {Format(peak)}") : Tr("Collecte des mesures…", "Collecting data…"), Font,
-            new Point(10, plot.Bottom + 4), p.Muted);
+        var footer = data.Count > 0 ? Tr($"Pic {Format(peak)}", $"Peak {Format(peak)}") : Tr("Collecte des mesures…", "Collecting data…");
+        TextRenderer.DrawText(g, footer, Font, new Point(10, plot.Bottom + 4), p.Muted);
+        // Détail omis s'il chevaucherait le pic (fenêtre étroite)
+        if (Caption != null && 10 + TextRenderer.MeasureText(g, footer, Font).Width + 16 + TextRenderer.MeasureText(g, Caption, Font).Width <= Width - 10)
+            TextRenderer.DrawText(g, Caption, Font, new Rectangle(0, plot.Bottom + 4, Width - 10, 18), p.Muted, TextFormatFlags.Right);
 
         var now = DateTime.UtcNow;
         var from = now - Range;
-        var pts = data.Where(d => d.Time >= from)
-            .Select(d => new PointF(plot.Left + (float)((d.Time - from).TotalMilliseconds / Range.TotalMilliseconds) * plot.Width,
-                plot.Bottom - (float)Math.Min(1, d.Value / top) * plot.Height))
-            .ToArray();
-        if (pts.Length < 2)
-            return;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        using (var area = new GraphicsPath())
-        {
-            area.AddLine(pts[0].X, plot.Bottom, pts[0].X, pts[0].Y);
-            area.AddLines(pts);
-            area.AddLine(pts[^1].X, pts[^1].Y, pts[^1].X, plot.Bottom);
-            area.CloseFigure();
-            using var fill = new SolidBrush(Color.FromArgb(p.Surface.GetBrightness() < 0.5f ? 55 : 40, p.Accent));
-            g.FillPath(fill, area);
-        }
+        using var fill = new SolidBrush(Color.FromArgb(p.Surface.GetBrightness() < 0.5f ? 55 : 40, p.Accent));
         using var line = new Pen(p.Accent, 1.6f) { LineJoin = LineJoin.Round };
-        g.DrawLines(line, pts);
+        foreach (var segment in CpuChart.Segments(data.Where(d => d.Time >= from).ToList())) // coupée s'il manque des mesures
+        {
+            if (segment.Count < 2)
+                continue;
+            var pts = segment.Select(d => new PointF(plot.Left + (float)((d.Time - from).TotalMilliseconds / Range.TotalMilliseconds) * plot.Width,
+                plot.Bottom - (float)Math.Min(1, d.Value / top) * plot.Height)).ToArray();
+            using (var area = new GraphicsPath())
+            {
+                area.AddLine(pts[0].X, plot.Bottom, pts[0].X, pts[0].Y);
+                area.AddLines(pts);
+                area.AddLine(pts[^1].X, pts[^1].Y, pts[^1].X, plot.Bottom);
+                area.CloseFigure();
+                g.FillPath(fill, area);
+            }
+            g.DrawLines(line, pts);
+        }
     }
 }
 
