@@ -16,6 +16,24 @@ public sealed partial class MainForm
     readonly ToggleSwitch optMemPurge = new();
     readonly ToggleSwitch optMemTrim = new();
     readonly Label optMemNow = new() { AutoSize = true, Tag = Theme.HintTag, Margin = new Padding(0, 6, 0, 0) };
+    readonly Label optBoostLast = LastEffect(), optIdleLast = LastEffect(), optMemLast = LastEffect();
+
+    static Label LastEffect() => new() { AutoSize = true, MaximumSize = new Size(640, 0), Margin = new Padding(0, 0, 0, 8) };
+
+    /// <summary>Ce que chaque automatisme a fait en dernier, d'après le journal.</summary>
+    void RefreshOptimizationEffects()
+    {
+        var log = Log.Recent();
+        string Last(bool enabled, params string[] prefixes) =>
+            log.LastOrDefault(e => prefixes.Any(p => e.Message.StartsWith(p, StringComparison.OrdinalIgnoreCase))) is { } e
+                ? Tr($"Dernier effet à {e.Time:HH:mm} : {e.Message}", $"Last effect at {e.Time:HH:mm}: {e.Message}")
+                : enabled ? Tr("Actif, aucun effet récent.", "On, no recent effect.") : Tr("Désactivé.", "Off.");
+        optBoostLast.Text = settings.ForegroundBoost.Enabled ? Tr("Actif : la fenêtre que vous utilisez passe devant les autres.", "On: the window you are using goes ahead of the others.") : Tr("Désactivé.", "Off.");
+        optIdleLast.Text = Last(settings.IdleSaver.Enabled, "Économie au repos", "Idle saver");
+        optMemLast.Text = Last(settings.MemoryCleanup.Enabled, "Nettoyage mémoire", "Memory cleanup", "Automatic memory cleanup");
+        foreach (var l in new[] { optBoostLast, optIdleLast, optMemLast })
+            l.ForeColor = l.Text.StartsWith(Tr("Désactivé", "Off")) ? Theme.Current.Muted : Theme.Current.Accent;
+    }
 
     Control BuildOptimizationPage()
     {
@@ -32,12 +50,14 @@ public sealed partial class MainForm
 
         var stack = new CardStack();
         stack.Controls.Add(new Card(Rows(
+            optBoostLast,
             SettingRow(Tr("Boost du premier plan", "Foreground boost"),
                 Tr("La fenêtre que vous utilisez passe en priorité « supérieure à la normale », et retrouve sa priorité quand vous changez de fenêtre. " +
                    "Sans effet sur les programmes dont une règle fixe la priorité.",
                    "The window you are using gets “above normal” priority, and gets its priority back when you switch windows. " +
                    "No effect on programs whose priority is set by a rule."), optBoost)), Tr("Premier plan", "Foreground")));
         stack.Controls.Add(new Card(Rows(
+            optIdleLast,
             SettingRow(Tr("Économie au repos", "Idle saver"),
                 Tr("Après un moment sans clavier ni souris, passe sur un plan économique ; le plan habituel revient dès votre retour. " +
                    "Jamais pendant le Mode Jeu, une vidéo, ou quand une règle impose un plan.",
@@ -46,6 +66,7 @@ public sealed partial class MainForm
             SettingRow(Tr("Après", "After"), null, WithUnit(optIdleMinutes, Tr("minutes d'inactivité", "idle minutes"))),
             SettingRow(Tr("Plan pendant l'absence", "Plan while away"), null, optIdlePlan)), Tr("Au repos", "When idle")));
         stack.Controls.Add(new Card(Rows(
+            optMemLast,
             SettingRow(Tr("Nettoyage automatique", "Automatic cleanup"),
                 Tr("Quand la mémoire utilisée dépasse le seuil (au plus toutes les 5 minutes). Utile en jeu avec 16 Go de RAM ou moins.", "When used memory exceeds the threshold (at most every 5 minutes). Useful for gaming with 16 GB of RAM or less."), optMem),
             SettingRow(Tr("Seuil", "Threshold"), null, WithUnit(optMemThreshold, Tr("% de mémoire utilisée", "% of memory in use"))),
@@ -86,6 +107,7 @@ public sealed partial class MainForm
         SetNum(optMemThreshold, mem.ThresholdPercent);
         optMemPurge.Checked = mem.PurgeStandby;
         optMemTrim.Checked = mem.TrimIdle;
+        RefreshOptimizationEffects();
     }
 
     void ApplyOptimizations()

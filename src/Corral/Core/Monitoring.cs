@@ -88,6 +88,8 @@ public sealed class ProBalanceStats
         public DateOnly Date { get; set; }
         public int Count { get; set; }
         public Dictionary<string, int> ByProgram { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Interventions par heure (heure locale), pour la frise des 24 dernières heures.</summary>
+        public int[] Hours { get; set; } = new int[24];
     }
 
     readonly object sync = new();
@@ -114,9 +116,11 @@ public sealed class ProBalanceStats
                 days.Add(day);
                 days.RemoveAll(d => d.Date < date.AddDays(-30));
             }
+            int hour = DateTime.Now.Hour;
             foreach (var name in programs)
             {
                 day.Count++;
+                day.Hours[hour]++;
                 day.ByProgram.TryGetValue(name, out var n);
                 day.ByProgram[name] = n + 1;
             }
@@ -138,6 +142,14 @@ public sealed class ProBalanceStats
             var from = today().AddDays(-(lastDays - 1));
             return days.Where(d => d.Date >= from).Sum(d => d.Count);
         }
+    }
+
+    /// <summary>Interventions de chacune des 24 dernières heures, la plus ancienne en premier (la dernière = l'heure en cours).</summary>
+    public int[] LastHours(DateTime now)
+    {
+        lock (sync)
+            return Enumerable.Range(0, 24).Select(i => now.AddHours(i - 23)).Select(t =>
+                days.FirstOrDefault(d => d.Date == DateOnly.FromDateTime(t))?.Hours[t.Hour] ?? 0).ToArray();
     }
 
     /// <summary>Programmes le plus souvent abaissés sur la période.</summary>
@@ -173,7 +185,11 @@ public sealed class ProBalanceStats
         {
             days = JsonSerializer.Deserialize<List<Day>>(File.ReadAllText(path)) ?? new();
             foreach (var d in days)
+            {
                 d.ByProgram = new Dictionary<string, int>(d.ByProgram ?? new(), StringComparer.OrdinalIgnoreCase);
+                if (d.Hours is not { Length: 24 })
+                    d.Hours = new int[24]; // fichier d'avant la frise horaire
+            }
         }
         catch (Exception ex)
         {
@@ -195,6 +211,86 @@ public sealed class ProBalanceStats
         catch (Exception ex)
         {
             Log.Error("Enregistrement des statistiques ProBalance", ex);
+        }
+    }
+}
+
+/// <summary>Sessions de jeu (Mode Jeu actif), pour la page Mode Jeu : la session en cours et les 20 dernières, gardées dans un fichier.</summary>
+public sealed class GameSessions
+{
+    public sealed record Session(string Name, DateTime Start, TimeSpan Duration);
+
+    static readonly TimeSpan MinDuration = TimeSpan.FromMinutes(1);
+    const int Kept = 20;
+    readonly object sync = new();
+    readonly string? path;
+    List<Session> sessions = new();
+    string? current;
+    DateTime currentStart;
+
+    public GameSessions(string? path)
+    {
+        this.path = path;
+        if (path == null || !File.Exists(path))
+            return;
+        try
+        {
+            sessions = JsonSerializer.Deserialize<List<Session>>(File.ReadAllText(path)) ?? new();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Lecture des sessions de jeu", ex);
+        }
+    }
+
+    /// <summary>État du Mode Jeu à chaque instantané : <paramref name="game"/> null s'il est inactif, "" s'il a été activé à la main.
+    /// Une session qui se termine (ou change de jeu) est gardée si elle a duré au moins une minute.</summary>
+    public void Update(string? game, DateTime now)
+    {
+        lock (sync)
+        {
+            if (game == current)
+                return;
+            if (!string.IsNullOrEmpty(current) && now - currentStart >= MinDuration)
+            {
+                sessions.Insert(0, new Session(current, currentStart, now - currentStart));
+                if (sessions.Count > Kept)
+                    sessions.RemoveRange(Kept, sessions.Count - Kept);
+                Save();
+            }
+            current = game;
+            currentStart = now;
+        }
+    }
+
+    /// <summary>Session en cours (nom vide : Mode Jeu activé à la main), ou null.</summary>
+    public (string Name, DateTime Since)? Current
+    {
+        get
+        {
+            lock (sync)
+                return current == null ? null : (current, currentStart);
+        }
+    }
+
+    public List<Session> Recent()
+    {
+        lock (sync)
+            return sessions.ToList();
+    }
+
+    void Save()
+    {
+        if (path == null)
+            return;
+        try
+        {
+            File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(sessions));
+            File.Move(path + ".tmp", path, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Enregistrement des sessions de jeu", ex);
         }
     }
 }

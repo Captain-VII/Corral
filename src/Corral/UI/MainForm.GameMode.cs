@@ -6,7 +6,17 @@ namespace Corral.UI;
 // Page « Mode Jeu ».
 public sealed partial class MainForm
 {
-    readonly Label gameState = new() { AutoSize = true, Font = Ui.Section, Margin = new Padding(0, 2, 0, 0) };
+    readonly Label gameState = new() { AutoSize = true, Font = Ui.Title, Margin = new Padding(0, 2, 0, 0) };
+    readonly Label gameEffects = new() { AutoSize = true, MaximumSize = new Size(620, 0), Margin = new Padding(0, 6, 0, 0) };
+    readonly MiniChart[] gameCharts =
+    {
+        new() { Title = Tr("Processeur", "CPU"), Dock = DockStyle.Fill, Margin = new Padding(0, 0, 10, 0) },
+        new() { Title = Tr("Carte graphique", "GPU"), Dock = DockStyle.Fill, Margin = new Padding(0, 0, 10, 0) },
+        new() { Title = Tr("Mémoire", "Memory"), Dock = DockStyle.Fill, Margin = new Padding(0) },
+    };
+    readonly TopList gameSessionList = new() { EmptyText = Tr("Aucune session pour l'instant : elles s'ajoutent ici à chaque partie.", "No session yet: they show up here after each game.") };
+    readonly GameSessions gameSessions;
+    Card gameChartsCard = null!;
     readonly Label gameDetail = new() { AutoSize = true, Tag = Theme.HintTag, MaximumSize = new Size(620, 0), Margin = new Padding(0, 4, 0, 0) };
     readonly Label gameList = new() { AutoSize = true, Tag = Theme.HintTag, MaximumSize = new Size(520, 0), Margin = new Padding(0, 2, 0, 0) };
     readonly ModernButton gameToggle = new(Tr("Activer maintenant", "Turn on now"));
@@ -33,6 +43,7 @@ public sealed partial class MainForm
         var texts = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Dock = DockStyle.Fill, Margin = new Padding(0) };
         texts.Controls.Add(gameState);
         texts.Controls.Add(gameDetail);
+        texts.Controls.Add(gameEffects);
         gameToggle.Anchor = AnchorStyles.Right;
         status.Controls.Add(texts, 0, 0);
         status.Controls.Add(gameToggle, 1, 0);
@@ -43,8 +54,19 @@ public sealed partial class MainForm
             Tr("Priorité basse et mode efficacité pour les programmes ci-dessous (navigateurs, synchronisation…), sauf s'ils ont leur propre règle.", "Low priority and efficiency mode for the programs below (browsers, sync…), unless they have their own rule."), gmLower));
         apps.Controls.Add(gmApps);
 
+        // La session en cours d'abord (jeu, effets, charge du PC), l'historique, puis les réglages
+        var charts = new TableLayoutPanel { ColumnCount = 3, RowCount = 1, Height = 110, Margin = new Padding(0) };
+        for (int i = 0; i < 3; i++)
+            charts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 3));
+        charts.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        charts.Controls.AddRange(gameCharts);
+        var statusCard = new Card(status, Tr("État", "Status"));
+        gameChartsCard = new Card(charts, Tr("Le PC pendant la session", "The PC during the session"));
         var stack = new CardStack();
-        stack.Controls.Add(new Card(status, Tr("État", "Status")));
+        stack.Wide.UnionWith(new[] { statusCard, gameChartsCard });
+        stack.Controls.Add(statusCard);
+        stack.Controls.Add(gameChartsCard);
+        stack.Controls.Add(new Card(gameSessionList, Tr("Sessions récentes", "Recent sessions")));
         stack.Controls.Add(new Card(Rows(
             SettingRow(Tr("Activer automatiquement quand un jeu tourne", "Turn on automatically when a game runs"),
                 Tr("Pour un jeu reconnu (ci-dessous) ou un programme dont la règle est marquée « C'est un jeu » (le modèle Jeu le fait).", "For a recognized game (below) or a program whose rule is marked “This is a game” (the Game template does it)."), gmAuto),
@@ -157,4 +179,42 @@ public sealed partial class MainForm
         gameToggle.Text = snap.GameMode && engine.GameModeManual ? Tr("Désactiver", "Turn off") : Tr("Activer maintenant", "Turn on now");
         gameToggle.Enabled = !(snap.GameMode && !engine.GameModeManual) && !Policies.StandardUser;
     }
+
+    /// <summary>Session en cours : nom du jeu, durée, effets, courbes du PC depuis son début ; historique des sessions.</summary>
+    void RefreshGameSession(EngineSnapshot snap)
+    {
+        var current = gameSessions.Current;
+        var gm = settings.GameMode;
+        if (snap.GameMode && current is { } c)
+        {
+            gameState.Text = c.Name.Length > 0 ? c.Name : Tr("Mode Jeu actif", "Game Mode on");
+            var effects = new List<string> { Tr($"actif depuis {Duration(DateTime.Now - c.Since)}", $"on for {Duration(DateTime.Now - c.Since)}") };
+            if (gm.PowerPlan is { } plan && plan != Guid.Empty)
+                effects.Add(Tr("plan ", "plan ") + PlanName(plan));
+            if (gm.ReactiveProBalance)
+                effects.Add(Tr("ProBalance réactif", "responsive ProBalance"));
+            if (gm.LowerBackground)
+            {
+                int calmed = snap.Rows.Count(r => r.Rule == null && gm.BackgroundApps.Any(a => RuleMatcher.Matches(a, r.Name)));
+                effects.Add(Tr($"{calmed} programme(s) de fond calmé(s)", $"{calmed} background program(s) calmed"));
+            }
+            gameEffects.Text = string.Join("  ·  ", effects);
+            gameEffects.ForeColor = Theme.Current.Accent;
+        }
+        else
+            gameEffects.Text = "";
+        // Courbes : depuis le début de la session (15 min au plus), sinon les 5 dernières minutes
+        var range = current is { } s && snap.GameMode ? TimeSpan.FromMinutes(Math.Clamp((DateTime.Now - s.Since).TotalMinutes, 1, 15)) : TimeSpan.FromMinutes(5);
+        var from = DateTime.UtcNow - range;
+        foreach (var (chart, history) in gameCharts.Zip(new[] { cpuHistory, gpuHistory, memHistory }))
+        {
+            chart.Range = range;
+            chart.SetData(history.Since(from));
+        }
+        gameChartsCard.Title = snap.GameMode ? Tr("Le PC pendant la session", "The PC during the session") : Tr("Le PC ces 5 dernières minutes", "The PC over the last 5 minutes");
+        gameSessionList.SetItems(gameSessions.Recent().Take(8).Select(x => (x.Name, x.Duration.TotalMinutes,
+            $"{Duration(x.Duration)} · {x.Start:dd/MM HH:mm}")).ToList());
+    }
+
+    static string Duration(TimeSpan d) => d.TotalHours >= 1 ? $"{(int)d.TotalHours} h {d.Minutes:00}" : $"{Math.Max(1, (int)d.TotalMinutes)} min";
 }

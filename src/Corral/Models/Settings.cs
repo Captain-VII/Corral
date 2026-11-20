@@ -213,6 +213,8 @@ public sealed class WindowSettings
     public int Width { get; set; }
     public int Height { get; set; }
     public string? LastPage { get; set; }
+    /// <summary>Page Graphique : toutes les mesures en grand plutôt que le détail d'une seule.</summary>
+    public bool ChartOverview { get; set; }
 
     public bool HasBounds => Width > 0 && Height > 0;
 }
@@ -312,6 +314,6 @@ public sealed class Settings
                 r.Pattern ??= "";
         }
         if (Window.Width < 0 || Window.Height < 0 || Window.Width > 20_000 || Window.Height > 20_000)
-            Window = new() { LastPage = Window.LastPage };
+            Window = new() { LastPage = Window.LastPage, ChartOverview = Window.ChartOverview };
     }
 }

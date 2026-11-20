@@ -173,6 +173,24 @@ public class MetricsTests : IDisposable
         Assert.Empty(h.Get(2, "b")); // fermé : historique libéré
     }
 
+    [Fact]
+    public void ProgramHistorySumsItsProcesses()
+    {
+        var h = new ProcessHistory(TimeSpan.FromMinutes(1));
+        var t = DateTime.UtcNow;
+        h.Add(t, new[]
+        {
+            new ProcessRow(1, "brave", 3, 100, null, false, IoBytesPerSec: 10, Gpu: 2),
+            new ProcessRow(2, "Brave", 4, 50, null, false, IoBytesPerSec: 5, Gpu: 7),
+            new ProcessRow(3, "autre", 9, 999, null, false),
+        });
+        h.Add(t.AddSeconds(1), new[] { new ProcessRow(1, "brave", 1, 100, null, false), new ProcessRow(2, "Brave", 1, 50, null, false) });
+        var s = h.GetProgram("brave");
+        Assert.Equal(2, s.Count);
+        Assert.Equal((7f, 150L, 15L, 7f), (s[0].Cpu, s[0].Memory, s[0].Io, s[0].Gpu));
+        Assert.Equal(2f, s[1].Cpu);
+    }
+
     StartupManager Manager()
     {
         var hive = new StartupManager.Hive(Registry.CurrentUser, root + @"\User\");

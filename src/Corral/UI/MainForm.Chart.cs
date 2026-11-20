@@ -89,7 +89,7 @@ public sealed partial class MainForm
         detail.Controls.Add(breakdownCard);
         detail.Controls.Add(topCard);
 
-        var grid = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, Margin = new Padding(0) };
+        var grid = detailGrid = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, Dock = DockStyle.Fill, Margin = new Padding(0) };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 230));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -97,9 +97,80 @@ public sealed partial class MainForm
         grid.Controls.Add(detail, 1, 0);
         SelectGauge(Gauge.Cpu);
 
-        return MakePage(Tr("Graphique", "Charts"), Tr("Processeur, mémoire, carte graphique, disques et réseau de tout le PC. Choisissez une mesure à gauche pour voir son détail ; survolez la courbe pour lire une valeur.",
-            "CPU, memory, GPU, disks and network of the whole PC. Pick a measure on the left to see its details; hover the curve to read a value."),
-            grid, ranges.ToArray());
+        // Vue « Tout » : les cinq mesures en grand et les plus gourmands, d'un coup d'œil (second écran pendant une partie)
+        overviewGrid = new TableLayoutPanel { ColumnCount = 3, RowCount = 2, Dock = DockStyle.Fill, Margin = new Padding(0) };
+        for (int i = 0; i < 3; i++)
+            overviewGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 3));
+        for (int i = 0; i < 2; i++)
+            overviewGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        foreach (var g in Enum.GetValues<Gauge>())
+        {
+            var c = overview[(int)g] = new CpuChart(HistoryOf(g)) { Cursor = Cursors.Hand };
+            Configure(c, g);
+            c.Caption = g == Gauge.Cpu ? Hardware.CpuName : g == Gauge.Gpu ? Hardware.Gpu.Name : null;
+            c.Click += (_, _) =>
+            {
+                ShowOverview(false);
+                SelectGauge(g);
+            };
+            tips.SetToolTip(c, Tr("Cliquez pour le détail de cette mesure", "Click for the details of this measure"));
+            overviewGrid.Controls.Add(new Card(c, fill: true) { Padding = new Padding(18), Dock = DockStyle.Fill, Margin = new Padding(0, 0, 14, 14) });
+        }
+        overviewGrid.Controls.Add(new Card(overviewTop, Tr("Les plus gourmands", "Top consumers")) { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 14, 14) });
+        overviewButton = new ModernButton(Tr("Tout", "All")) { Margin = new Padding(0, 0, 12, 0) };
+        overviewButton.Click += (_, _) => ShowOverview(!overviewButton.Toggled);
+        tips.SetToolTip(overviewButton, Tr("Toutes les mesures en grand, en même temps", "All measures at full size, at once"));
+
+        var body = new Panel { Margin = new Padding(0) };
+        body.Controls.Add(grid);
+        body.Controls.Add(overviewGrid);
+        ShowOverview(settings.Window.ChartOverview);
+
+        return MakePage(Tr("Graphique", "Charts"), Tr("Processeur, mémoire, carte graphique, disques et réseau de tout le PC. Choisissez une mesure pour voir son détail, ou « Tout » pour les voir toutes en grand ; survolez une courbe pour lire une valeur.",
+            "CPU, memory, GPU, disks and network of the whole PC. Pick a measure to see its details, or “All” to see them all at full size; hover a curve to read a value."),
+            body, ranges.Prepend(overviewButton).ToArray());
+    }
+
+    readonly CpuChart[] overview = new CpuChart[5];
+    readonly TopList overviewTop = new();
+    TableLayoutPanel overviewGrid = null!, detailGrid = null!;
+    ModernButton overviewButton = null!;
+
+    void ShowOverview(bool on)
+    {
+        overviewGrid.Visible = on;
+        detailGrid.Visible = !on;
+        overviewButton.Toggled = on;
+        settings.Window.ChartOverview = on;
+        if (lastSnapshot != null)
+            RefreshCharts(lastSnapshot);
+    }
+
+    CpuHistory HistoryOf(Gauge g) => g switch
+    {
+        Gauge.Cpu => cpuHistory,
+        Gauge.Memory => memHistory,
+        Gauge.Gpu => gpuHistory,
+        Gauge.Disk => diskHistory,
+        _ => netHistory,
+    };
+
+    /// <summary>Règle une courbe sur une mesure : historique, séries, unité, seuil.</summary>
+    void Configure(CpuChart c, Gauge g)
+    {
+        c.Title = GaugeName(g);
+        c.AccessibleName = Tr($"Historique : {GaugeName(g)}", $"History: {GaugeName(g)}");
+        c.History = HistoryOf(g);
+        c.Series = g switch
+        {
+            Gauge.Disk => new[] { (diskRead, Tr("Lecture", "Read")), (diskWrite, Tr("Écriture", "Write")) },
+            Gauge.Network => new[] { (netReceived, Tr("Reçu", "Received")), (netSent, Tr("Envoyé", "Sent")) },
+            _ => null,
+        };
+        bool rate = g is Gauge.Disk or Gauge.Network;
+        c.Max = rate ? null : 100;
+        c.Format = rate ? Units.Rate : v => $"{v:0} %";
+        c.Threshold = g == Gauge.Cpu ? cpuThreshold : null;
     }
 
     static string GaugeName(Gauge g) => g switch
@@ -124,29 +195,12 @@ public sealed partial class MainForm
             RefreshCharts(lastSnapshot);
     }
 
-    /// <summary>Règle la grande courbe sur la mesure choisie (historique, séries, unité, seuil).</summary>
+    /// <summary>Règle la grande courbe et les cartes sur la mesure choisie.</summary>
     void ConfigureChart()
     {
-        chart.Title = GaugeName(gauge);
-        chart.AccessibleName = Tr($"Historique : {GaugeName(gauge)}", $"History: {GaugeName(gauge)}");
-        chart.History = gauge switch
-        {
-            Gauge.Cpu => cpuHistory,
-            Gauge.Memory => memHistory,
-            Gauge.Gpu => gpuHistory,
-            Gauge.Disk => diskHistory,
-            _ => netHistory,
-        };
-        chart.Series = gauge switch
-        {
-            Gauge.Disk => new[] { (diskRead, Tr("Lecture", "Read")), (diskWrite, Tr("Écriture", "Write")) },
-            Gauge.Network => new[] { (netReceived, Tr("Reçu", "Received")), (netSent, Tr("Envoyé", "Sent")) },
-            _ => null,
-        };
-        bool rate = gauge is Gauge.Disk or Gauge.Network;
-        chart.Max = rate ? null : 100;
-        chart.Format = rate ? Units.Rate : v => $"{v:0} %";
-        chart.Threshold = gauge == Gauge.Cpu ? cpuThreshold : null;
+        Configure(chart, gauge);
+        if (overview[0] is { } cpu)
+            cpu.Threshold = cpuThreshold; // seuil ProBalance changé
         threadCard.Visible = gauge == Gauge.Cpu;
         breakdownCard.Visible = gauge != Gauge.Cpu;
         topCard.Title = gauge == Gauge.Disk ? Tr("Les plus gourmands (E/S, réseau compris)", "Top consumers (I/O, network included)") : Tr("Les plus gourmands", "Top consumers");
@@ -175,13 +229,24 @@ public sealed partial class MainForm
     void RefreshCharts(EngineSnapshot snap)
     {
         var from = DateTime.UtcNow - chart.Range;
-        var histories = new[] { cpuHistory, memHistory, gpuHistory, diskHistory, netHistory };
+        var s = lastSystem;
+        if (overviewGrid.Visible)
+        {
+            foreach (var c in overview)
+            {
+                c.Range = chart.Range;
+                c.Invalidate();
+            }
+            overview[(int)Gauge.Memory].Caption = snap.MemoryTotal > 0 ? $"{FormatBytes(snap.MemoryUsed)} / {FormatBytes(snap.MemoryTotal)}" : null;
+            overviewTop.SetItems(TopItems(from, TopTracker.Metric.Cpu));
+            overviewTop.Parent?.PerformLayout(); // la carte prend la hauteur de la liste
+            return; // détail non lu : ses compteurs coûtent
+        }
         for (int i = 0; i < gauges.Length; i++)
         {
             gauges[i].Range = chart.Range;
-            gauges[i].SetData(histories[i].Since(from));
+            gauges[i].SetData(HistoryOf((Gauge)i).Since(from));
         }
-        var s = lastSystem;
         gauges[(int)Gauge.Memory].Caption = snap.MemoryTotal > 0 ? $"{FormatBytes(snap.MemoryUsed)} / {FormatBytes(snap.MemoryTotal)}" : null;
         gauges[(int)Gauge.Disk].Caption = s == null ? null : Tr($"L {Units.Rate(s.DiskRead)}   É {Units.Rate(s.DiskWrite)}", $"R {Units.Rate(s.DiskRead)}   W {Units.Rate(s.DiskWrite)}");
         gauges[(int)Gauge.Network].Caption = s == null ? null : $"↓ {Units.Rate(s.NetReceived)}   ↑ {Units.Rate(s.NetSent)}";
@@ -288,14 +353,17 @@ public sealed partial class MainForm
             _ => TopTracker.Metric.Cpu,
         };
         topList.EmptyText = gauge == Gauge.Gpu ? Tr("Mesuré quand Corral est au premier plan.", "Measured while Corral is in the foreground.") : Tr("Collecte des mesures…", "Collecting data…");
-        topList.SetItems(topTracker.Top(from, metric).Select(e => (e.Name, e.Value, metric switch
+        topList.SetItems(TopItems(from, metric));
+    }
+
+    List<(string, double, string)> TopItems(DateTime from, TopTracker.Metric metric) =>
+        topTracker.Top(from, metric).Select(e => (e.Name, e.Value, metric switch
         {
             TopTracker.Metric.Cpu => $"{e.Value:0.0} %",
             TopTracker.Metric.Gpu => $"{e.Value:0} %",
             TopTracker.Metric.Io => Units.Rate(e.Value),
             _ => FormatBytes((long)e.Value),
-        })).ToList());
-    }
+        })).ToList();
 
     static string Join(string a, string b) => a.Length == 0 ? b : b.Length == 0 ? a : $"{a} · {b}";
 

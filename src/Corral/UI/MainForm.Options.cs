@@ -154,7 +154,34 @@ public sealed partial class MainForm
                     "Closing the window keeps Corral running in the notification area. “Exit” in its menu stops it and " +
                     "restores the original priorities, affinities and power plan."),
             }), Tr("Données", "Data")));
-        return MakePage("Options", Tr("Apparence, démarrage, mises à jour et aide.", "Appearance, startup, updates and help."), stack);
+        // Rubriques à gauche, une seule affichée à la fois : plus besoin de faire défiler jusqu'aux raccourcis
+        var cards = stack.Controls.Cast<Card>().ToList();
+        var sections = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, Dock = DockStyle.Left, Width = 214, Padding = new Padding(0, 0, 14, 0) };
+        var buttons = cards.Select(c => new ModernButton(c.Title ?? "") { Width = 200, Margin = new Padding(0, 0, 0, 6), TextAlign = ContentAlignment.MiddleLeft }).ToList();
+        void Show(Card shown)
+        {
+            foreach (var (c, b) in cards.Zip(buttons))
+                c.Visible = b.Toggled = c == shown;
+        }
+        foreach (var (c, b) in cards.Zip(buttons))
+            b.Click += (_, _) => Show(c);
+        sections.Controls.AddRange(buttons.ToArray());
+        Show(cards[0]);
+        stack.Dock = DockStyle.Fill;
+        var body = new Panel();
+        body.Controls.Add(stack);
+        body.Controls.Add(sections);
+        optionSections = (cards, Show);
+        return MakePage("Options", Tr("Apparence, démarrage, mises à jour et aide.", "Appearance, startup, updates and help."), body);
+    }
+
+    (List<Card> Cards, Action<Card> Show) optionSections;
+
+    /// <summary>Affiche une rubrique des Options par son titre (captures de test).</summary>
+    public void ShowOptionSection(string title)
+    {
+        if (optionSections.Cards.FirstOrDefault(c => c.Title == title) is { } card)
+            optionSections.Show(card);
     }
 
     readonly ToggleSwitch trayCpuSwitch = new();

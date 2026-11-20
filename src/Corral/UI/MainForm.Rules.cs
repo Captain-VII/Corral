@@ -24,21 +24,23 @@ public sealed partial class MainForm
     Control BuildRulesPage()
     {
         ruleList.Columns.Add(Tr("Processus", "Process"), 170);
+        ruleList.Columns.Add(Tr("En cours", "Running"), 80, HorizontalAlignment.Right);
         ruleList.Columns.Add(Tr("État", "Status"), 90);
         ruleList.Columns.Add(Tr("Priorité", "Priority"), 170);
         ruleList.Columns.Add(Tr("Cœurs", "Cores"), 110);
         ruleList.Columns.Add(Tr("Autres réglages", "Other settings"), 300);
-        Theme.StyleList(ruleList, (item, col) => col == 1
-            ? new Theme.CellStyle(Text: item.SubItems[1].Text == "Inactive" ? "○ Inactive" : "● Active",
-                Fore: item.SubItems[1].Text == "Inactive" ? Theme.Current.Muted : Theme.Current.Accent)
+        Theme.StyleList(ruleList, (item, col) => col == 2
+            ? new Theme.CellStyle(Text: item.SubItems[2].Text == "Inactive" ? "○ Inactive" : "● Active",
+                Fore: item.SubItems[2].Text == "Inactive" ? Theme.Current.Muted : Theme.Current.Accent)
             : null);
+        tips.SetToolTip(ruleList, Tr("« En cours » : processus auxquels la règle s'applique en ce moment.", "“Running”: processes the rule applies to right now."));
         ruleList.DoubleClick += (_, _) => EditRule();
         ruleList.SelectedIndexChanged += (_, _) => UpdateRuleButtons();
         ruleList.MouseClick += (_, e) =>
         {
             // Un clic sur l'état active ou désactive la règle
             var hit = ruleList.HitTest(e.Location);
-            if (e.Button == MouseButtons.Left && hit.Item != null && hit.Item.SubItems.IndexOf(hit.SubItem) == 1)
+            if (e.Button == MouseButtons.Left && hit.Item != null && hit.Item.SubItems.IndexOf(hit.SubItem) == 2)
                 ToggleRule(hit.Item.Index);
         };
         ruleList.KeyDown += (_, e) =>
@@ -79,11 +81,73 @@ public sealed partial class MainForm
         ruleList.Dock = DockStyle.Fill;
         var body = new Panel();
         body.Controls.Add(new Card(host, fill: true) { Dock = DockStyle.Fill });
+        body.Controls.Add(BuildRulePanel());
         body.Controls.Add(rulesBanner);
 
         return MakePage(Tr("Règles", "Rules"), Tr("La première règle active qui correspond s'applique, y compris aux processus déjà lancés. Cliquez sur l'état pour activer ou désactiver une règle.",
                 "The first matching active rule applies, including to processes already running. Click the status to enable or disable a rule."),
-            body, profileButton, moveUp, moveDown, editRule, deleteRule, more, add);
+            body, profileButton, moveUp, moveDown, deleteRule, more, add);
+    }
+
+    // ---------- Panneau de droite : la règle sélectionnée en un coup d'œil ----------
+
+    readonly StatGrid ruleStats = new() { TileWidth = 140 };
+    readonly TopList ruleMatches = new() { EmptyText = Tr("Aucun processus concerné en ce moment.", "No process affected right now.") };
+    readonly ModernButton toggleRule = new(Tr("Désactiver", "Disable"));
+    Card ruleCard = null!, ruleMatchCard = null!, ruleActions = null!;
+
+    Control BuildRulePanel()
+    {
+        var duplicate = new ModernButton(Tr("Dupliquer", "Duplicate"));
+        duplicate.Click += (_, _) => DuplicateRule();
+        toggleRule.Click += (_, _) => ToggleRule(SelectedRule);
+        var buttons = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0) };
+        foreach (var b in new[] { editRule, toggleRule, duplicate })
+        {
+            b.Margin = new Padding(0, 0, 8, 8);
+            buttons.Controls.Add(b);
+        }
+        ruleCard = new Card(ruleStats, "");
+        ruleMatchCard = new Card(ruleMatches, Tr("Processus concernés", "Affected processes"));
+        ruleActions = new Card(buttons, Tr("Actions", "Actions"));
+        var side = new CardStack { Dock = DockStyle.Right, Width = 400, Padding = new Padding(14, 0, 0, 0) };
+        side.Controls.AddRange(new Control[] { ruleCard, ruleActions, ruleMatchCard });
+        side.ParentChanged += (_, _) => side.Parent!.Resize += (_, _) => side.Visible = side.Parent.Width >= 900;
+        return side;
+    }
+
+    /// <summary>Panneau et colonne « En cours » : appelé à la sélection et à chaque instantané (page affichée).</summary>
+    void RefreshRulePanel()
+    {
+        var rows = lastSnapshot?.Rows ?? Array.Empty<ProcessRow>();
+        for (int k = 0; k < ruleList.Items.Count && k < settings.Rules.Count; k++)
+            SetText(ruleList.Items[k], 1, settings.Rules[k].Enabled ? rows.Count(x => x.Rule == settings.Rules[k].Pattern).ToString() : "—");
+        int i = SelectedRule;
+        ruleMatchCard.Visible = ruleActions.Visible = i >= 0;
+        if (i < 0)
+        {
+            ruleCard.Title = Tr("Sélectionnez une règle", "Select a rule");
+            ruleStats.SetItems(Array.Empty<(string, string, double?)>());
+            return;
+        }
+        var r = settings.Rules[i];
+        var matched = rows.Where(x => x.Rule == r.Pattern).OrderByDescending(x => x.Cpu).ToList();
+        ruleCard.Title = r.Pattern;
+        toggleRule.Text = r.Enabled ? Tr("Désactiver", "Disable") : Tr("Activer", "Enable");
+        string limits = string.Join(" · ", new[] { r.CpuLimitPercent is { } c ? $"CPU {c} %" : null, r.MemoryLimitMB is { } m ? $"RAM {m} {Units.MB}" : null }.Where(x => x != null));
+        ruleStats.SetItems(new List<(string, string, double?)>
+        {
+            (Tr("État", "Status"), r.Enabled ? Tr("Active", "Active") : Tr("Inactive", "Inactive"), null),
+            (Tr("En cours", "Running"), matched.Count.ToString(), null),
+            (Tr("Priorité", "Priority"), r.Priority is { } p ? RuleText.PriorityLabel(p) : "—", null),
+            (Tr("Cœurs", "Cores"), r.AffinityMask is { } mask ? $"{System.Numerics.BitOperations.PopCount((ulong)mask)} / {Environment.ProcessorCount}" + (r.UseCpuSets ? " (CPU Sets)" : "") : Tr("Tous", "All"), null),
+            (Tr("Quand", "When"), r.When?.Describe() is { Length: > 0 } when ? when : Tr("Toujours", "Always"), null),
+            (Tr("Limites", "Limits"), limits.Length > 0 ? limits : Tr("Aucune", "None"), null),
+            (Tr("Plan d'alimentation", "Power plan"), r.PowerPlan is { } g ? PlanName(g) : "—", null),
+            (Tr("Autres réglages", "Other settings"), RuleOptions(r), null),
+        });
+        ruleMatches.SetItems(matched.Take(8).Select(x => ($"{x.Name} ({x.Pid})", x.Cpu, $"{x.Cpu:0.0} %")).ToList());
+        ruleCard.Parent?.PerformLayout();
     }
 
     // ---------- Profils ----------
@@ -205,6 +269,7 @@ public sealed partial class MainForm
         editRule.Enabled = deleteRule.Enabled = i >= 0;
         moveUp.Enabled = i > 0;
         moveDown.Enabled = i >= 0 && i < settings.Rules.Count - 1;
+        RefreshRulePanel();
     }
 
     void RefreshRules(int select = -1)
@@ -216,6 +281,7 @@ public sealed partial class MainForm
             ruleList.Items.Add(new ListViewItem(new[]
             {
                 r.Pattern,
+                "",
                 r.Enabled ? "Active" : "Inactive",
                 r.Priority is { } prio ? RuleText.PriorityLabel(prio) : "—",
                 r.AffinityMask is { } m ? $"{System.Numerics.BitOperations.PopCount((ulong)m)}" + (r.UseCpuSets ? " (CPU Sets)" : "") : Tr("Tous", "All"),

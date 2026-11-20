@@ -17,6 +17,8 @@ public sealed partial class MainForm
     {
         startupList.Columns.Add(Tr("Programme", "Program"), 200);
         startupList.Columns.Add(Tr("État", "Status"), 126);
+        startupList.Columns.Add("Impact", 90);
+        startupList.Columns.Add(Tr("Mémoire", "Memory"), 90, HorizontalAlignment.Right);
         startupList.Columns.Add(Tr("Éditeur", "Publisher"), 160);
         startupList.Columns.Add("Source", 190);
         startupList.Columns.Add(Tr("Commande", "Command"), 300);
@@ -24,6 +26,8 @@ public sealed partial class MainForm
         {
             0 => new Theme.CellStyle(Icon: IconFor(s.Path)),
             1 => new Theme.CellStyle(Text: s.Enabled ? Tr("● Activé", "● Enabled") : Tr("○ Désactivé", "○ Disabled"), Fore: s.Enabled ? Theme.Current.Accent : Theme.Current.Muted),
+            2 when item.SubItems[2].Text == ImpactLabel(3) => new Theme.CellStyle(Fore: Theme.IsDark ? Color.FromArgb(240, 110, 100) : Color.FromArgb(196, 43, 28)),
+            2 when item.SubItems[2].Text == ImpactLabel(2) => new Theme.CellStyle(Fore: Theme.Current.Warning),
             _ => null,
         });
         startupList.SelectedIndexChanged += (_, _) => UpdateStartupButtons();
@@ -54,13 +58,43 @@ public sealed partial class MainForm
 
         var body = new Panel();
         body.Controls.Add(new Card(startupList, fill: true) { Dock = DockStyle.Fill });
+        // Résumé en tête : combien de programmes, combien pèsent lourd
+        var summary = new Card(startupSummary, Tr("En résumé", "Summary")) { Dock = DockStyle.Fill };
+        var top = new Panel { Dock = DockStyle.Top, Padding = new Padding(0, 0, 0, 14) };
+        top.Controls.Add(summary);
+        body.Controls.Add(top);
+        body.Resize += (_, _) => top.Height = summary.GetPreferredSize(new Size(body.ClientSize.Width, 0)).Height + 14;
         body.Controls.Add(startupBanner);
-        return MakePage(Tr("Démarrage", "Startup"), Tr("Programmes lancés à l'ouverture de votre session. Désactiver un programme l'empêche seulement de démarrer avec Windows : rien n'est supprimé, et vous pouvez le réactiver à tout moment.",
-            "Programs launched when you sign in. Disabling a program only stops it from starting with Windows: nothing is deleted, and you can enable it again at any time."),
+        return MakePage(Tr("Démarrage", "Startup"), Tr("Programmes lancés à l'ouverture de votre session. Désactiver un programme l'empêche seulement de démarrer avec Windows : rien n'est supprimé. L'impact est estimé d'après la mémoire utilisée en ce moment (élevé au-delà de 300 Mo).",
+            "Programs launched when you sign in. Disabling a program only stops it from starting with Windows: nothing is deleted. Impact is estimated from the memory used right now (high above 300 MB)."),
             body, refresh, startupOpen, startupToggle);
     }
 
     StartupItem? SelectedStartup => startupList.SelectedItems.Count == 1 ? startupList.SelectedItems[0].Tag as StartupItem : null;
+
+    readonly StatGrid startupSummary = new();
+
+    /// <summary>Mémoire utilisée en ce moment par le programme (tous ses processus), ou null s'il ne tourne pas.</summary>
+    long? StartupMemory(StartupItem s) =>
+        s.Path == null || lastSnapshot?.Rows.Where(r => string.Equals(r.Path, s.Path, StringComparison.OrdinalIgnoreCase)).ToList() is not { Count: > 0 } rows
+            ? null : rows.Sum(r => r.MemoryBytes);
+
+    /// <summary>0 : ne tourne pas, 1 : faible, 2 : moyen, 3 : élevé.</summary>
+    static int StartupImpact(long? memory) => memory switch
+    {
+        null => 0,
+        >= 300L << 20 => 3,
+        >= 100L << 20 => 2,
+        _ => 1,
+    };
+
+    static string ImpactLabel(int impact) => impact switch
+    {
+        3 => Tr("Élevé", "High"),
+        2 => Tr("Moyen", "Medium"),
+        1 => Tr("Faible", "Low"),
+        _ => Tr("Non lancé", "Not running"),
+    };
 
     void UpdateStartupButtons()
     {
@@ -76,9 +110,12 @@ public sealed partial class MainForm
         var items = startup.List();
         startupList.BeginUpdate();
         startupList.Items.Clear();
-        foreach (var s in items)
+        // Les plus lourds d'abord : ce qu'il vaut le mieux désactiver
+        var memory = items.ToDictionary(s => s, StartupMemory);
+        foreach (var s in items.OrderByDescending(s => memory[s] ?? -1))
         {
-            var item = new ListViewItem(new[] { s.Name, "", s.Publisher ?? "", s.SourceLabel, s.Command }) { Tag = s, ToolTipText = s.Command };
+            var mem = memory[s];
+            var item = new ListViewItem(new[] { s.Name, "", ImpactLabel(StartupImpact(mem)), mem is { } m ? FormatBytes(m) : "—", s.Publisher ?? "", s.SourceLabel, s.Command }) { Tag = s, ToolTipText = s.Command };
             startupList.Items.Add(item);
             if (selected != null && s.Source == selected.Source && s.Entry == selected.Entry)
                 item.Selected = true;
@@ -86,6 +123,15 @@ public sealed partial class MainForm
         startupList.EndUpdate();
         Theme.FitColumns(startupList);
         UpdateStartupButtons();
+        int enabled = items.Count(s => s.Enabled), heavy = items.Count(s => s.Enabled && StartupImpact(memory[s]) == 3);
+        double Share(int n) => items.Count == 0 ? 0 : (double)n / items.Count;
+        startupSummary.SetItems(new List<(string, string, double?)>
+        {
+            (Tr("Au démarrage", "At startup"), Tr($"{enabled} sur {items.Count}", $"{enabled} of {items.Count}"), Share(enabled)),
+            (Tr("Impact élevé", "High impact"), heavy.ToString(), Share(heavy)),
+            (Tr("Désactivés", "Disabled"), (items.Count - enabled).ToString(), Share(items.Count - enabled)),
+            (Tr("Mémoire utilisée", "Memory in use"), FormatBytes(memory.Values.Sum(m => m ?? 0)), null),
+        });
     }
 
     void ToggleStartup(StartupItem? s)
