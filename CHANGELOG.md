@@ -1,5 +1,9 @@
 # Journal des modifications
 
+## 3.6.1
+
+- **Graphique : la grande courbe ne clignote plus.** Une image fantôme apparaissait chaque seconde : la courbe repassait brièvement par sa taille minimale avant de reprendre toute la hauteur.
+
 ## 3.6.0
 
 - **Une vraie appli de surveillance en plein écran.** Corral s'ouvre en plein écran, sur la page Graphique, désormais la première. Les cartes se répartissent en colonnes selon la largeur au lieu de s'arrêter à 900 px, et la grande courbe occupe toute la hauteur libre.
