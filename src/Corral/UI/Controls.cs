@@ -271,27 +271,34 @@ public sealed class CardStack : Panel
             var bottoms = new int[cols];
             var origin = AutoScrollPosition;
             int Height(Control c, int w) => c == Grow ? c.MinimumSize.Height : c.GetPreferredSize(new Size(w, 0)).Height;
-            foreach (var c in cards)
+            // Positions calculées d'abord, appliquées ensuite une seule fois : la carte qui s'étire ne passe plus
+            // par sa hauteur minimale à chaque mise à jour (la courbe clignotait chaque seconde)
+            var bounds = new Rectangle[cards.Count];
+            for (int i = 0; i < cards.Count; i++)
             {
+                var c = cards[i];
                 if (Wide.Contains(c))
                 {
                     int top = bottoms.Max();
-                    c.Bounds = new Rectangle(origin.X, origin.Y + top, width, Height(c, width));
-                    Array.Fill(bottoms, top + c.Height + Gap);
+                    bounds[i] = new Rectangle(origin.X, origin.Y + top, width, Height(c, width));
+                    Array.Fill(bottoms, top + bounds[i].Height + Gap);
                 }
                 else
                 {
                     int col = Array.IndexOf(bottoms, bottoms.Min());
-                    c.Bounds = new Rectangle(origin.X + col * (colWidth + Gap), origin.Y + bottoms[col], colWidth, Height(c, colWidth));
-                    bottoms[col] += c.Height + Gap;
+                    bounds[i] = new Rectangle(origin.X + col * (colWidth + Gap), origin.Y + bottoms[col], colWidth, Height(c, colWidth));
+                    bottoms[col] += bounds[i].Height + Gap;
                 }
             }
-            int extra = ClientSize.Height - (bottoms.Max() - Gap);
-            if (Grow is { Visible: true } grow && extra > 0)
+            int extra = ClientSize.Height - (bottoms.Max() - Gap), g = Grow is { Visible: true } ? cards.IndexOf(Grow) : -1;
+            for (int i = 0; i < cards.Count; i++)
             {
-                foreach (var c in cards.Where(c => c.Top > grow.Top))
-                    c.Top += extra;
-                grow.Height += extra;
+                if (g >= 0 && extra > 0 && i == g)
+                    bounds[i].Height += extra;
+                else if (g >= 0 && extra > 0 && bounds[i].Top > bounds[g].Top)
+                    bounds[i].Y += extra;
+                if (cards[i].Bounds != bounds[i])
+                    cards[i].Bounds = bounds[i];
             }
         }
         base.OnLayout(levent);

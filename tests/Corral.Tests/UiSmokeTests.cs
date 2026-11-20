@@ -82,6 +82,28 @@ public class UiSmokeTests
     }
 
     [Fact]
+    public void GrowingCardIsNotResizedAtEachLayout()
+    {
+        RunSta(() =>
+        {
+            // La grande courbe de Graphique : relayout chaque seconde, elle ne doit pas repasser par sa hauteur minimale
+            using var stack = new CardStack { Size = new Size(800, 900) };
+            var grow = new Card(new Label(), fill: true) { MinimumSize = new Size(0, 300) };
+            stack.Grow = grow;
+            stack.Wide.Add(grow);
+            stack.Controls.Add(grow);
+            stack.Controls.Add(new Card(new Label()));
+            stack.PerformLayout();
+            Assert.True(grow.Height > 300);
+            int resized = 0;
+            grow.SizeChanged += (_, _) => resized++;
+            stack.PerformLayout();
+            stack.PerformLayout();
+            Assert.Equal(0, resized);
+        });
+    }
+
+    [Fact]
     public void BugReportLinkIsPrefilled()
     {
         var url = MainForm.BugReportUrl();
