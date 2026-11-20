@@ -1,5 +1,18 @@
 # Journal des modifications
 
+## 3.6.0
+
+- **Une vraie appli de surveillance en plein écran.** Corral s'ouvre en plein écran, sur la page Graphique, désormais la première. Les cartes se répartissent en colonnes selon la largeur au lieu de s'arrêter à 900 px, et la grande courbe occupe toute la hauteur libre.
+- **Graphique : bouton « Tout ».** Les cinq mesures en grand en même temps, avec les plus gourmands ; un clic sur une courbe revient à son détail. Le choix est mémorisé.
+- **Processus : programmes regroupés et panneau de détail.** Un programme à plusieurs processus (navigateur, Discord…) tient sur une ligne qui se déplie (double-clic, ou flèches droite et gauche). À droite, la sélection en continu : activité sur 5 minutes, priorité, cœurs, règle, état ProBalance, et les actions (créer une règle, détails, exclure de ProBalance).
+- **Règles : colonne « En cours » et panneau de la règle.** Combien de processus chaque règle touche en ce moment ; à droite, tous ses réglages, les processus concernés, et les actions Modifier, Activer ou Désactiver, Dupliquer.
+- **ProBalance : son activité d'abord.** Chiffres du jour, de 7 et 30 jours et seuil, frise des interventions sur 24 heures, programmes les plus souvent abaissés, puis les réglages.
+- **Mode Jeu : la session en cours.** Le jeu, depuis combien de temps, ce que Corral a changé (plan, ProBalance réactif, programmes de fond calmés), les courbes du PC pendant la session, et les sessions récentes.
+- **Optimisations** : le dernier effet de chaque automatisme (nettoyage mémoire, économie au repos).
+- **Démarrage : résumé et impact.** Combien de programmes se lancent, combien pèsent lourd, la mémoire qu'ils utilisent ; les plus lourds en tête. L'impact est estimé d'après la mémoire utilisée en ce moment, Windows ne publiant pas sa propre mesure.
+- **Options** : rubriques à gauche, une affichée à la fois.
+- **Journal** : filtres avec leur nombre d'événements (Alimentation ajouté), recherche, et frise des événements par heure ; un clic sur une heure n'affiche qu'elle.
+
 ## 3.5.0
 
 - **Page Graphique : toutes les mesures en détail.** À gauche, le processeur, la mémoire, la carte graphique, les disques et le réseau ont chacun leur ligne avec leur valeur et une petite courbe. Un clic (ou Tab puis Entrée) affiche à droite le détail de la mesure :
