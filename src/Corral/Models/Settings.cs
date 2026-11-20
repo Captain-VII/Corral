@@ -212,7 +212,6 @@ public sealed class WindowSettings
     public int Y { get; set; }
     public int Width { get; set; }
     public int Height { get; set; }
-    public bool Maximized { get; set; }
     public string? LastPage { get; set; }
 
     public bool HasBounds => Width > 0 && Height > 0;

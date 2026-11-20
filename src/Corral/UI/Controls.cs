@@ -236,25 +236,63 @@ public sealed class Card : Panel
     }
 }
 
-/// <summary>Pile verticale de cartes qui prennent toute la largeur (max 900 px), avec défilement.</summary>
-public sealed class CardStack : FlowLayoutPanel
+/// <summary>Cartes sur toute la largeur, en autant de colonnes que la place le permet (chacune dans la plus courte), avec défilement.
+/// Les cartes de <see cref="Wide"/> occupent toute la largeur ; <see cref="Grow"/> (large, contenu « fill ») part de sa
+/// hauteur minimale et s'étire pour remplir la hauteur restante.</summary>
+public sealed class CardStack : Panel
 {
+    const int Gap = 14, ColumnWidth = 600;
+
     public CardStack()
     {
-        FlowDirection = FlowDirection.TopDown;
-        WrapContents = false;
         AutoScroll = true;
         Padding = new Padding(0, 0, 8, 0);
     }
 
+    public HashSet<Control> Wide { get; } = new();
+    public Control? Grow { get; set; }
+
+    // Page cachée : les cartes paraissent toutes invisibles ; on les place quand elle s'affiche
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (Visible)
+            PerformLayout();
+    }
+
     protected override void OnLayout(LayoutEventArgs levent)
     {
-        int width = Math.Min(900, ClientSize.Width - Padding.Horizontal - 2);
-        foreach (Control c in Controls)
+        var cards = Controls.Cast<Control>().Where(c => c.Visible).ToList();
+        if (Visible && cards.Count > 0)
         {
-            c.Width = width;
-            if (c is Card card)
-                card.Height = card.GetPreferredSize(new Size(width, 0)).Height;
+            int width = ClientSize.Width - Padding.Horizontal - 2;
+            int cols = Math.Clamp((width + Gap) / (ColumnWidth + Gap), 1, Math.Max(1, cards.Count(c => !Wide.Contains(c))));
+            int colWidth = (width - Gap * (cols - 1)) / cols;
+            var bottoms = new int[cols];
+            var origin = AutoScrollPosition;
+            int Height(Control c, int w) => c == Grow ? c.MinimumSize.Height : c.GetPreferredSize(new Size(w, 0)).Height;
+            foreach (var c in cards)
+            {
+                if (Wide.Contains(c))
+                {
+                    int top = bottoms.Max();
+                    c.Bounds = new Rectangle(origin.X, origin.Y + top, width, Height(c, width));
+                    Array.Fill(bottoms, top + c.Height + Gap);
+                }
+                else
+                {
+                    int col = Array.IndexOf(bottoms, bottoms.Min());
+                    c.Bounds = new Rectangle(origin.X + col * (colWidth + Gap), origin.Y + bottoms[col], colWidth, Height(c, colWidth));
+                    bottoms[col] += c.Height + Gap;
+                }
+            }
+            int extra = ClientSize.Height - (bottoms.Max() - Gap);
+            if (Grow is { Visible: true } grow && extra > 0)
+            {
+                foreach (var c in cards.Where(c => c.Top > grow.Top))
+                    c.Top += extra;
+                grow.Height += extra;
+            }
         }
         base.OnLayout(levent);
     }
@@ -581,7 +619,12 @@ public sealed class StatGrid : Control
         Invalidate();
     }
 
-    int Columns(int width) => Math.Max(1, (width + Gap) / (TileWidth + Gap));
+    // Lignes équilibrées (2×2 plutôt que 3+1), tuiles élargies pour remplir la ligne
+    int Columns(int width)
+    {
+        int n = Math.Max(1, items.Count), max = Math.Clamp((width + Gap) / (TileWidth + Gap), 1, n), rows = (n + max - 1) / max;
+        return (n + rows - 1) / rows;
+    }
 
     public override Size GetPreferredSize(Size proposed)
     {

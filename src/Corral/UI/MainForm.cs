@@ -57,8 +57,8 @@ public sealed partial class MainForm : Form
             }
         };
         // Icônes : codes communs à Segoe Fluent Icons et Segoe MDL2 Assets
-        AddPage("", "Processus", BuildProcessPage());
         AddPage("", "Graphique", BuildChartPage());
+        AddPage("", "Processus", BuildProcessPage());
         AddPage("", "Règles", BuildRulesPage());
         AddPage("", "ProBalance", BuildProBalancePage());
         AddPage("", "Mode Jeu", BuildGamePage());
@@ -314,11 +314,12 @@ public sealed partial class MainForm : Form
                 StartPosition = FormStartPosition.Manual;
                 Bounds = bounds;
             }
-            if (w.Maximized)
-                WindowState = FormWindowState.Maximized;
         }
+        // Appli de surveillance : toujours en plein écran à l'ouverture (la taille enregistrée sert quand on la restaure)
+        WindowState = FormWindowState.Maximized;
         int page = pages.FindIndex(p => p.Title == w.LastPage);
-        nav.Selected = page >= 0 ? page : 0;
+        // Première ouverture : Processus, qui porte le message de bienvenue ; sinon Graphique, la page d'accueil
+        nav.Selected = page >= 0 ? page : pages.FindIndex(p => p.Title == (settings.WelcomeDismissed ? "Graphique" : "Processus"));
     }
 
     void SaveWindow()
@@ -327,7 +328,7 @@ public sealed partial class MainForm : Form
             return;
         var b = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
         var w = settings.Window;
-        (w.X, w.Y, w.Width, w.Height, w.Maximized) = (b.X, b.Y, b.Width, b.Height, WindowState == FormWindowState.Maximized);
+        (w.X, w.Y, w.Width, w.Height) = (b.X, b.Y, b.Width, b.Height);
         SaveSettings();
     }
 

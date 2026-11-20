@@ -75,13 +75,16 @@ public sealed partial class MainForm
         Deactivate += (_, _) => active = false;
 
         // Colonne de droite : détail de la mesure choisie, qui défile si la fenêtre est petite
-        chart.Size = new Size(400, 320);
+        // Grande courbe : 320 px au moins, puis toute la hauteur laissée libre par les autres cartes
+        var chartCard = new Card(chart, fill: true) { Padding = new Padding(18), MinimumSize = new Size(0, 356) };
+        var statCard = new Card(statGrid);
         threadCard = new Card(threadGrid, Tr("Par processeur logique", "Per logical processor"));
         breakdownCard = new Card(breakdown, "");
         topCard = new Card(topList, Tr("Les plus gourmands", "Top consumers"));
-        detail = new CardStack { Dock = DockStyle.Fill, Margin = new Padding(0) };
-        detail.Controls.Add(new Card(chart) { Margin = new Padding(0, 0, 0, 14) });
-        detail.Controls.Add(new Card(statGrid));
+        detail = new CardStack { Dock = DockStyle.Fill, Margin = new Padding(0), Grow = chartCard };
+        detail.Wide.UnionWith(new[] { chartCard, statCard });
+        detail.Controls.Add(chartCard);
+        detail.Controls.Add(statCard);
         detail.Controls.Add(threadCard);
         detail.Controls.Add(breakdownCard);
         detail.Controls.Add(topCard);

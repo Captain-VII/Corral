@@ -30,7 +30,7 @@ public class ScreenshotTests
                 settings.Rules.Add(new Rule { Pattern = "sauvegarde*", Enabled = false, Priority = System.Diagnostics.ProcessPriorityClass.Idle, CpuLimitPercent = 20, MemoryLimitMB = 2048 });
                 using var engine = new Engine(RuleStore.Clone(settings), new NoPower(), foregroundPid: () => -1);
                 settings.ProBalance.Enabled = true; // seulement côté interface : affiche le seuil sans que le moteur agisse
-                using var form = new MainForm(engine, new RuleStore(Path.Combine(configDir, "config.json")), settings) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = Origin + new Size(40, 40) };
+                using var form = new MainForm(engine, new RuleStore(Path.Combine(configDir, "config.json")), settings) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = Origin + new Size(40, 40), WindowState = FormWindowState.Normal };
                 form.Show();
                 engine.Start();
                 Pump(2500);
@@ -109,6 +109,16 @@ public class ScreenshotTests
                         Capture(form, Path.Combine(outDir, $"shot-{mode}-{page}-bas.png"));
                     }
                 }
+
+                // Grande fenêtre : les cartes se répartissent en colonnes et la courbe remplit la hauteur
+                form.Size = new Size(1900, 1040);
+                foreach (var page in new[] { "Graphique", "ProBalance", "Options" })
+                {
+                    form.ShowPage(page);
+                    Pump(400);
+                    Capture(form, Path.Combine(outDir, $"shot-{mode}-grand-{page}.png"));
+                }
+                form.Size = new Size(1120, 760);
 
                 settings.Rules[0].When = new RuleCondition { Power = PowerSource.Battery, From = new TimeOnly(9, 0), To = new TimeOnly(18, 0), Days = new() { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday } };
                 using var dlg = new RuleDialog(settings.Rules[0], PowerCfg.List(), isNew: false, new[] { "chrome", "chrome", "chrome", "code", "System" }) { TopMost = true, StartPosition = FormStartPosition.Manual, Location = Origin + new Size(1200, 40) };
