@@ -410,4 +410,14 @@ public sealed class ProcessHistory
         lock (sync)
             return series.TryGetValue((pid, name), out var q) ? q.ToList() : new();
     }
+
+    /// <summary>Tous les processus d'un programme additionnés, instant par instant (GPU : le plus chargé).</summary>
+    public List<Sample> GetProgram(string name)
+    {
+        lock (sync)
+            return series.Where(kv => string.Equals(kv.Key.Name, name, StringComparison.OrdinalIgnoreCase)).SelectMany(kv => kv.Value)
+                .GroupBy(s => s.Time).OrderBy(g => g.Key)
+                .Select(g => new Sample(g.Key, g.Sum(x => x.Cpu), g.Max(x => x.Gpu), g.Sum(x => x.Memory), g.Sum(x => x.Io)))
+                .ToList();
+    }
 }

@@ -298,6 +298,84 @@ public sealed class CardStack : Panel
     }
 }
 
+/// <summary>Barres des 24 dernières heures (la plus récente à droite), repères toutes les 6 heures ; un clic choisit une heure.</summary>
+public sealed class HourBars : Control
+{
+    const int LabelHeight = 18;
+    int[] values = new int[24];
+
+    public HourBars()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        Height = 96;
+        AccessibleRole = AccessibleRole.Chart;
+    }
+
+    /// <summary>Texte affiché quand toutes les heures sont à zéro.</summary>
+    public string EmptyText { get; set; } = "";
+
+    /// <summary>Heure mise en avant (0 = il y a 23 h … 23 = l'heure en cours), ou -1.</summary>
+    public int Highlight
+    {
+        get => highlight;
+        set
+        {
+            highlight = value;
+            Invalidate();
+        }
+    }
+
+    int highlight = -1;
+
+    /// <summary>Clic sur une barre : son rang (0 à 23).</summary>
+    public event Action<int>? BarClicked;
+
+    public void SetValues(int[] v)
+    {
+        values = v;
+        AccessibleDescription = string.Join(" ; ", v.Select((n, i) => $"{DateTime.Now.AddHours(i - 23):HH} h : {n}"));
+        Invalidate();
+    }
+
+    public override Size GetPreferredSize(Size proposed) => new(proposed.Width, Height);
+
+    protected override void OnMouseClick(MouseEventArgs e)
+    {
+        base.OnMouseClick(e);
+        if (values.Length > 0 && BarClicked != null)
+            BarClicked(Math.Clamp(e.X * values.Length / Math.Max(1, Width), 0, values.Length - 1));
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var p = Theme.Current;
+        var g = e.Graphics;
+        g.Clear(p.Surface);
+        int n = values.Length, max = Math.Max(1, values.DefaultIfEmpty().Max());
+        float w = (float)Width / Math.Max(1, n), h = Height - LabelHeight;
+        using var track = new SolidBrush(p.Surface2);
+        using var bar = new SolidBrush(p.Accent);
+        using var marked = new SolidBrush(p.Warning);
+        var now = DateTime.Now;
+        for (int i = 0; i < n; i++)
+        {
+            var slot = new RectangleF(i * w + 1, 0, Math.Max(1, w - 2), h);
+            g.FillRectangle(track, slot);
+            if (values[i] > 0)
+            {
+                float bh = Math.Max(3, h * values[i] / max);
+                g.FillRectangle(i == highlight ? marked : bar, slot.X, h - bh, slot.Width, bh);
+            }
+            int hour = now.AddHours(i - n + 1).Hour;
+            if (i < n - 3 && hour % 6 == 0)
+                TextRenderer.DrawText(g, $"{hour} h", Font, new Point((int)(i * w), (int)h + 2), p.Muted, TextFormatFlags.NoPrefix);
+        }
+        TextRenderer.DrawText(g, Tr("maintenant", "now"), Font, new Rectangle(0, (int)h + 2, Width, LabelHeight), p.Muted, TextFormatFlags.Right | TextFormatFlags.NoPrefix);
+        if (values.All(v => v == 0) && EmptyText.Length > 0)
+            TextRenderer.DrawText(g, EmptyText, Font, new Rectangle(0, 0, Width, (int)h), p.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
+    }
+}
+
 /// <summary>Navigation latérale : logo, pages avec icône, état et bouton Pause en bas.</summary>
 public sealed class NavBar : Control
 {

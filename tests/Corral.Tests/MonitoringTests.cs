@@ -90,6 +90,47 @@ public class MonitoringTests : IDisposable
     }
 
     [Fact]
+    public void ProBalanceStatsKeepTheLast24Hours()
+    {
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "hours.json");
+        var stats = new ProBalanceStats(file);
+        stats.Record(new[] { "jeu", "navigateur" });
+        var now = DateTime.Now;
+        Assert.Equal(2, stats.LastHours(now)[23]);           // heure en cours, à droite
+        Assert.Equal(2, stats.LastHours(now.AddHours(5))[18]); // cinq heures plus tard, elle a glissé
+        Assert.Equal(0, stats.LastHours(now.AddDays(2)).Sum());
+        Assert.Equal(2, new ProBalanceStats(file).LastHours(now)[23]); // relue du fichier
+
+        // Fichier d'une version précédente, sans le détail par heure
+        File.WriteAllText(file, $"[{{\"Date\":\"{DateOnly.FromDateTime(now):yyyy-MM-dd}\",\"Count\":3,\"ByProgram\":{{}}}}]");
+        var old = new ProBalanceStats(file);
+        Assert.Equal(3, old.CountToday());
+        Assert.Equal(0, old.LastHours(now).Sum());
+    }
+
+    [Fact]
+    public void GameSessionsAreKeptWhenTheyEnd()
+    {
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "games.json");
+        var t = new DateTime(2026, 11, 20, 21, 0, 0);
+        var games = new GameSessions(file);
+        games.Update("PAYDAY 3", t);
+        Assert.Equal(("PAYDAY 3", t), games.Current);
+        games.Update("PAYDAY 3", t.AddMinutes(30)); // même jeu : la session continue
+        games.Update(null, t.AddMinutes(72));
+        Assert.Null(games.Current);
+        games.Update("", t.AddHours(2));             // activé à la main : pas gardé
+        games.Update("VALORANT", t.AddHours(3));
+        games.Update(null, t.AddHours(3).AddSeconds(20)); // moins d'une minute : pas gardé
+
+        var kept = new GameSessions(file).Recent();
+        Assert.Single(kept);
+        Assert.Equal(new GameSessions.Session("PAYDAY 3", t, TimeSpan.FromMinutes(72)), kept[0]);
+    }
+
+    [Fact]
     public void ProcessDetailsAreRead()
     {
         var name = procs.Name("details");

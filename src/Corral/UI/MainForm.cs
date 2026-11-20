@@ -46,6 +46,7 @@ public sealed partial class MainForm : Form
 
         chart = new CpuChart(cpuHistory);
         stats = new ProBalanceStats(Path.Combine(store.ConfigDirectory, "stats.json"));
+        gameSessions = new GameSessions(Path.Combine(store.ConfigDirectory, "games.json"));
         // Interventions comptées même fenêtre cachée (événement levé sur le thread du moteur)
         engine.ProBalanceActed += (names, _) =>
         {
@@ -144,6 +145,8 @@ public sealed partial class MainForm : Form
             RefreshLog(force: true);
         else if (pages[index].Title == "Démarrage")
             RefreshStartup();
+        else if (pages[index].Title == "ProBalance")
+            RefreshStats(); // frise des 24 h : l'heure a pu changer
         else if (pages[index].Title == "Processus" && lastSnapshot != null)
             ApplySnapshot(lastSnapshot);
         if (pages[index].Page.Contains(chart) && lastSnapshot != null)

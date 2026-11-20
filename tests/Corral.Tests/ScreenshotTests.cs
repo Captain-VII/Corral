@@ -102,21 +102,35 @@ public class ScreenshotTests
                     Capture(form, Path.Combine(outDir, $"shot-{mode}-{page}.png"));
                     if (page == "Options")
                     {
-                        // Bas de la page (raccourcis globaux)
-                        foreach (var stack in FindAll<CardStack>(form).Where(s => s.Visible))
-                            stack.AutoScrollPosition = new Point(0, 10_000);
+                        form.ShowOptionSection("Raccourcis clavier globaux");
                         Pump(300);
-                        Capture(form, Path.Combine(outDir, $"shot-{mode}-{page}-bas.png"));
+                        Capture(form, Path.Combine(outDir, $"shot-{mode}-{page}-raccourcis.png"));
+                        form.ShowOptionSection("Affichage");
                     }
                 }
 
                 // Grande fenêtre : les cartes se répartissent en colonnes et la courbe remplit la hauteur
                 form.Size = new Size(1900, 1040);
-                foreach (var page in new[] { "Graphique", "ProBalance", "Options" })
+                foreach (var page in new[] { "Graphique", "Processus", "Règles", "ProBalance", "Mode Jeu", "Optimisations", "Démarrage", "Journal" })
                 {
                     form.ShowPage(page);
                     Pump(400);
+                    // Panneau de droite rempli : première ligne sélectionnée
+                    if (FindAll<BufferedListView>(form).FirstOrDefault(l => l.Visible && l.Items.Count > 0) is { } list && page is "Processus" or "Règles")
+                    {
+                        list.Items[0].Selected = true;
+                        Pump(300);
+                    }
                     Capture(form, Path.Combine(outDir, $"shot-{mode}-grand-{page}.png"));
+                    if (page == "Graphique")
+                    {
+                        // Vue « Tout » : toutes les mesures en grand
+                        var all = FindAll<ModernButton>(form).First(b => b.Visible && b.Text == "Tout");
+                        all.PerformClick();
+                        Pump(400);
+                        Capture(form, Path.Combine(outDir, $"shot-{mode}-grand-Graphique-tout.png"));
+                        all.PerformClick();
+                    }
                 }
                 form.Size = new Size(1120, 760);
 

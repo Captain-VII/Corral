@@ -43,14 +43,26 @@ public sealed partial class MainForm
             procList.Sort();
             Theme.InvalidateHeader(procList);
         };
-        procList.SelectedIndexChanged += (_, _) => createRule.Enabled = SelectedProcess != null;
-        procList.DoubleClick += (_, _) => CreateRuleFromSelection();
+        procList.SelectedIndexChanged += (_, _) => RefreshProcessPanel();
+        procList.DoubleClick += (_, _) =>
+        {
+            if (SelectedItem is { Count: > 0 } g)
+                ToggleGroup(g.Row.Name, !expandedGroups.Contains(g.Row.Name));
+            else
+                CreateRuleFromSelection();
+        };
         procList.KeyDown += (_, e) =>
         {
             if (e.KeyCode == Keys.Enter) { ShowDetails(); e.Handled = true; }
+            // Flèches droite et gauche : déplier ou replier le programme sélectionné
+            else if (e.KeyCode is Keys.Right or Keys.Left && SelectedItem is { } item && (item.Count > 0 || item.Row != item.Group))
+            {
+                ToggleGroup(item.Row.Name, e.KeyCode == Keys.Right);
+                e.Handled = true;
+            }
         };
         detailsButton.Click += (_, _) => ShowDetails();
-        procList.SelectedIndexChanged += (_, _) => detailsButton.Enabled = SelectedProcess != null;
+        excludeButton.Click += (_, _) => ExcludeFromProBalance();
         tips.SetToolTip(detailsButton, Tr("Fiche du processus sélectionné : éditeur, emplacement, ligne de commande, parent… (Entrée)", "Selected process details: publisher, location, command line, parent… (Enter)"));
         createRule.Click += (_, _) => CreateRuleFromSelection();
         search.TextChanged += (_, _) =>
@@ -64,6 +76,7 @@ public sealed partial class MainForm
 
         var body = new Panel();
         body.Controls.Add(new Card(procList, fill: true) { Dock = DockStyle.Fill });
+        body.Controls.Add(BuildProcessPanel());
         if (!settings.WelcomeDismissed)
         {
             var card = BuildWelcome();
@@ -84,7 +97,109 @@ public sealed partial class MainForm
 
         return MakePage(Tr("Processus", "Processes"), Tr("Processus en cours, triés par usage du processeur. Double-cliquez sur un processus pour lui créer une règle, clic droit pour plus d'actions.",
             "Running processes, sorted by CPU usage. Double-click a process to create a rule for it, right-click for more actions."),
-            body, search, detailsButton, createRule);
+            body, search);
+    }
+
+    // ---------- Panneau de droite : activité et actions du processus (ou du programme) sélectionné ----------
+
+    readonly HashSet<string> expandedGroups = new(StringComparer.OrdinalIgnoreCase);
+    readonly ModernButton excludeButton = new(Tr("Exclure de ProBalance", "Exclude from ProBalance")) { Enabled = false };
+    readonly MiniChart procCpu = new() { Title = Tr("Processeur", "CPU"), Format = v => $"{v:0.0} %", Dock = DockStyle.Fill, Margin = new Padding(0, 0, 8, 0) };
+    readonly MiniChart procMem = new() { Title = Tr("Mémoire", "Memory"), Max = null, Format = v => $"{v / (1 << 20):N0} {Units.MB}", Dock = DockStyle.Fill, Margin = new Padding(0) };
+    readonly StatGrid procStats = new() { TileWidth = 120 };
+    Card procActivity = null!, procStatsCard = null!, procActions = null!;
+
+    Control BuildProcessPanel()
+    {
+        var charts = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, Height = 110, Margin = new Padding(0) };
+        charts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        charts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        charts.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        charts.Controls.Add(procCpu, 0, 0);
+        charts.Controls.Add(procMem, 1, 0);
+        procCpu.Range = procMem.Range = processHistory.Keep;
+        var buttons = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0) };
+        foreach (var b in new[] { createRule, detailsButton, excludeButton })
+        {
+            b.Margin = new Padding(0, 0, 8, 8);
+            buttons.Controls.Add(b);
+        }
+        tips.SetToolTip(excludeButton, Tr("ProBalance ne l'abaissera plus, même s'il sature le processeur.", "ProBalance will no longer lower it, even if it saturates the CPU."));
+        procActivity = new Card(charts, "");
+        procStatsCard = new Card(procStats);
+        procActions = new Card(buttons, Tr("Actions", "Actions"));
+        var side = new CardStack { Dock = DockStyle.Right, Width = 380, Padding = new Padding(14, 0, 0, 0) };
+        side.Controls.AddRange(new Control[] { procActivity, procStatsCard, procActions });
+        // Petite fenêtre : la liste garde toute la place
+        side.ParentChanged += (_, _) => side.Parent!.Resize += (_, _) => side.Visible = side.Parent.Width >= 900;
+        RefreshProcessPanel();
+        return side;
+    }
+
+    void ToggleGroup(string name, bool expand)
+    {
+        if (!(expand ? expandedGroups.Add(name) : expandedGroups.Remove(name)))
+            return;
+        if (lastSnapshot != null)
+            ApplySnapshot(lastSnapshot);
+        // Après repli, la sélection revient sur la ligne du programme
+        if (!expand && procItems.TryGetValue("g:" + name, out var header))
+        {
+            header.Selected = header.Focused = true;
+            header.EnsureVisible();
+        }
+    }
+
+    void RefreshProcessPanel()
+    {
+        var item = SelectedItem;
+        createRule.Enabled = excludeButton.Enabled = item != null && !Exclusions.IsProtected(item.Row.Name, item.Row.Pid, Environment.ProcessId);
+        detailsButton.Enabled = SelectedProcess != null;
+        procStatsCard.Visible = procActions.Visible = item != null;
+        if (item == null)
+        {
+            procActivity.Title = Tr("Sélectionnez un processus", "Select a process");
+            procCpu.SetData(new());
+            procMem.SetData(new());
+            return;
+        }
+        var r = item.Row;
+        bool group = item.Count > 0;
+        procActivity.Title = group ? Tr($"{r.Name} · {item.Count} processus", $"{r.Name} · {item.Count} processes") : $"{r.Name} · PID {r.Pid}";
+        var history = group ? processHistory.GetProgram(r.Name) : processHistory.Get(r.Pid, r.Name);
+        procCpu.SetData(history.Select(x => (x.Time, (double)x.Cpu)).ToList());
+        procMem.SetData(history.Select(x => (x.Time, (double)x.Memory)).ToList());
+        var tiles = new List<(string, string, double?)>
+        {
+            ("CPU", $"{r.Cpu:0.0} %", null),
+            (Tr("Mémoire", "Memory"), FormatBytes(r.MemoryBytes), null),
+            (Tr("Disque", "Disk"), Units.Rate(r.IoBytesPerSec), null),
+            ("GPU", $"{r.Gpu:0} %", null),
+        };
+        if (!group)
+        {
+            var (priority, cores) = PriorityAndCores(r.Pid);
+            tiles.Add((Tr("Priorité", "Priority"), priority, null));
+            tiles.Add((Tr("Cœurs", "Cores"), cores, null));
+        }
+        tiles.Add((Tr("Règle", "Rule"), r.Rule ?? Tr("Aucune", "None"), null));
+        tiles.Add(("ProBalance", r.Restrained ? Tr("Abaissé", "Lowered") : Tr("Normal", "Normal"), null));
+        procStats.SetItems(tiles);
+        procStatsCard.Parent?.PerformLayout();
+    }
+
+    /// <summary>Priorité et nombre de cœurs autorisés, lus à la volée (« — » si le processus est protégé ou fermé).</summary>
+    static (string Priority, string Cores) PriorityAndCores(int pid)
+    {
+        try
+        {
+            using var p = Process.GetProcessById(pid);
+            return (RuleText.PriorityLabel(p.PriorityClass), $"{System.Numerics.BitOperations.PopCount((ulong)(long)p.ProcessorAffinity)} / {Environment.ProcessorCount}");
+        }
+        catch (Exception)
+        {
+            return ("—", "—");
+        }
     }
 
     Card BuildWelcome()
@@ -136,14 +251,17 @@ public sealed partial class MainForm
         menu.Items.AddRange(new ToolStripItem[] { create, now, new ToolStripSeparator(), exclude, open, new ToolStripSeparator(), kill });
         menu.Opening += (_, e) =>
         {
-            var row = SelectedProcess;
-            if (row == null)
+            if (SelectedItem is not { } item)
             {
                 e.Cancel = true;
                 return;
             }
+            var row = item.Row;
             bool isProtected = Exclusions.IsProtected(row.Name, row.Pid, Environment.ProcessId);
-            now.Enabled = kill.Enabled = !isProtected;
+            // Ligne d'un programme à plusieurs processus : les actions sur un seul processus sont dans ses lignes dépliées
+            details.Enabled = SelectedProcess != null;
+            now.Enabled = kill.Enabled = !isProtected && SelectedProcess != null;
+            create.Enabled = !isProtected;
             open.Enabled = row.Path != null;
             bool excluded = settings.ProBalance.Exclusions.Any(x => RuleMatcher.Matches(x, row.Name));
             exclude.Enabled = !isProtected && !excluded;
@@ -153,7 +271,10 @@ public sealed partial class MainForm
         return menu;
     }
 
-    ProcessRow? SelectedProcess => procList.SelectedItems.Count == 1 ? procList.SelectedItems[0].Tag as ProcessRow : null;
+    ProcItem? SelectedItem => procList.SelectedItems.Count == 1 ? procList.SelectedItems[0].Tag as ProcItem : null;
+
+    /// <summary>Processus sélectionné ; null sur la ligne d'un programme à plusieurs processus.</summary>
+    ProcessRow? SelectedProcess => SelectedItem is { Count: 0 } item ? item.Row : null;
 
     void SetPriorityNow(System.Diagnostics.ProcessPriorityClass priority)
     {
@@ -168,7 +289,7 @@ public sealed partial class MainForm
 
     void ExcludeFromProBalance()
     {
-        if (SelectedProcess is not { } row)
+        if (SelectedItem?.Row is not { } row)
             return;
         var name = row.Name + ".exe";
         settings.ProBalance.Exclusions.Add(name);
@@ -184,7 +305,7 @@ public sealed partial class MainForm
 
     void OpenProcessLocation()
     {
-        if (SelectedProcess?.Path is not { } path)
+        if (SelectedItem?.Row.Path is not { } path)
             return;
         try
         {
@@ -231,7 +352,7 @@ public sealed partial class MainForm
 
     Theme.CellStyle? ProcessCell(ListViewItem item, int column)
     {
-        if (item.Tag is not ProcessRow r)
+        if (item.Tag is not ProcItem { Row: var r })
             return null;
         var p = Theme.Current;
         return column switch
@@ -312,7 +433,7 @@ public sealed partial class MainForm
 
     void CreateRuleFromSelection()
     {
-        if (SelectedProcess is { } row)
+        if (SelectedItem?.Row is { } row && !Exclusions.IsProtected(row.Name, row.Pid, Environment.ProcessId))
             AddRule(new Rule { Pattern = row.Name + ".exe" });
     }
 
@@ -330,6 +451,7 @@ public sealed partial class MainForm
             topTracker.Add(t, snapshot.Rows);
             processHistory.Add(t, snapshot.Rows);
         }
+        gameSessions.Update(snapshot.GameMode ? snapshot.GameTrigger ?? "" : null, DateTime.Now);
         latestSnapshot = snapshot; // à jour même fenêtre cachée (raccourcis, icône de notification)
         if (!shown)
             return;
@@ -344,11 +466,15 @@ public sealed partial class MainForm
         lastSnapshot = snap;
         nav.SetStatus(snap.SystemCpu, snap.Rows.Count, snap.Paused, snap.GameMode, snap.GameTrigger);
         UpdateGameStatus(snap);
+        if (IsPageVisible("Mode Jeu"))
+            RefreshGameSession(snap);
         if (IsPageVisible("ProBalance"))
             pbSessions.Text = snap.Sessions is { Count: > 1 } sessions
                 ? Tr("Sessions ouvertes : ", "Open sessions: ") + string.Join(" · ", sessions.Select(x =>
                     $"{x.User} {x.Cpu:0} %" + (x.Limited ? Tr(" (abaissée)", " (lowered)") : "")))
                 : Tr("Une seule session ouverte : l'équité n'a rien à faire.", "Only one session open: fairness has nothing to do.");
+        if (IsPageVisible("Optimisations"))
+            RefreshOptimizationEffects();
         if (IsPageVisible("Optimisations"))
             optMemNow.Text = snap.MemoryTotal > 0
                 ? Tr($"Mémoire utilisée en ce moment : {snap.MemoryPercent:0} % ({FormatBytes(snap.MemoryUsed)} sur {FormatBytes(snap.MemoryTotal)})",
@@ -358,6 +484,8 @@ public sealed partial class MainForm
             RefreshCharts(snap);
         if (IsPageVisible("Journal"))
             RefreshLog(force: false);
+        if (IsPageVisible("Règles"))
+            RefreshRulePanel();
 
         // Liste (≈ 300 lignes, triées) mise à jour seulement à l'écran ; SelectPage la rafraîchit quand on y revient
         if (!IsPageVisible("Processus"))
@@ -366,22 +494,41 @@ public sealed partial class MainForm
         procList.BeginUpdate();
         procList.ListViewItemSorter = null; // évite un tri à chaque ajout
         var seen = new HashSet<string>();
-        foreach (var r in snap.Rows)
+        // Un programme à plusieurs processus (navigateur, Discord…) tient sur une ligne qui se déplie
+        foreach (var g in snap.Rows.Where(r => filter.Length == 0 || r.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                     .GroupBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
         {
-            if (filter.Length > 0 && !r.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            var rows = g.ToList();
+            if (rows.Count == 1)
+            {
+                Upsert($"{rows[0].Pid}:{rows[0].Name}", new ProcItem(rows[0], rows[0], 0), rows[0].Name);
                 continue;
-            var key = $"{r.Pid}:{r.Name}";
+            }
+            // Ligne du programme : sommes ; PID et chemin du premier (exclusions, emplacement)
+            var sum = new ProcessRow(rows[0].Pid, rows[0].Name, rows.Sum(x => x.Cpu), rows.Sum(x => x.MemoryBytes),
+                rows.Select(x => x.Rule).FirstOrDefault(x => x != null), rows.Any(x => x.Restrained), rows.Select(x => x.Path).FirstOrDefault(x => x != null),
+                rows.Select(x => x.RuleSummary).FirstOrDefault(x => x != null), rows.Sum(x => x.IoBytesPerSec), rows.Max(x => x.Gpu));
+            bool open = expandedGroups.Contains(g.Key);
+            Upsert("g:" + g.Key, new ProcItem(sum, sum, rows.Count), $"{(open ? "▾" : "▸")} {sum.Name}");
+            if (open)
+                foreach (var r in rows)
+                    Upsert($"{r.Pid}:{r.Name}", new ProcItem(r, sum, 0), "      " + r.Name);
+        }
+
+        void Upsert(string key, ProcItem p, string name)
+        {
             seen.Add(key);
+            var r = p.Row;
             if (!procItems.TryGetValue(key, out var item))
             {
                 item = new ListViewItem(Enumerable.Repeat("", 8).ToArray());
                 procItems[key] = item;
                 procList.Items.Add(item);
-                SetText(item, 0, r.Name);
-                SetText(item, 1, r.Pid.ToString());
             }
-            var old = item.Tag as ProcessRow;
-            item.Tag = r;
+            var old = (item.Tag as ProcItem)?.Row;
+            item.Tag = p;
+            SetText(item, 0, name);
+            SetText(item, 1, p.Count > 0 ? $"× {p.Count}" : r.Pid.ToString());
             SetText(item, 2, $"{r.Cpu:0.0} %");
             SetText(item, 3, $"{r.MemoryBytes / (1024 * 1024):N0} {Units.MB}");
             SetText(item, 4, Units.Rate(r.IoBytesPerSec));
@@ -402,7 +549,7 @@ public sealed partial class MainForm
         procList.ListViewItemSorter = sorter; // déclenche le tri
         procList.EndUpdate();
         Theme.FitColumns(procList);
-        createRule.Enabled = SelectedProcess != null;
+        RefreshProcessPanel();
     }
 
     static string ProcessTip(ProcessRow r)
@@ -424,15 +571,29 @@ public sealed partial class MainForm
     List<string> RunningNames() => latestSnapshot?.Rows.Select(r => r.Name).ToList() ?? new();
 }
 
+/// <summary>Ligne de la liste : un processus seul, la ligne d'un programme (Count processus) ou l'un de ses processus.</summary>
+sealed record ProcItem(ProcessRow Row, ProcessRow Group, int Count);
+
 sealed class ProcessSorter : IComparer
 {
     public int Column = 2;
     public bool Descending = true;
 
+    // Les programmes sont triés entre eux ; les processus dépliés restent sous la ligne de leur programme
     public int Compare(object? x, object? y)
     {
-        if ((x as ListViewItem)?.Tag is not ProcessRow a || (y as ListViewItem)?.Tag is not ProcessRow b)
+        if ((x as ListViewItem)?.Tag is not ProcItem a || (y as ListViewItem)?.Tag is not ProcItem b)
             return 0;
+        int c = Compare(a.Group, b.Group);
+        if (c == 0 && (a.Count > 0) != (b.Count > 0))
+            return a.Count > 0 ? -1 : 1;
+        if (c == 0)
+            c = Compare(a.Row, b.Row) is var d and not 0 ? d : a.Row.Pid.CompareTo(b.Row.Pid);
+        return Descending ? -c : c;
+    }
+
+    int Compare(ProcessRow a, ProcessRow b)
+    {
         int c = Column switch
         {
             1 => a.Pid.CompareTo(b.Pid),
@@ -446,6 +607,6 @@ sealed class ProcessSorter : IComparer
         };
         if (c == 0 && Column != 0)
             c = string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
-        return Descending ? -c : c;
+        return c;
     }
 }

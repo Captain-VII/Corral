@@ -52,14 +52,21 @@ public sealed partial class MainForm
             SaveSettings();
         };
 
+        // D'abord ce que ProBalance a fait (chiffres, frise des 24 h, programmes visés), ensuite ses réglages
         var stack = new CardStack();
-        stack.Controls.Add(new Card(Rows(
-            SettingRow(Tr("Activer ProBalance", "Enable ProBalance"), Tr("Abaisse temporairement la priorité des processus qui saturent le processeur. La fenêtre que vous utilisez n'est jamais touchée.", "Temporarily lowers the priority of processes that saturate the CPU. The window you are using is never touched."), pbEnabled),
-            SettingRow(Tr("Me prévenir quand ProBalance intervient", "Notify me when ProBalance acts"), Tr("Affiche une bulle près de l'horloge (au plus une toutes les 30 secondes).", "Shows a balloon near the clock (at most one every 30 seconds)."), pbNotify),
-            SettingRow(Tr("Équité entre les sessions", "Fairness between sessions"), Tr("Serveur RDS ou VDI multi-session : quand le processeur sature, une session qui prend plus d'une fois et demie sa part voit ses programmes abaissés. Utilise les seuils ci-dessous.", "RDS or multi-session VDI server: when the CPU is saturated, a session taking more than one and a half times its share has its programs lowered. Uses the thresholds below."), pbFairness),
-            pbSessions), Tr("Fonctionnement", "Behavior")));
-
-        var resetStats = new ModernButton(Tr("Remettre à zéro", "Reset")) { Height = 28 };
+        var statsGrid = new TableLayoutPanel { AutoSize = true, ColumnCount = 4, Margin = new Padding(0) };
+        for (int i = 0; i < 4; i++)
+            statsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        foreach (var (label, value) in new[] { (Tr("Aujourd'hui", "Today"), statsToday), (Tr("7 derniers jours", "Last 7 days"), statsWeek), (Tr("30 derniers jours", "Last 30 days"), statsMonth), (Tr("Seuil du processeur", "CPU threshold"), statsThreshold) })
+        {
+            var cell = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Margin = new Padding(0) };
+            cell.Controls.Add(new Label { Text = label, AutoSize = true, Tag = Theme.HintTag, Margin = new Padding(0) });
+            cell.Controls.Add(value);
+            statsGrid.Controls.Add(cell);
+        }
+        var activity = new Card(statsGrid, Tr("Activité", "Activity"));
+        var hours = new Card(pbHours, Tr("Interventions sur 24 heures", "Actions over 24 hours"));
+        var resetStats = new ModernButton(Tr("Remettre à zéro", "Reset"));
         resetStats.Click += (_, _) =>
         {
             if (MessageBox.Show(this, Tr("Effacer les statistiques de ProBalance ?", "Clear ProBalance statistics?"), Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
@@ -68,21 +75,16 @@ public sealed partial class MainForm
                 RefreshStats();
             }
         };
-        var statsGrid = new TableLayoutPanel { AutoSize = true, ColumnCount = 3, Margin = new Padding(0, 0, 0, 8) };
-        for (int i = 0; i < 3; i++)
-            statsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
-        foreach (var (label, value) in new[] { (Tr("Aujourd'hui", "Today"), statsToday), (Tr("7 derniers jours", "Last 7 days"), statsWeek), (Tr("30 derniers jours", "Last 30 days"), statsMonth) })
-        {
-            var cell = new TableLayoutPanel { AutoSize = true, ColumnCount = 1, Margin = new Padding(0) };
-            cell.Controls.Add(new Label { Text = label, AutoSize = true, Tag = Theme.HintTag, Margin = new Padding(0) });
-            cell.Controls.Add(value);
-            statsGrid.Controls.Add(cell);
-        }
-        stack.Controls.Add(new Card(Rows(
-            statsGrid,
-            SettingRow(Tr("Les plus souvent abaissés (7 jours)", "Most often lowered (7 days)"), null, resetStats),
-            statsTop), Tr("Statistiques", "Statistics")));
+        tips.SetToolTip(resetStats, Tr("Effacer les statistiques de ProBalance", "Clear ProBalance statistics"));
+        stack.Wide.UnionWith(new[] { activity, hours });
+        stack.Controls.AddRange(new Control[] { activity, hours, new Card(pbTop, Tr("Les plus souvent abaissés (7 jours)", "Most often lowered (7 days)")) });
         RefreshStats();
+
+        stack.Controls.Add(new Card(Rows(
+            SettingRow(Tr("Activer ProBalance", "Enable ProBalance"), Tr("Abaisse temporairement la priorité des processus qui saturent le processeur. La fenêtre que vous utilisez n'est jamais touchée.", "Temporarily lowers the priority of processes that saturate the CPU. The window you are using is never touched."), pbEnabled),
+            SettingRow(Tr("Me prévenir quand ProBalance intervient", "Notify me when ProBalance acts"), Tr("Affiche une bulle près de l'horloge (au plus une toutes les 30 secondes).", "Shows a balloon near the clock (at most one every 30 seconds)."), pbNotify),
+            SettingRow(Tr("Équité entre les sessions", "Fairness between sessions"), Tr("Serveur RDS ou VDI multi-session : quand le processeur sature, une session qui prend plus d'une fois et demie sa part voit ses programmes abaissés. Utilise les seuils ci-dessous.", "RDS or multi-session VDI server: when the CPU is saturated, a session taking more than one and a half times its share has its programs lowered. Uses the thresholds below."), pbFairness),
+            pbSessions), Tr("Fonctionnement", "Behavior")));
 
         stack.Controls.Add(new Card(Rows(
             SettingRow(Tr("Préréglage", "Preset"), Tr("Remplit les seuils ci-dessous. Pensez à enregistrer.", "Fills in the thresholds below. Remember to save."), presets)), Tr("Sensibilité", "Sensitivity")));
@@ -112,7 +114,7 @@ public sealed partial class MainForm
         var save = new ModernButton(Tr("Enregistrer", "Save"), primary: true);
         save.Click += (_, _) => ApplyProBalance();
         tips.SetToolTip(save, Tr("Appliquer les réglages de ProBalance", "Apply the ProBalance settings"));
-        return MakePage("ProBalance", Tr("Garde le système réactif quand un programme accapare le processeur.", "Keeps the system responsive when a program hogs the CPU."), stack, save);
+        return MakePage("ProBalance", Tr("Garde le système réactif quand un programme accapare le processeur.", "Keeps the system responsive when a program hogs the CPU."), stack, resetStats, save);
     }
 
     void UpdatePresetButtons()
@@ -133,7 +135,12 @@ public sealed partial class MainForm
     readonly Label statsToday = StatValue();
     readonly Label statsWeek = StatValue();
     readonly Label statsMonth = StatValue();
-    readonly Label statsTop = new() { AutoSize = true, Tag = Theme.HintTag, MaximumSize = new Size(640, 0), Margin = new Padding(0, 0, 0, 4) };
+    readonly Label statsThreshold = StatValue();
+    readonly TopList pbTop = new()
+    {
+        EmptyText = Tr("Aucune intervention ces 7 derniers jours : le processeur n'a pas été saturé, ou ProBalance est désactivé.", "No action in the last 7 days: the CPU was not saturated, or ProBalance is off."),
+    };
+    readonly HourBars pbHours = new() { EmptyText = Tr("Aucune intervention ces dernières 24 heures.", "No action in the last 24 hours.") };
 
     static Label StatValue() => new() { AutoSize = true, Font = new Font("Segoe UI Semibold", 18f), Margin = new Padding(0, 2, 0, 0) };
 
@@ -143,10 +150,9 @@ public sealed partial class MainForm
         statsToday.Text = Interventions(stats.CountToday());
         statsWeek.Text = Interventions(stats.Count(7));
         statsMonth.Text = Interventions(stats.Count(30));
-        var top = stats.TopPrograms(7);
-        statsTop.Text = top.Count == 0
-            ? Tr("Aucune intervention ces 7 derniers jours : le processeur n'a pas été saturé, ou ProBalance est désactivé.", "No action in the last 7 days: the CPU was not saturated, or ProBalance is off.")
-            : string.Join("   ·   ", top.Select(t => Tr($"{t.Name} ({t.Count} fois)", $"{t.Name} ({t.Count}×)")));
+        statsThreshold.Text = settings.ProBalance.Enabled ? $"{settings.ProBalance.SystemThreshold:0} %" : Tr("Désactivé", "Off");
+        pbTop.SetItems(stats.TopPrograms(7).Select(t => (t.Name, (double)t.Count, Tr($"{t.Count} fois", $"{t.Count}×"))).ToList());
+        pbHours.SetValues(stats.LastHours(DateTime.Now));
     }
 
     void LoadProBalance()
@@ -157,6 +163,7 @@ public sealed partial class MainForm
         pbFairness.Checked = pb.SessionFairness;
         cpuThreshold = pb.Enabled ? pb.SystemThreshold : null;
         ConfigureChart();
+        RefreshStats();
         SetNum(pbSystem, pb.SystemThreshold);
         SetNum(pbProcess, pb.ProcessThreshold);
         SetNum(pbRestore, pb.RestoreThreshold);
